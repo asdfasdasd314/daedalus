@@ -1,0 +1,7 @@
+{
+  "supabaseUrl": "https://zshitprzimishoyotokv.supabase.co",
+  "supabaseAnonKey": "sb_publishable_4OcVtEcp5TEktbY_f46kjQ_QyGxtXPN",
+  "supabaseServiceRoleKey": "sb_secret_G1MrMbqRCpCu8gYqvpNRQg_yWwoLpEB",
+  "frontendBaseUrl": "http://127.0.0.1:3000",
+  "pollIntervalMs": 5000
+}
