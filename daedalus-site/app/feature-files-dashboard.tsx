@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import FeatureFileGraph from "./feature-file-graph";
 import type { FeatureFileProjects } from "@/lib/feature-file-cache";
 
 type DashboardProps = {
@@ -111,124 +112,70 @@ export default function FeatureFilesDashboard({
   const projectEntries = Object.entries(projects ?? {});
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(71,85,105,0.18),_transparent_30%),linear-gradient(180deg,_#f6f3ee_0%,_#ece6dc_100%)] px-4 py-6 text-slate-900 sm:px-8">
-      <div className="mx-auto grid max-w-6xl gap-6">
-        <section className="overflow-hidden rounded-[2rem] border border-black/10 bg-white/80 p-8 shadow-[0_20px_60px_rgba(15,23,42,0.08)] backdrop-blur">
-          <div className="grid gap-8 lg:grid-cols-[1.4fr_0.9fr]">
-            <div className="grid gap-4">
-              <span className="text-xs font-semibold uppercase tracking-[0.28em] text-sky-700">
-                Daedalus Communications
-              </span>
-              <h1 className="max-w-3xl text-4xl font-semibold tracking-tight text-slate-950 sm:text-6xl">
-                Feature file loading through a shared Supabase message bus.
-              </h1>
-              <p className="max-w-2xl text-base leading-7 text-slate-600 sm:text-lg">
-                The browser writes a request, the daemon reacts locally, and the
-                latest feature-file payload is delivered back into this Next.js app.
-              </p>
-              <div className="flex flex-wrap gap-3">
-                <button
-                  type="button"
-                  onClick={requestFeatureFiles}
-                  className="rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
-                >
-                  Load feature files
-                </button>
-                <div className="rounded-full border border-slate-300 bg-white px-4 py-3 text-sm text-slate-600">
-                  Polling every {pollIntervalMs} ms
-                </div>
-              </div>
-            </div>
+    <main className="relative h-screen w-screen overflow-hidden bg-black text-slate-100">
+      <FeatureFileGraph projects={projects ?? {}} />
 
-            <div className="grid gap-4 rounded-[1.5rem] border border-slate-200 bg-slate-950 p-6 text-slate-50">
-              <div>
-                <p className="text-xs uppercase tracking-[0.24em] text-slate-400">
-                  Current message
-                </p>
-                <p className="mt-3 break-words font-mono text-lg">
-                  {message || "(empty)"}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs uppercase tracking-[0.24em] text-slate-400">
-                  Status
-                </p>
-                <p className="mt-3 text-2xl font-semibold">{statusLabel}</p>
-              </div>
-              <div>
-                <p className="text-xs uppercase tracking-[0.24em] text-slate-400">
-                  Projects loaded
-                </p>
-                <p className="mt-3 text-2xl font-semibold">{projectEntries.length}</p>
-              </div>
+      <div className="pointer-events-none absolute inset-0">
+        <div className="pointer-events-auto absolute left-4 top-4">
+          <div className="flex flex-wrap gap-3 rounded-[1.75rem] border border-white/10 bg-slate-950/82 p-4 shadow-[0_24px_80px_rgba(2,6,23,0.65)] backdrop-blur">
+            <button
+              type="button"
+              onClick={requestFeatureFiles}
+              className="rounded-full bg-white px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-slate-200"
+            >
+              Load feature files
+            </button>
+            <div className="rounded-full border border-white/12 bg-white/6 px-4 py-3 text-sm text-slate-300">
+              Polling every {pollIntervalMs} ms
             </div>
           </div>
-        </section>
+        </div>
 
-        {error ? (
-          <section className="rounded-[1.5rem] border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-700">
-            {error}
-          </section>
-        ) : null}
-
-        <section className="rounded-[2rem] border border-black/10 bg-white/85 p-6 shadow-[0_18px_50px_rgba(15,23,42,0.06)] backdrop-blur">
-          <div className="flex flex-col gap-2 border-b border-slate-200 pb-4 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-700">
-                Payload view
-              </p>
-              <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">
-                Registered project feature files
-              </h2>
-            </div>
-            <p className="max-w-xl text-sm leading-6 text-slate-600">
-              Once the daemon reports completion, the frontend reads the cached
-              feature-file payload from the local Next.js API.
+        <div className="pointer-events-auto absolute bottom-4 left-4 grid max-w-sm gap-3">
+          <div className="min-w-[220px] rounded-[1.5rem] border border-white/10 bg-slate-950/82 p-4 shadow-[0_24px_80px_rgba(2,6,23,0.55)] backdrop-blur">
+            <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">
+              Current message
+            </p>
+            <p className="mt-2 break-words font-mono text-sm text-slate-100">
+              {message || "(empty)"}
             </p>
           </div>
 
-          {projectEntries.length === 0 ? (
-            <div className="grid place-items-center px-4 py-16 text-center">
-              <div className="max-w-lg">
-                <p className="text-lg font-medium text-slate-900">
-                  No feature-file payload has been loaded yet.
-                </p>
-                <p className="mt-2 text-sm leading-6 text-slate-600">
-                  Send the load request to write `client_load_feature_files`,
-                  wait for the daemon to react, and the project payload will show up here.
-                </p>
-              </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-[1.5rem] border border-white/10 bg-slate-950/82 p-4 shadow-[0_24px_80px_rgba(2,6,23,0.55)] backdrop-blur">
+              <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">
+                Status
+              </p>
+              <p className="mt-2 text-xl font-semibold text-white">{statusLabel}</p>
             </div>
-          ) : (
-            <div className="mt-6 grid gap-4">
-              {projectEntries.map(([projectPath, fileContents]) => (
-                <article
-                  key={projectPath}
-                  className="rounded-[1.5rem] border border-slate-200 bg-slate-50/80 p-5"
-                >
-                  <div className="flex flex-col gap-2 border-b border-slate-200 pb-4">
-                    <span className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
-                      Project path
-                    </span>
-                    <h3 className="break-all text-lg font-semibold text-slate-950">
-                      {projectPath}
-                    </h3>
-                  </div>
-                  <div className="mt-4 grid gap-3">
-                    {fileContents.map((fileContent, index) => (
-                      <pre
-                        key={`${projectPath}-${index}`}
-                        className="overflow-x-auto rounded-2xl bg-slate-950 p-4 text-sm leading-6 text-slate-100"
-                      >
-                        {fileContent}
-                      </pre>
-                    ))}
-                  </div>
-                </article>
-              ))}
+            <div className="rounded-[1.5rem] border border-white/10 bg-slate-950/82 p-4 shadow-[0_24px_80px_rgba(2,6,23,0.55)] backdrop-blur">
+              <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">
+                Projects loaded
+              </p>
+              <p className="mt-2 text-xl font-semibold text-white">{projectEntries.length}</p>
             </div>
-          )}
-        </section>
+          </div>
+
+          {error ? (
+            <div className="rounded-[1.5rem] border border-rose-400/20 bg-rose-500/12 px-5 py-4 text-sm text-rose-100 shadow-[0_24px_80px_rgba(127,29,29,0.35)] backdrop-blur">
+              {error}
+            </div>
+          ) : null}
+        </div>
+
+        {projectEntries.length === 0 ? (
+          <div className="pointer-events-none absolute inset-x-4 bottom-6 flex justify-center">
+            <div className="max-w-2xl rounded-[1.75rem] border border-white/10 bg-slate-950/72 px-6 py-5 text-center shadow-[0_24px_80px_rgba(2,6,23,0.55)] backdrop-blur">
+              <p className="text-lg font-medium text-white">
+                No feature-file payload has been loaded yet.
+              </p>
+              <p className="mt-2 text-sm leading-6 text-slate-300">
+                Send the load request, wait for the daemon to respond, and the
+                full-screen graph will populate with feature nodes.
+              </p>
+            </div>
+          </div>
+        ) : null}
       </div>
     </main>
   );
