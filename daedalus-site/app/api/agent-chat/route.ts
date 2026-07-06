@@ -1,12 +1,12 @@
 import {
-  getCachedProjects,
-  setCachedProjects,
-  type FeatureFileProjects,
-} from "@/lib/feature-file-cache";
+  getCachedExchange,
+  setCachedExchange,
+  type AgentChatExchange,
+} from "@/lib/agent-chat-cache";
 
 export async function GET() {
   return Response.json({
-    projects: getCachedProjects(),
+    chat: getCachedExchange(),
   });
 }
 
@@ -20,7 +20,7 @@ export async function POST(request: Request) {
     );
   }
 
-  setCachedProjects(body.projects as FeatureFileProjects);
+  setCachedExchange(body as AgentChatExchange);
 
   return Response.json({ ok: true });
 }

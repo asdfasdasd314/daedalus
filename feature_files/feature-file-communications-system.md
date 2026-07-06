@@ -1,14 +1,15 @@
 # Feature File Communications System
 
 ## Summary
-The feature file communications system uses Supabase as a shared message bus between the Next.js frontend and the local daemon. The frontend polls for the current message and reacts in the UI, while the daemon polls for client requests, scans feature files, and delivers the payload back to the Next.js app through a local API route.
+The feature file communications system uses Supabase as a shared message bus between the Next.js frontend and the local daemon. The frontend polls the `feature_file_load` communication row and reacts in the UI, while the daemon polls the same purpose for client requests, scans feature files, and delivers the payload back to the Next.js app through a local API route.
 
 ## Key Points
-- **Message Bus**: Supabase stores the active communication message in a one-row `communications` table.
+- **Message Bus**: Supabase stores communication messages in a shared `communications` table with separate rows keyed by `purpose`.
 - **Polling Loop**: Both the frontend and daemon poll Supabase every `5000` milliseconds.
-- **Daemon Delivery**: The daemon POSTs scanned feature-file payloads to the Next.js `/api/feature-files` route.
+- **Daemon Delivery**: The daemon POSTs scanned feature-file payloads to `/api/feature-files` and the latest agent chat reply to `/api/agent-chat`.
 - **Schema Tracking**: Every database change must add a numbered migration and update the checked-in schema snapshot.
-- **Protocol Messages**: The first message flow uses `client_load_feature_files`, `daemon_received_message`, and `daemon_sent_feature_files`.
+- **Protocol Messages**: The feature-file load flow uses `purpose = "feature_file_load"` with `client_load_feature_files`, `daemon_received_message`, and `daemon_sent_feature_files`.
+- **Agent Status Messages**: The prompt flow uses `purpose = "agent_prompt"` with queued JSON payloads plus daemon-written status markers while `codex exec` is running.
 
 ## Relevant Files
 - `shared/supabase_config.json`: Shared Supabase and local frontend connection values.
@@ -28,3 +29,6 @@ HACKING
 - 2026-07-04: Added browser console logging around frontend Supabase message reads and writes so the communications flow can be debugged from the client side.
 - 2026-07-04: Switched the frontend communications table reads and writes from the anon key to the Supabase service role key to bypass the observed row-level security failure.
 - 2026-07-04: Reverted the frontend back to the publishable key and added a migration plus schema snapshot update to permit anon reads, inserts, and updates on the `communications` table through row level security policies.
+- 2026-07-05: Split the shared communications table into purpose-based rows so feature-file loading and agent prompt submission can coexist without overwriting each other.
+- 2026-07-05: Added a second daemon delivery path so agent prompt replies can be returned to the frontend over REST without storing large chat output in Supabase.
+- 2026-07-05: Let the daemon reuse the `agent_prompt` row for lightweight progress markers so the UI can show prompt pickup and completion before the REST reply finishes rendering.

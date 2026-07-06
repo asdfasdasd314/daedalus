@@ -1,5 +1,6 @@
 create table communications (
-  message text not null
+  message text not null,
+  purpose text not null
 );
 
 alter table communications enable row level security;

@@ -26,11 +26,17 @@ class ScanFeatureFileProjectsTests(unittest.TestCase):
 
             self.assertEqual(
                 result[str(alpha.resolve())],
-                ["alpha one"],
+                [{
+                    "path": "feature_files/alpha.md",
+                    "markdown": "alpha one",
+                }],
             )
             self.assertEqual(
                 result[str(beta.resolve())],
-                ["beta one"],
+                [{
+                    "path": "feature_files/beta.md",
+                    "markdown": "beta one",
+                }],
             )
             self.assertEqual(len(result), 2)
 
@@ -57,7 +63,20 @@ class ScanFeatureFileProjectsTests(unittest.TestCase):
 
             self.assertEqual(
                 result[str(project.resolve())],
-                ["alpha", "bravo", "charlie"],
+                [
+                    {
+                        "path": "feature_files/a.md",
+                        "markdown": "alpha",
+                    },
+                    {
+                        "path": "feature_files/b.md",
+                        "markdown": "bravo",
+                    },
+                    {
+                        "path": "feature_files/nested/c.md",
+                        "markdown": "charlie",
+                    },
+                ],
             )
 
     def test_same_named_projects_do_not_collide(self):
@@ -73,8 +92,20 @@ class ScanFeatureFileProjectsTests(unittest.TestCase):
 
             result = scan_feature_file_projects(root)
 
-            self.assertEqual(result[str(left.resolve())], ["left"])
-            self.assertEqual(result[str(right.resolve())], ["right"])
+            self.assertEqual(
+                result[str(left.resolve())],
+                [{
+                    "path": "feature_files/left.md",
+                    "markdown": "left",
+                }],
+            )
+            self.assertEqual(
+                result[str(right.resolve())],
+                [{
+                    "path": "feature_files/right.md",
+                    "markdown": "right",
+                }],
+            )
 
 
 if __name__ == "__main__":

@@ -1,4 +1,9 @@
-export type FeatureFileProjects = Record<string, string[]>;
+export type FeatureFileRecord = {
+  path: string;
+  markdown: string;
+};
+
+export type FeatureFileProjects = Record<string, FeatureFileRecord[]>;
 
 let cachedProjects: FeatureFileProjects | null = null;
 
