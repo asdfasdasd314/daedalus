@@ -3,10 +3,13 @@ from urllib import request
 
 
 CLIENT_LOAD_FEATURE_FILES = "client_load_feature_files"
+CLIENT_LOAD_PARAMETER_FILES = "client_load_parameter_files"
 DAEMON_RECEIVED_MESSAGE = "daemon_received_message"
 DAEMON_SENT_FEATURE_FILES = "daemon_sent_feature_files"
+DAEMON_SENT_PARAMETER_FILES = "daemon_sent_parameter_files"
 DAEMON_SENT_RESPONSE = "daemon_sent_response"
 FEATURE_FILE_LOAD_PURPOSE = "feature_file_load"
+PARAMETER_FILE_LOAD_PURPOSE = "parameter_file_load"
 AGENT_PROMPT_PURPOSE = "agent_prompt"
 
 
@@ -90,8 +93,24 @@ def post_feature_files(config: dict, projects: dict[str, list[dict[str, str]]]) 
         return
 
 
+def post_parameter_files(config: dict, projects: dict[str, list[dict[str, str]]]) -> None:
+    url = f"{config['frontendBaseUrl']}/api/parameter-files"
+    headers = {
+        "Content-Type": "application/json",
+    }
+    body = json.dumps({
+        "source": "daemon",
+        "projects": projects,
+    }).encode("utf-8")
+    http_request = request.Request(url, data=body, headers=headers, method="POST")
+
+    with request.urlopen(http_request):
+        return
+
+
 def post_agent_chat(
     config: dict,
+    prompt_id: str,
     directory: str,
     prompt: str,
     reply: str,
@@ -99,6 +118,7 @@ def post_agent_chat(
     model: str = "",
     reasoning: str = "",
     planning_mode: bool = False,
+    targeted_feature_paths: list[str] | None = None,
 ) -> None:
     url = f"{config['frontendBaseUrl']}/api/agent-chat"
     headers = {
@@ -106,6 +126,7 @@ def post_agent_chat(
     }
     body = json.dumps({
         "source": "daemon",
+        "promptId": prompt_id,
         "directory": directory,
         "prompt": prompt,
         "reply": reply,
@@ -113,6 +134,7 @@ def post_agent_chat(
         "model": model,
         "reasoning": reasoning,
         "planningMode": planning_mode,
+        "targetedFeaturePaths": targeted_feature_paths or [],
     }).encode("utf-8")
     http_request = request.Request(url, data=body, headers=headers, method="POST")
 

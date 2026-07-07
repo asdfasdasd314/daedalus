@@ -8,10 +8,16 @@ import {
   type PointerEvent as ReactPointerEvent,
   type WheelEvent as ReactWheelEvent,
 } from "react";
+import type { TargetedFeature } from "@/lib/agent-chat-cache";
 import type {
   FeatureFileProjects,
   FeatureFileRecord,
 } from "@/lib/feature-file-cache";
+import type {
+  ParameterFileProjects,
+  ParameterFileRecord,
+} from "@/lib/parameter-file-cache";
+import ParameterVariableSelector from "./parameter-variable-selector";
 
 const VIEWPORT_WIDTH = 1600;
 const VIEWPORT_HEIGHT = 980;
@@ -75,6 +81,10 @@ type ClusterColor = {
 
 type FeatureFileGraphProps = {
   projects: FeatureFileProjects;
+  parameterProjects: ParameterFileProjects;
+  selectedProjectDirectory: string;
+  targetedFeatures: TargetedFeature[];
+  onAddTargetedFeature: (feature: TargetedFeature) => void;
 };
 
 type FeatureEdge = {
@@ -109,7 +119,13 @@ type NodeDragState = {
   moved: boolean;
 };
 
-export default function FeatureFileGraph({ projects }: FeatureFileGraphProps) {
+export default function FeatureFileGraph({
+  projects,
+  parameterProjects,
+  selectedProjectDirectory,
+  targetedFeatures,
+  onAddTargetedFeature,
+}: FeatureFileGraphProps) {
   const graphData = useMemo(() => buildGraphData(projects), [projects]);
   const [nodes, setNodes] = useState(graphData.nodes);
   const [viewport, setViewport] = useState(graphData.defaultViewport);
@@ -411,6 +427,33 @@ export default function FeatureFileGraph({ projects }: FeatureFileGraphProps) {
   }
 
   const selectedNode = nodes.find((node) => node.id === selectedNodeId) ?? null;
+  const parameterFilesByProject = useMemo(() => {
+    const nextMap = new Map<string, Map<string, ParameterFileRecord>>();
+
+    Object.entries(parameterProjects).forEach(([projectPath, parameterFiles]) => {
+      nextMap.set(
+        projectPath,
+        new Map(
+          parameterFiles.map((parameterFile) => [
+            normalizeParameterFilePath(parameterFile.path),
+            parameterFile,
+          ]),
+        ),
+      );
+    });
+
+    return nextMap;
+  }, [parameterProjects]);
+  const matchedParameterFile = selectedNode
+    ? parameterFilesByProject
+        .get(selectedNode.projectPath)
+        ?.get(getParameterFilePathForFeature(selectedNode.filePath)) ?? null
+    : null;
+  const isSelectedNodeInCurrentProject =
+    selectedNode?.projectPath === selectedProjectDirectory;
+  const isSelectedNodeAlreadyTargeted = targetedFeatures.some(
+    (feature) => feature.filePath === selectedNode?.filePath,
+  );
   const clusterByProjectIndex = new Map(
     graphData.clusters.map((cluster) => [cluster.projectIndex, cluster]),
   );
@@ -616,6 +659,31 @@ export default function FeatureFileGraph({ projects }: FeatureFileGraphProps) {
               <p className="mt-2 break-all text-xs leading-5 text-slate-400">
                 {selectedNode.projectPath}
               </p>
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() =>
+                    onAddTargetedFeature({
+                      projectPath: selectedNode.projectPath,
+                      filePath: selectedNode.filePath,
+                      featureName: selectedNode.featureName,
+                    })
+                  }
+                  disabled={!isSelectedNodeInCurrentProject || isSelectedNodeAlreadyTargeted}
+                  className="rounded-full bg-cyan-300 px-4 py-2 text-xs font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
+                >
+                  {isSelectedNodeAlreadyTargeted
+                    ? "Added"
+                    : isSelectedNodeInCurrentProject
+                      ? "Add"
+                      : "Wrong project"}
+                </button>
+                {!isSelectedNodeInCurrentProject ? (
+                  <p className="text-xs text-amber-200">
+                    Switch the chat target project before adding this feature.
+                  </p>
+                ) : null}
+              </div>
             </div>
             <button
               type="button"
@@ -626,9 +694,37 @@ export default function FeatureFileGraph({ projects }: FeatureFileGraphProps) {
             </button>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-            <pre className="whitespace-pre-wrap break-words text-sm leading-6 text-slate-200">
-              {selectedNode.markdown}
-            </pre>
+            <div className="grid gap-5">
+              <section className="grid gap-2">
+                <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">
+                  Variable selector
+                </p>
+                <p className="break-all text-xs leading-5 text-slate-500">
+                  {getParameterFilePathForFeature(selectedNode.filePath)}
+                </p>
+                {matchedParameterFile ? (
+                  <ParameterVariableSelector
+                    key={`${selectedNode.projectPath}:${matchedParameterFile.path}`}
+                    projectPath={selectedNode.projectPath}
+                    parameterFilePath={matchedParameterFile.path}
+                    parameterFile={matchedParameterFile}
+                  />
+                ) : (
+                  <div className="rounded-[1.25rem] border border-dashed border-white/10 bg-slate-900/40 px-4 py-3 text-sm text-slate-400">
+                    No matching parameter file has been loaded for this feature yet.
+                  </div>
+                )}
+              </section>
+
+              <section className="grid gap-2">
+                <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">
+                  Feature file
+                </p>
+                <pre className="whitespace-pre-wrap break-words rounded-[1.25rem] border border-white/10 bg-slate-900/70 px-4 py-3 text-sm leading-6 text-slate-200">
+                  {selectedNode.markdown}
+                </pre>
+              </section>
+            </div>
           </div>
         </aside>
       ) : null}
@@ -1110,6 +1206,16 @@ function extractFeatureFileReferences(markdown: string) {
 
 function normalizeFeatureFilePath(path: string) {
   return path.replace(/\\/g, "/").replace(/^\.\//, "");
+}
+
+function normalizeParameterFilePath(path: string) {
+  return path.replace(/\\/g, "/").replace(/^\.\//, "");
+}
+
+function getParameterFilePathForFeature(featureFilePath: string) {
+  return normalizeFeatureFilePath(featureFilePath)
+    .replace(/^feature_files\//, "parameter_files/")
+    .replace(/\.md$/, ".toml");
 }
 
 function createEdgeId(sourceNodeId: string, targetNodeId: string) {

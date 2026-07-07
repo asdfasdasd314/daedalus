@@ -1,7 +1,7 @@
 # Feature-File Graph Display
 
 ## Summary
-The feature-file graph display turns loaded feature files into a full-screen 2D SVG node map inside the Next.js frontend. Each feature file now carries both its own path and markdown content, becomes a circular node labeled from its first H1, and can draw project-scoped connections to other feature files referenced by path.
+The feature-file graph display turns loaded feature files into a full-screen 2D SVG node map inside the Next.js frontend. Each feature file now carries both its own path and markdown content, becomes a circular node labeled from its first H1, can draw project-scoped connections to other feature files referenced by path, and can be added into the chat panel as a targeted prompt scope.
 
 ## Key Points
 - **Node Labels**: The display reads the first markdown line that starts with `# ` and uses the remaining text as the node name.
@@ -16,6 +16,7 @@ The feature-file graph display turns loaded feature files into a full-screen 2D 
 - **Navigation**: The graph supports wheel panning, drag panning, inertial viewport motion, and zoom controls so the workspace can grow beyond a single screen.
 - **Node Dragging**: Clicking and dragging a node repositions it directly in world space while connection springs and repulsion nudge nearby nodes around it like a simple physics toy.
 - **Node Details**: Clicking a node opens the full feature-file markdown in an overlay panel.
+- **Prompt Targeting**: The right-side node detail panel now exposes an `Add` action that only works when the node belongs to the currently selected chat project, preventing cross-project feature targeting.
 - **HUD Layout**: The graph keeps the load button and collapsible dev panel in the upper-left while a centered top status strip carries the current message, status, project count, and load errors.
 
 ## Relevant Files
@@ -44,3 +45,4 @@ HACKING
 - 2026-07-05: Cross-referenced the graph HUD notes with the current dashboard implementation so the feature file now reflects the centered top status strip and upper-left dev controls accurately.
 - 2026-07-05: Fixed reload-time cluster lookup crashes by keeping the current graph payload mounted during refresh and skipping any transient node or edge whose cluster map has not caught up yet.
 - 2026-07-05: Fixed the right-side feature-file detail panel layout so its markdown scroller uses the remaining panel height and no longer cuts off the bottom of long files.
+- 2026-07-06: Added project-gated node-to-chat targeting so the detail panel can add valid feature files into the prompt-scoping chip row without allowing cross-project selections.

@@ -1,4 +1,11 @@
+export type TargetedFeature = {
+  projectPath: string;
+  filePath: string;
+  featureName: string;
+};
+
 export type AgentChatExchange = {
+  promptId: string;
   directory: string;
   prompt: string;
   reply: string;
@@ -6,6 +13,7 @@ export type AgentChatExchange = {
   model?: string;
   reasoning?: string;
   planningMode?: boolean;
+  targetedFeaturePaths?: string[];
 };
 
 let cachedExchange: AgentChatExchange | null = null;

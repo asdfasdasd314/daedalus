@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from daedalus_daemon import scan_feature_file_projects
+from daedalus_daemon import scan_feature_file_projects, scan_parameter_file_projects
 
 
 class ScanFeatureFileProjectsTests(unittest.TestCase):
@@ -104,6 +104,105 @@ class ScanFeatureFileProjectsTests(unittest.TestCase):
                 [{
                     "path": "feature_files/right.md",
                     "markdown": "right",
+                }],
+            )
+
+
+class ScanParameterFileProjectsTests(unittest.TestCase):
+    def test_returns_two_projects_with_parameter_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+
+            alpha = root / "alpha"
+            beta = root / "beta"
+            (alpha / "parameter_files").mkdir(parents=True)
+            (beta / "parameter_files" / "nested").mkdir(parents=True)
+
+            (alpha / "parameter_files" / "alpha.toml").write_text("alpha = 1", encoding="utf-8")
+            (beta / "parameter_files" / "beta.toml").write_text("beta = 2", encoding="utf-8")
+
+            result = scan_parameter_file_projects(root)
+
+            self.assertEqual(
+                result[str(alpha.resolve())],
+                [{
+                    "path": "parameter_files/alpha.toml",
+                    "toml": "alpha = 1",
+                }],
+            )
+            self.assertEqual(
+                result[str(beta.resolve())],
+                [{
+                    "path": "parameter_files/beta.toml",
+                    "toml": "beta = 2",
+                }],
+            )
+            self.assertEqual(len(result), 2)
+
+    def test_returns_empty_dictionary_when_no_parameter_files_exist(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+
+            self.assertEqual(scan_parameter_file_projects(root), {})
+
+    def test_reads_toml_in_sorted_order_and_ignores_non_toml_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = root / "project"
+            parameter_files = project / "parameter_files"
+            parameter_files.mkdir(parents=True)
+
+            (parameter_files / "b.toml").write_text("bravo = 2", encoding="utf-8")
+            (parameter_files / "a.toml").write_text("alpha = 1", encoding="utf-8")
+            (parameter_files / "notes.md").write_text("ignore me", encoding="utf-8")
+            (parameter_files / "nested").mkdir()
+            (parameter_files / "nested" / "c.toml").write_text("charlie = 3", encoding="utf-8")
+
+            result = scan_parameter_file_projects(root)
+
+            self.assertEqual(
+                result[str(project.resolve())],
+                [
+                    {
+                        "path": "parameter_files/a.toml",
+                        "toml": "alpha = 1",
+                    },
+                    {
+                        "path": "parameter_files/b.toml",
+                        "toml": "bravo = 2",
+                    },
+                    {
+                        "path": "parameter_files/nested/c.toml",
+                        "toml": "charlie = 3",
+                    },
+                ],
+            )
+
+    def test_same_named_projects_do_not_collide(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            left = root / "workspace" / "project"
+            right = root / "archive" / "project"
+            (left / "parameter_files").mkdir(parents=True)
+            (right / "parameter_files").mkdir(parents=True)
+
+            (left / "parameter_files" / "left.toml").write_text("left = true", encoding="utf-8")
+            (right / "parameter_files" / "right.toml").write_text("right = true", encoding="utf-8")
+
+            result = scan_parameter_file_projects(root)
+
+            self.assertEqual(
+                result[str(left.resolve())],
+                [{
+                    "path": "parameter_files/left.toml",
+                    "toml": "left = true",
+                }],
+            )
+            self.assertEqual(
+                result[str(right.resolve())],
+                [{
+                    "path": "parameter_files/right.toml",
+                    "toml": "right = true",
                 }],
             )
 

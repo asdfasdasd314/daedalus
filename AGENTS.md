@@ -30,6 +30,40 @@
 - YOU must append a 1-sentence engineering log to the State Log before marking tasks complete.
 - When debugging, reference the relevant feature files to reduce lookups because the summaries and key points can give you a good macro-understanding without reading thousands of lines
 
+# Parameter File Centralization
+
+Each feature file must have a corresponding parameter file (`.toml`) located in a sibling directory named `parameter_files`. Create the `parameter_files` directory if it does not already exist.
+
+Parameter files are used to centralize feature-level configuration values that may need to be tuned, experimented with, or adjusted without modifying source code. Features should load these values from their parameter file rather than defining them directly in the implementation.
+
+Parameter files act as a read-only source of truth during execution. Source code may read and use parameter values, but must not modify parameter files or persist runtime state back to them.
+
+Good candidates for parameter files include:
+
+* Thresholds and limits
+* Feature toggles
+* Strategy settings
+* Allocation percentages
+* Model architecture settings
+* Hyperparameters
+* Simulation or experiment settings
+* External configuration values
+
+Do not move every constant into a parameter file. Constants that are purely implementation details, fixed mathematical values, formatting values, or values unlikely to ever require tuning should remain in the source code.
+
+Parameter files may be empty. A parameter file should always be created for consistency, but unnecessary parameters should not be added simply to populate the file.
+
+Prefer a minimal parameter file containing only meaningful configuration over a large file filled with implementation constants.
+
+Example:
+
+```toml
+MIN_KALSHI_BALANCE = 20.0
+
+# Simulated backtest latency used to approximate real-world execution conditions
+simulated_network_latency = 150
+```
+
 # 4-Stage Development Lifecycle
 Adhere strictly to the execution style mandated by the active feature file's Dev Mode. Prefix your very first response with `> Active Mode: [Stage]`.
 

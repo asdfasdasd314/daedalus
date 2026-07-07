@@ -11,8 +11,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from daedalus_daemon.communications import (
     AGENT_PROMPT_PURPOSE,
     FEATURE_FILE_LOAD_PURPOSE,
+    PARAMETER_FILE_LOAD_PURPOSE,
     fetch_current_message,
     post_agent_chat,
+    post_parameter_files,
     update_current_message,
 )
 
@@ -94,6 +96,68 @@ class UpdateCurrentMessageTests(unittest.TestCase):
             [{"select": ["message,purpose"], "purpose": [f"eq.{FEATURE_FILE_LOAD_PURPOSE}"], "limit": ["1"]}],
         )
 
+    def test_reads_parameter_message_for_requested_purpose(self):
+        seen_queries: list[dict[str, list[str]]] = []
+
+        def fake_urlopen(http_request):
+            seen_queries.append(parse_qs(urlparse(http_request.full_url).query))
+            return FakeResponse([{"message": "daemon_sent_parameter_files"}])
+
+        with patch("daedalus_daemon.communications.request.urlopen", side_effect=fake_urlopen):
+            message = fetch_current_message(
+                {
+                    "supabaseUrl": "https://example.supabase.co",
+                    "supabaseServiceRoleKey": "service-role",
+                },
+                PARAMETER_FILE_LOAD_PURPOSE,
+            )
+
+        self.assertEqual(message, "daemon_sent_parameter_files")
+        self.assertEqual(
+            seen_queries,
+            [{"select": ["message,purpose"], "purpose": [f"eq.{PARAMETER_FILE_LOAD_PURPOSE}"], "limit": ["1"]}],
+        )
+
+    def test_posts_parameter_files_to_frontend_route(self):
+        seen_methods: list[str] = []
+        request_bodies: list[dict] = []
+
+        def fake_urlopen(http_request):
+            seen_methods.append(http_request.get_method())
+            request_bodies.append(json.loads(http_request.data.decode("utf-8")))
+            return FakeResponse({})
+
+        with patch("daedalus_daemon.communications.request.urlopen", side_effect=fake_urlopen):
+            post_parameter_files(
+                {
+                    "frontendBaseUrl": "http://127.0.0.1:3000",
+                },
+                {
+                    "/workspace/project": [
+                        {
+                            "path": "parameter_files/example.toml",
+                            "toml": "enabled = true",
+                        },
+                    ],
+                },
+            )
+
+        self.assertEqual(seen_methods, ["POST"])
+        self.assertEqual(
+            request_bodies,
+            [{
+                "source": "daemon",
+                "projects": {
+                    "/workspace/project": [
+                        {
+                            "path": "parameter_files/example.toml",
+                            "toml": "enabled = true",
+                        },
+                    ],
+                },
+            }],
+        )
+
     def test_posts_agent_chat_to_frontend_route(self):
         seen_methods: list[str] = []
         request_bodies: list[dict] = []
@@ -108,6 +172,7 @@ class UpdateCurrentMessageTests(unittest.TestCase):
                 {
                     "frontendBaseUrl": "http://127.0.0.1:3000",
                 },
+                "prompt-1",
                 "/workspace/project",
                 "Build the feature",
                 "Here is the reply",
@@ -118,6 +183,7 @@ class UpdateCurrentMessageTests(unittest.TestCase):
             request_bodies,
             [{
                 "source": "daemon",
+                "promptId": "prompt-1",
                 "directory": "/workspace/project",
                 "prompt": "Build the feature",
                 "reply": "Here is the reply",
@@ -125,6 +191,48 @@ class UpdateCurrentMessageTests(unittest.TestCase):
                 "model": "",
                 "reasoning": "",
                 "planningMode": False,
+                "targetedFeaturePaths": [],
+            }],
+        )
+
+    def test_posts_agent_chat_with_targeted_feature_paths(self):
+        request_bodies: list[dict] = []
+
+        def fake_urlopen(http_request):
+            request_bodies.append(json.loads(http_request.data.decode("utf-8")))
+            return FakeResponse({})
+
+        with patch("daedalus_daemon.communications.request.urlopen", side_effect=fake_urlopen):
+            post_agent_chat(
+                {
+                    "frontendBaseUrl": "http://127.0.0.1:3000",
+                },
+                "prompt-2",
+                "/workspace/project",
+                "Build the feature",
+                "Here is the reply",
+                targeted_feature_paths=[
+                    "feature_files/agent-prompt-chat.md",
+                    "feature_files/feature-file-graph-display.md",
+                ],
+            )
+
+        self.assertEqual(
+            request_bodies,
+            [{
+                "source": "daemon",
+                "promptId": "prompt-2",
+                "directory": "/workspace/project",
+                "prompt": "Build the feature",
+                "reply": "Here is the reply",
+                "provider": "codex",
+                "model": "",
+                "reasoning": "",
+                "planningMode": False,
+                "targetedFeaturePaths": [
+                    "feature_files/agent-prompt-chat.md",
+                    "feature_files/feature-file-graph-display.md",
+                ],
             }],
         )
 
