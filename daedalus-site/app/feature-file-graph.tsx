@@ -121,21 +121,207 @@ type NodeDragState = {
   moved: boolean;
 };
 
-type PinchState = {
-  distance: number;
-  midpoint: {
-    x: number;
-    y: number;
-  };
+type ViewPoint = {
+  x: number;
+  y: number;
 };
 
-type NodeTapState = {
-  nodeId: string;
-  pointerId: number;
-  startViewX: number;
-  startViewY: number;
-  moved: boolean;
+type PinchState = {
+  distance: number;
+  midpoint: ViewPoint;
 };
+
+type PinchSession = {
+  anchorViewport: GraphViewport;
+  startDistance: number;
+  startMidpoint: ViewPoint;
+};
+
+type TouchVelocitySample = {
+  at: number;
+  x: number;
+  y: number;
+};
+
+type TouchPanSession = {
+  candidateNodeId: string;
+  moved: boolean;
+  pinchStarted: boolean;
+  pointerId: number;
+  samples: TouchVelocitySample[];
+  startPoint: ViewPoint;
+  latestPoint: ViewPoint;
+};
+
+type SliderDragState = {
+  pointerId: number;
+};
+
+type WorldPoint = {
+  x: number;
+  y: number;
+};
+
+const TOUCH_VELOCITY_WINDOW_MS = 140;
+const TOUCH_VELOCITY_FRAME_MS = 16;
+const TOUCH_VELOCITY_MAX_SAMPLES = 8;
+
+function getZoomRatio(zoom: number) {
+  return (clamp(zoom, MIN_ZOOM, MAX_ZOOM) - MIN_ZOOM) / (MAX_ZOOM - MIN_ZOOM);
+}
+
+function getSliderZoomForClientY(clientY: number, rect: DOMRect) {
+  const ratio = clamp((clientY - rect.top) / rect.height, 0, 1);
+
+  return MAX_ZOOM - ratio * (MAX_ZOOM - MIN_ZOOM);
+}
+
+function appendTouchVelocitySample(
+  samples: TouchVelocitySample[],
+  point: ViewPoint,
+  at: number,
+) {
+  const nextSamples = [
+    ...samples,
+    {
+      at,
+      x: point.x,
+      y: point.y,
+    },
+  ];
+
+  return nextSamples.slice(-TOUCH_VELOCITY_MAX_SAMPLES);
+}
+
+function getTouchVelocity(samples: TouchVelocitySample[]) {
+  if (samples.length < 2) {
+    return {
+      x: 0,
+      y: 0,
+    };
+  }
+
+  const latestSample = samples[samples.length - 1];
+  const earliestSample =
+    [...samples]
+      .reverse()
+      .find(
+        (sample) => latestSample.at - sample.at >= TOUCH_VELOCITY_WINDOW_MS / 2,
+      ) ?? samples[0];
+  const elapsedMs = Math.max(1, latestSample.at - earliestSample.at);
+  const velocityX =
+    ((latestSample.x - earliestSample.x) / elapsedMs) * TOUCH_VELOCITY_FRAME_MS;
+  const velocityY =
+    ((latestSample.y - earliestSample.y) / elapsedMs) * TOUCH_VELOCITY_FRAME_MS;
+
+  return {
+    x: Math.abs(velocityX) < 0.02 ? 0 : velocityX,
+    y: Math.abs(velocityY) < 0.02 ? 0 : velocityY,
+  };
+}
+
+function createTouchPanSession(
+  pointerId: number,
+  point: ViewPoint,
+  candidateNodeId: string,
+  at: number,
+): TouchPanSession {
+  return {
+    candidateNodeId,
+    moved: false,
+    pinchStarted: false,
+    pointerId,
+    samples: [
+      {
+        at,
+        x: point.x,
+        y: point.y,
+      },
+    ],
+    startPoint: point,
+    latestPoint: point,
+  };
+}
+
+function createTouchResumeSession(
+  pointerId: number,
+  point: ViewPoint,
+  at: number,
+): TouchPanSession {
+  return {
+    candidateNodeId: "",
+    moved: true,
+    pinchStarted: true,
+    pointerId,
+    samples: [
+      {
+        at,
+        x: point.x,
+        y: point.y,
+      },
+    ],
+    startPoint: point,
+    latestPoint: point,
+  };
+}
+
+function getPinchSession(
+  pointers: Map<number, ViewPoint>,
+  viewport: GraphViewport,
+): PinchSession | null {
+  const pinchState = getPinchState(pointers);
+
+  if (!pinchState) {
+    return null;
+  }
+
+  return {
+    anchorViewport: {
+      ...viewport,
+      velocityX: 0,
+      velocityY: 0,
+    },
+    startDistance: pinchState.distance,
+    startMidpoint: pinchState.midpoint,
+  };
+}
+
+function getNodeAtViewPoint(
+  nodes: FeatureNode[],
+  point: ViewPoint,
+  viewport: GraphViewport,
+) {
+  const worldPoint = getWorldPoint(point, viewport);
+  const tapPadding = 18 / viewport.zoom;
+
+  for (let index = nodes.length - 1; index >= 0; index -= 1) {
+    const node = nodes[index];
+    const dx = worldPoint.x - node.x;
+    const dy = worldPoint.y - node.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+
+    if (distance <= node.radius + tapPadding) {
+      return node;
+    }
+  }
+
+  return null;
+}
+
+function getRemainingPointer(
+  pointers: Map<number, ViewPoint>,
+): { pointerId: number; point: ViewPoint } | null {
+  const nextPointer = pointers.entries().next().value;
+
+  if (!nextPointer) {
+    return null;
+  }
+
+  return {
+    pointerId: nextPointer[0],
+    point: nextPointer[1],
+  };
+}
 
 export default function FeatureFileGraph({
   onNodeSelect,
@@ -160,9 +346,10 @@ export default function FeatureFileGraph({
     zoom,
   });
   const nodeDragRef = useRef<NodeDragState | null>(null);
-  const nodeTapRef = useRef<NodeTapState | null>(null);
-  const activePointersRef = useRef(new Map<number, { x: number; y: number }>());
-  const pinchRef = useRef<PinchState | null>(null);
+  const touchPanRef = useRef<TouchPanSession | null>(null);
+  const activePointersRef = useRef(new Map<number, ViewPoint>());
+  const pinchSessionRef = useRef<PinchSession | null>(null);
+  const sliderDragRef = useRef<SliderDragState | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
 
   useEffect(() => {
@@ -177,9 +364,10 @@ export default function FeatureFileGraph({
       zoom: nextZoom,
     };
     nodeDragRef.current = null;
-    nodeTapRef.current = null;
+    touchPanRef.current = null;
     activePointersRef.current.clear();
-    pinchRef.current = null;
+    pinchSessionRef.current = null;
+    sliderDragRef.current = null;
     setViewport({
       ...graphData.defaultViewport,
       zoom: nextZoom,
@@ -317,8 +505,18 @@ export default function FeatureFileGraph({
     activePointersRef.current.set(event.pointerId, point);
 
     if (activePointersRef.current.size === 2) {
-      nodeTapRef.current = null;
-      pinchRef.current = getPinchState(activePointersRef.current);
+      if (touchPanRef.current) {
+        touchPanRef.current = {
+          ...touchPanRef.current,
+          candidateNodeId: "",
+          pinchStarted: true,
+        };
+      }
+
+      pinchSessionRef.current = getPinchSession(
+        activePointersRef.current,
+        viewportRef.current,
+      );
       updateViewport({
         ...viewportRef.current,
         isDragging: false,
@@ -334,6 +532,34 @@ export default function FeatureFileGraph({
     }
 
     resetHoverState();
+
+    if (isCoarsePointer || event.pointerType !== "mouse") {
+      const tappedNode = getNodeAtViewPoint(
+        nodesRef.current,
+        point,
+        viewportRef.current,
+      );
+
+      touchPanRef.current = createTouchPanSession(
+        event.pointerId,
+        point,
+        tappedNode?.id ?? "",
+        event.timeStamp,
+      );
+      updateViewport({
+        ...viewportRef.current,
+        isDragging: true,
+        dragMoved: false,
+        dragStartX: point.x,
+        dragStartY: point.y,
+        lastPointerX: point.x,
+        lastPointerY: point.y,
+        velocityX: 0,
+        velocityY: 0,
+      });
+      return;
+    }
+
     updateViewport({
       ...viewportRef.current,
       isDragging: true,
@@ -358,50 +584,41 @@ export default function FeatureFileGraph({
       activePointersRef.current.set(event.pointerId, point);
     }
 
-    if (nodeTapRef.current?.pointerId === event.pointerId) {
-      const movedFarEnough =
-        nodeTapRef.current.moved ||
-        Math.abs(point.x - nodeTapRef.current.startViewX) > DRAG_CLICK_THRESHOLD ||
-        Math.abs(point.y - nodeTapRef.current.startViewY) > DRAG_CLICK_THRESHOLD;
-
-      nodeTapRef.current = {
-        ...nodeTapRef.current,
-        moved: movedFarEnough,
-      };
-    }
-
     if (activePointersRef.current.size === 2) {
-      const previousPinchState = pinchRef.current;
+      const pinchSession =
+        pinchSessionRef.current ??
+        getPinchSession(activePointersRef.current, viewportRef.current);
       const nextPinchState = getPinchState(activePointersRef.current);
 
-      if (!previousPinchState || !nextPinchState) {
-        pinchRef.current = nextPinchState;
+      if (!pinchSession || !nextPinchState) {
+        pinchSessionRef.current = pinchSession;
         return;
       }
 
-      const zoomFactor = nextPinchState.distance / previousPinchState.distance;
-      const midpointDeltaX =
-        nextPinchState.midpoint.x - previousPinchState.midpoint.x;
-      const midpointDeltaY =
-        nextPinchState.midpoint.y - previousPinchState.midpoint.y;
-      const nextZoom = viewportRef.current.zoom * zoomFactor;
+      const nextZoom =
+        pinchSession.anchorViewport.zoom *
+        (nextPinchState.distance / pinchSession.startDistance);
       const zoomedViewport = applyZoomAtPoint(
-        viewportRef.current,
+        pinchSession.anchorViewport,
         clamp(nextZoom, MIN_ZOOM, MAX_ZOOM),
-        nextPinchState.midpoint.x,
-        nextPinchState.midpoint.y,
+        pinchSession.startMidpoint.x,
+        pinchSession.startMidpoint.y,
       );
       const nextViewport = {
         ...zoomedViewport,
-        offsetX: zoomedViewport.offsetX + midpointDeltaX,
-        offsetY: zoomedViewport.offsetY + midpointDeltaY,
+        offsetX:
+          zoomedViewport.offsetX +
+          (nextPinchState.midpoint.x - pinchSession.startMidpoint.x),
+        offsetY:
+          zoomedViewport.offsetY +
+          (nextPinchState.midpoint.y - pinchSession.startMidpoint.y),
         isDragging: false,
         dragMoved: true,
         velocityX: 0,
         velocityY: 0,
       };
 
-      pinchRef.current = nextPinchState;
+      pinchSessionRef.current = pinchSession;
       updateViewport(nextViewport);
 
       if (Math.abs(nextViewport.zoom - zoom) > 0.001) {
@@ -447,6 +664,41 @@ export default function FeatureFileGraph({
       return;
     }
 
+    if (touchPanRef.current?.pointerId === event.pointerId) {
+      const deltaX = point.x - touchPanRef.current.latestPoint.x;
+      const deltaY = point.y - touchPanRef.current.latestPoint.y;
+      const movedFarEnough =
+        touchPanRef.current.moved ||
+        Math.abs(point.x - touchPanRef.current.startPoint.x) >
+          DRAG_CLICK_THRESHOLD ||
+        Math.abs(point.y - touchPanRef.current.startPoint.y) >
+          DRAG_CLICK_THRESHOLD;
+
+      touchPanRef.current = {
+        ...touchPanRef.current,
+        candidateNodeId: movedFarEnough ? "" : touchPanRef.current.candidateNodeId,
+        latestPoint: point,
+        moved: movedFarEnough,
+        samples: appendTouchVelocitySample(
+          touchPanRef.current.samples,
+          point,
+          event.timeStamp,
+        ),
+      };
+
+      updateViewport({
+        ...viewportRef.current,
+        offsetX: viewportRef.current.offsetX + deltaX,
+        offsetY: viewportRef.current.offsetY + deltaY,
+        velocityX: 0,
+        velocityY: 0,
+        dragMoved: movedFarEnough,
+        lastPointerX: point.x,
+        lastPointerY: point.y,
+      });
+      return;
+    }
+
     if (!viewportRef.current.isDragging) {
       return;
     }
@@ -471,15 +723,13 @@ export default function FeatureFileGraph({
   }
 
   function handlePointerEnd(event: ReactPointerEvent<SVGSVGElement>) {
+    const point = getViewPoint(event, svgRef.current);
+
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
 
     activePointersRef.current.delete(event.pointerId);
-
-    if (activePointersRef.current.size < 2) {
-      pinchRef.current = null;
-    }
 
     if (nodeDragRef.current) {
       const draggedNode = nodeDragRef.current;
@@ -498,18 +748,94 @@ export default function FeatureFileGraph({
       }
     }
 
-    const tappedNode = nodeTapRef.current;
+    const touchSession = touchPanRef.current;
 
-    if (tappedNode?.pointerId === event.pointerId) {
-      nodeTapRef.current = null;
+    if (touchSession?.pointerId === event.pointerId) {
+      touchPanRef.current = null;
 
-      if (!tappedNode.moved && activePointersRef.current.size === 0) {
-        const selectedNode = nodesRef.current.find(
-          (node) => node.id === tappedNode.nodeId,
+      if (activePointersRef.current.size < 2) {
+        pinchSessionRef.current = null;
+      }
+
+      if (
+        !touchSession.moved &&
+        !touchSession.pinchStarted &&
+        activePointersRef.current.size === 0 &&
+        point
+      ) {
+        const releasedNode = getNodeAtViewPoint(
+          nodesRef.current,
+          point,
+          viewportRef.current,
         );
 
-        if (selectedNode) {
-          selectNode(selectedNode);
+        if (releasedNode && releasedNode.id === touchSession.candidateNodeId) {
+          selectNode(releasedNode);
+          return;
+        }
+      }
+
+      if (touchSession.pinchStarted && activePointersRef.current.size === 1) {
+        const remainingPointer = getRemainingPointer(activePointersRef.current);
+
+        if (remainingPointer) {
+          touchPanRef.current = createTouchResumeSession(
+            remainingPointer.pointerId,
+            remainingPointer.point,
+            event.timeStamp,
+          );
+          updateViewport({
+            ...viewportRef.current,
+            isDragging: true,
+            dragMoved: true,
+            dragStartX: remainingPointer.point.x,
+            dragStartY: remainingPointer.point.y,
+            lastPointerX: remainingPointer.point.x,
+            lastPointerY: remainingPointer.point.y,
+            velocityX: 0,
+            velocityY: 0,
+          });
+          return;
+        }
+      }
+
+      const touchVelocity = getTouchVelocity(touchSession.samples);
+
+      updateViewport({
+        ...viewportRef.current,
+        isDragging: false,
+        velocityX: touchSession.pinchStarted ? 0 : touchVelocity.x,
+        velocityY: touchSession.pinchStarted ? 0 : touchVelocity.y,
+      });
+      return;
+    }
+
+    if (activePointersRef.current.size < 2) {
+      const shouldResumeTouchPan =
+        pinchSessionRef.current && activePointersRef.current.size === 1;
+      pinchSessionRef.current = null;
+
+      if (shouldResumeTouchPan) {
+        const remainingPointer = getRemainingPointer(activePointersRef.current);
+
+        if (remainingPointer) {
+          touchPanRef.current = createTouchResumeSession(
+            remainingPointer.pointerId,
+            remainingPointer.point,
+            event.timeStamp,
+          );
+          updateViewport({
+            ...viewportRef.current,
+            isDragging: true,
+            dragMoved: true,
+            dragStartX: remainingPointer.point.x,
+            dragStartY: remainingPointer.point.y,
+            lastPointerX: remainingPointer.point.x,
+            lastPointerY: remainingPointer.point.y,
+            velocityX: 0,
+            velocityY: 0,
+          });
+          return;
         }
       }
     }
@@ -528,20 +854,13 @@ export default function FeatureFileGraph({
     event: ReactPointerEvent<SVGGElement>,
     nodeId: string,
   ) {
-    const point = getViewPoint(event, svgRef.current);
-
-    if (!point) {
+    if (isCoarsePointer || event.pointerType !== "mouse") {
       return;
     }
 
-    if (isCoarsePointer || event.pointerType !== "mouse") {
-      nodeTapRef.current = {
-        nodeId,
-        pointerId: event.pointerId,
-        startViewX: point.x,
-        startViewY: point.y,
-        moved: false,
-      };
+    const point = getViewPoint(event, svgRef.current);
+
+    if (!point) {
       return;
     }
 
@@ -609,6 +928,57 @@ export default function FeatureFileGraph({
     });
   }
 
+  function handleZoomSliderPointerDown(
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    sliderDragRef.current = {
+      pointerId: event.pointerId,
+    };
+    updateZoom(
+      getSliderZoomForClientY(
+        event.clientY,
+        event.currentTarget.getBoundingClientRect(),
+      ),
+      VIEWPORT_WIDTH / 2,
+      VIEWPORT_HEIGHT / 2,
+    );
+  }
+
+  function handleZoomSliderPointerMove(
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) {
+    if (sliderDragRef.current?.pointerId !== event.pointerId) {
+      return;
+    }
+
+    event.preventDefault();
+    updateZoom(
+      getSliderZoomForClientY(
+        event.clientY,
+        event.currentTarget.getBoundingClientRect(),
+      ),
+      VIEWPORT_WIDTH / 2,
+      VIEWPORT_HEIGHT / 2,
+    );
+  }
+
+  function handleZoomSliderPointerEnd(
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) {
+    if (sliderDragRef.current?.pointerId !== event.pointerId) {
+      return;
+    }
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    sliderDragRef.current = null;
+  }
+
   function selectNode(node: FeatureNode) {
     updateViewport({
       ...viewportRef.current,
@@ -661,6 +1031,7 @@ export default function FeatureFileGraph({
 
       return leftPriority - rightPriority;
     });
+  const zoomRatio = getZoomRatio(zoom);
 
   return (
     <div className="absolute inset-0 bg-[#05070c]">
@@ -675,7 +1046,6 @@ export default function FeatureFileGraph({
         onWheel={handleWheel}
         onPointerCancel={handlePointerEnd}
         onPointerDown={handlePointerDown}
-        onPointerLeave={handlePointerEnd}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerEnd}
       >
@@ -855,22 +1225,29 @@ export default function FeatureFileGraph({
 
       <div className="pointer-events-auto absolute right-3 top-1/2 flex -translate-y-1/2 flex-col items-center gap-3 rounded-[1.5rem] border border-white/10 bg-slate-950/82 px-3 py-4 shadow-[0_20px_60px_rgba(2,6,23,0.45)] backdrop-blur">
         <span className="text-sm font-semibold text-white">+</span>
-        <input
-          type="range"
-          min={MIN_ZOOM}
-          max={MAX_ZOOM}
-          step="0.01"
-          value={zoom}
-          onChange={(event) =>
-            updateZoom(
-              Number(event.target.value),
-              VIEWPORT_WIDTH / 2,
-              VIEWPORT_HEIGHT / 2,
-            )
-          }
-          className="workspace-zoom-slider h-52 w-8 accent-amber-300"
+        <div
+          role="slider"
           aria-label="Graph zoom"
-        />
+          aria-valuemin={MIN_ZOOM}
+          aria-valuemax={MAX_ZOOM}
+          aria-valuenow={zoom}
+          tabIndex={0}
+          onPointerCancel={handleZoomSliderPointerEnd}
+          onPointerDown={handleZoomSliderPointerDown}
+          onPointerMove={handleZoomSliderPointerMove}
+          onPointerUp={handleZoomSliderPointerEnd}
+          className="relative h-52 w-10 touch-none"
+        >
+          <div className="absolute left-1/2 top-0 h-full w-1.5 -translate-x-1/2 rounded-full bg-white/15" />
+          <div
+            className="absolute bottom-0 left-1/2 w-1.5 -translate-x-1/2 rounded-full bg-gradient-to-t from-amber-500 to-amber-200"
+            style={{ height: `${Math.max(zoomRatio * 100, 4)}%` }}
+          />
+          <div
+            className="absolute left-1/2 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-slate-900 bg-amber-50 shadow-[0_0_0_2px_rgba(245,158,11,0.25)]"
+            style={{ top: `${(1 - zoomRatio) * 100}%` }}
+          />
+        </div>
         <span className="text-sm font-semibold text-white">-</span>
         <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold text-slate-200">
           {Math.round(zoom * 100)}%
@@ -1287,12 +1664,9 @@ function getViewPoint(
 }
 
 function getWorldPoint(
-  point: {
-    x: number;
-    y: number;
-  },
+  point: ViewPoint,
   viewport: GraphViewport,
-) {
+): WorldPoint {
   return {
     x: (point.x - viewport.offsetX) / viewport.zoom,
     y: (point.y - viewport.offsetY) / viewport.zoom,
@@ -1300,7 +1674,7 @@ function getWorldPoint(
 }
 
 function getPinchState(
-  pointers: Map<number, { x: number; y: number }>,
+  pointers: Map<number, ViewPoint>,
 ): PinchState | null {
   const points = [...pointers.values()];
 

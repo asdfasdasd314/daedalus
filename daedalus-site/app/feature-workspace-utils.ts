@@ -70,3 +70,63 @@ export function getFeatureTagsForPaths(
     };
   });
 }
+
+function getSharedProjectRoot(projectDirectories: string[]) {
+  if (projectDirectories.length === 0) {
+    return "";
+  }
+
+  const sharedSegments = projectDirectories[0].split("/").filter(Boolean);
+
+  for (const projectDirectory of projectDirectories.slice(1)) {
+    const segments = projectDirectory.split("/").filter(Boolean);
+
+    while (
+      sharedSegments.length > 0 &&
+      sharedSegments.some((segment, index) => segments[index] !== segment)
+    ) {
+      sharedSegments.pop();
+    }
+  }
+
+  return sharedSegments.join("/");
+}
+
+export function getProjectLabel(
+  projectDirectory: string,
+  projectDirectories: string[],
+) {
+  const normalizedDirectory = projectDirectory.replace(/\\/g, "/");
+  const sharedRoot = getSharedProjectRoot(projectDirectories);
+
+  if (!sharedRoot) {
+    return normalizedDirectory;
+  }
+
+  const rootPrefix = `/${sharedRoot}/`;
+  const rootlessDirectory = normalizedDirectory.startsWith(rootPrefix)
+    ? normalizedDirectory.slice(rootPrefix.length)
+    : normalizedDirectory.replace(new RegExp(`^/?${sharedRoot}/?`), "");
+
+  return rootlessDirectory || normalizedDirectory.split("/").filter(Boolean).at(-1) || normalizedDirectory;
+}
+
+export function getCompactProjectLabel(
+  projectDirectory: string,
+  projectDirectories: string[],
+) {
+  const relativeLabel = getProjectLabel(projectDirectory, projectDirectories);
+  const segments = relativeLabel.split("/").filter(Boolean);
+
+  if (segments.length === 0) {
+    return relativeLabel;
+  }
+
+  if (segments.length === 1) {
+    return segments[0];
+  }
+
+  const trailingSegments = segments.slice(-2).join("/");
+
+  return `.../${trailingSegments}`;
+}

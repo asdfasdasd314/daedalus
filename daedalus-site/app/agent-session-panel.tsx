@@ -7,7 +7,11 @@ import type {
 } from "@/lib/agent-chat-cache";
 import type { AgentModelsConfig } from "@/lib/agent-models";
 import type { FeatureFileProjects } from "@/lib/feature-file-cache";
-import { getFeatureOptionsForProject } from "./feature-workspace-utils";
+import {
+  getCompactProjectLabel,
+  getFeatureOptionsForProject,
+  getProjectLabel,
+} from "./feature-workspace-utils";
 
 type AgentPromptQueueStatus =
   | "queued"
@@ -88,6 +92,14 @@ export default function AgentSessionPanel({
     projects,
     selectedProjectDirectory,
   );
+  const compactProjectLabel = getCompactProjectLabel(
+    selectedProjectDirectory,
+    availableProjectDirectories,
+  );
+  const selectedProjectLabel = getProjectLabel(
+    selectedProjectDirectory,
+    availableProjectDirectories,
+  );
   const selectableFeatures = availableFeatures.filter(
     (feature) =>
       !targetedFeatures.some(
@@ -130,25 +142,41 @@ export default function AgentSessionPanel({
       >
         Target project
       </label>
-      <select
-        id="agent-project"
-        value={selectedProjectDirectory}
-        onChange={(event) => onSelectedProjectDirectoryChange(event.target.value)}
-        className="agent-chat-scrollbar rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
-      >
-        {availableProjectDirectories.length > 0 ? (
-          availableProjectDirectories.map((projectDirectory) => (
-            <option key={projectDirectory} value={projectDirectory}>
-              {projectDirectory}
+      <div className="relative min-w-0">
+        <select
+          id="agent-project"
+          value={selectedProjectDirectory}
+          onChange={(event) =>
+            onSelectedProjectDirectoryChange(event.target.value)
+          }
+          title={selectedProjectLabel}
+          className="agent-chat-scrollbar w-full min-w-0 appearance-none rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 pr-12 text-sm text-transparent outline-none"
+        >
+          {availableProjectDirectories.length > 0 ? (
+            availableProjectDirectories.map((projectDirectory) => (
+              <option key={projectDirectory} value={projectDirectory}>
+                {getProjectLabel(projectDirectory, availableProjectDirectories)}
+              </option>
+            ))
+          ) : (
+            <option value={defaultProjectDirectory}>
+              {getProjectLabel(defaultProjectDirectory, [defaultProjectDirectory])}
             </option>
-          ))
-        ) : (
-          <option value={defaultProjectDirectory}>{defaultProjectDirectory}</option>
-        )}
-      </select>
+          )}
+        </select>
+        <span
+          className="pointer-events-none absolute inset-y-0 left-4 right-12 flex min-w-0 items-center truncate text-sm text-slate-100"
+          title={selectedProjectLabel}
+        >
+          {compactProjectLabel}
+        </span>
+        <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-xs text-slate-400">
+          v
+        </span>
+      </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <div className="grid gap-2">
+        <div className="grid min-w-0 gap-2">
           <label
             htmlFor="agent-model"
             className="text-[11px] uppercase tracking-[0.28em] text-slate-400"
@@ -159,7 +187,7 @@ export default function AgentSessionPanel({
             id="agent-model"
             value={selectedModelId}
             onChange={(event) => onSelectModel(event.target.value)}
-            className="agent-chat-scrollbar rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
+            className="agent-chat-scrollbar min-w-0 rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
           >
             {agentModels.codex.models.map((model) => (
               <option key={model.id} value={model.id}>
@@ -169,7 +197,7 @@ export default function AgentSessionPanel({
           </select>
         </div>
 
-        <div className="grid gap-2">
+        <div className="grid min-w-0 gap-2">
           <label
             htmlFor="agent-reasoning"
             className="text-[11px] uppercase tracking-[0.28em] text-slate-400"
@@ -180,7 +208,7 @@ export default function AgentSessionPanel({
             id="agent-reasoning"
             value={selectedReasoning}
             onChange={(event) => onSelectedReasoningChange(event.target.value)}
-            className="agent-chat-scrollbar rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm capitalize text-slate-100 outline-none"
+            className="agent-chat-scrollbar min-w-0 rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm capitalize text-slate-100 outline-none"
           >
             {reasoningOptions.map((reasoning) => (
               <option key={reasoning} value={reasoning}>
@@ -205,11 +233,11 @@ export default function AgentSessionPanel({
         <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">
           Feature scope
         </p>
-      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
-        <select
-          value={effectiveSelectedFeaturePath}
-          onChange={(event) => setSelectedFeaturePath(event.target.value)}
-            className="agent-chat-scrollbar min-w-0 flex-1 rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
+        <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+          <select
+            value={effectiveSelectedFeaturePath}
+            onChange={(event) => setSelectedFeaturePath(event.target.value)}
+            className="agent-chat-scrollbar min-w-0 rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
           >
             <option value="">Select a feature</option>
             {selectableFeatures.map((feature) => (
@@ -265,10 +293,10 @@ export default function AgentSessionPanel({
         value={promptText}
         onChange={(event) => onPromptTextChange(event.target.value)}
         placeholder="Describe the feature you want the daemon to create..."
-        className="agent-chat-scrollbar min-h-28 rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-500"
+        className="agent-chat-scrollbar min-h-28 min-w-0 rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-500"
       />
 
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex min-w-0 flex-wrap items-center gap-3">
         <button
           type="button"
           onClick={onSendPrompt}
@@ -285,7 +313,7 @@ export default function AgentSessionPanel({
           Clear chat
         </button>
         {!isAgentChatCleared ? (
-          <p className="text-sm text-slate-300">
+          <p className="min-w-0 break-words text-sm text-slate-300">
             {promptQueueStatusText ||
               `The daemon will use ${selectedModelId} with ${selectedReasoning} reasoning.`}
           </p>
@@ -319,26 +347,29 @@ export default function AgentSessionPanel({
       ) : null}
 
       {!isAgentChatCleared && agentPromptMessage ? (
-        <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
+        <p className="min-w-0 break-words text-xs uppercase tracking-[0.22em] text-slate-500">
           Agent channel: {formatAgentPromptMessage(agentPromptMessage)}
         </p>
       ) : null}
 
       {!isAgentChatCleared && latestChat ? (
-        <div className="grid gap-3 pt-2">
+        <div className="grid min-w-0 gap-3 pt-2">
           <div className="flex min-w-0 justify-end">
-            <div className="max-w-[85%] break-words rounded-[1.5rem] rounded-br-md bg-cyan-300 px-4 py-3 text-sm text-slate-950">
+            <div className="w-full max-w-[19rem] min-w-0 break-words rounded-[1.5rem] rounded-br-md bg-cyan-300 px-4 py-3 text-sm text-slate-950 sm:max-w-[85%]">
               <p>{latestChat.prompt}</p>
               {latestChat.model ? (
-                <p className="mt-2 text-xs text-slate-700">
-                  {latestChat.model} / {latestChat.reasoning}
-                  {latestChat.planningMode ? " / planning" : ""}
+                <p className="mt-2 break-words text-xs leading-5 text-slate-700">
+                  <span className="block">{latestChat.model}</span>
+                  <span className="block">
+                    {latestChat.reasoning}
+                    {latestChat.planningMode ? " / planning" : ""}
+                  </span>
                 </p>
               ) : null}
             </div>
           </div>
           <div className="flex min-w-0 justify-start">
-            <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-[1.5rem] rounded-bl-md border border-white/10 bg-slate-900/90 px-4 py-3 text-sm text-slate-100">
+            <div className="w-full max-w-[19rem] min-w-0 whitespace-pre-wrap break-words rounded-[1.5rem] rounded-bl-md border border-white/10 bg-slate-900/90 px-4 py-3 text-sm text-slate-100 sm:max-w-[85%]">
               {latestChat.reply || "Waiting for daemon reply..."}
             </div>
           </div>
