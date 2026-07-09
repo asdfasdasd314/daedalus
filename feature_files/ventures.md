@@ -10,6 +10,7 @@ The Ventures feature adds a Supabase-backed tracking surface to the graph worksp
 - **Browser REST Flow**: The frontend uses direct Supabase REST `fetch` calls with the session access token for venture list, create, update, and delete operations.
 - **Three-State Progress**: Venture progress is tracked with the `venture_progress_state` enum values `idle`, `in progress`, and `completed`.
 - **Project Tagging**: Ventures can be tagged to the project directory they belong to and that tag can be edited from the Ventures tab.
+- **Width Containment**: The ventures drawer treats itself as the width boundary so selects, text inputs, chip rows, and details panels stay clipped to the sheet instead of leaking past the right edge on mobile.
 - **Feature Tagging**: Each venture can store multiple tagged feature-file paths from its selected project, using the same loaded Daedalus feature inventory that powers chat targeting.
 - **Details Field**: Ventures can include a lightweight freeform details section that is created, edited, and loaded from Supabase.
 - **Picker-Based Viewing**: The Ventures tab uses project dropdowns and a single selected-venture detail panel so the user can inspect one venture at a time instead of scrolling a full list.
@@ -37,3 +38,4 @@ HACKING
 - 2026-07-07: Added multi-feature tagging to ventures with a new Supabase array column plus project-scoped feature selectors in the create and edit flows.
 - 2026-07-08: Scoped Ventures to authenticated user-owned rows so each signed-in user only sees and mutates their own venture data.
 - 2026-07-09: Moved Ventures out of the old left-side tab strip and into a graph-triggered drawer that expands to near-full-screen on mobile while keeping the same Supabase-backed CRUD and tagging flows.
+- 2026-07-09: Clamped the ventures drawer inputs and tag rows to the drawer width and switched venture project labels back to the same root-relative naming used by the shared feature tagger.

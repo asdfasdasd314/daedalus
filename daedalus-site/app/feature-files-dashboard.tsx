@@ -22,6 +22,7 @@ import {
   getFeatureOptionsForProject,
   getFeatureTagsForPaths,
   getParameterFilePathForFeature,
+  getProjectLabel,
   normalizeFeatureFilePath,
   normalizeParameterFilePath,
 } from "./feature-workspace-utils";
@@ -1812,7 +1813,7 @@ export default function FeatureFilesDashboard({
         ) : null}
 
         {venturesDrawerOpen ? (
-          <aside className={venturesDrawerClassName}>
+          <aside className={`${venturesDrawerClassName} overflow-x-hidden`}>
             <div className="flex items-start justify-between gap-4 border-b border-white/10 px-4 py-4 sm:px-5">
               <div>
                 <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">
@@ -1835,8 +1836,8 @@ export default function FeatureFilesDashboard({
             </div>
 
             <div className="agent-chat-scrollbar min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-4 sm:px-5">
-              <div className="grid gap-4">
-                <div className="grid gap-3 rounded-[1.5rem] border border-white/10 bg-black/25 p-4">
+              <div className="grid min-w-0 max-w-full gap-4 overflow-x-hidden">
+                <div className="grid min-w-0 max-w-full gap-3 overflow-x-hidden rounded-[1.5rem] border border-white/10 bg-black/25 p-4">
                   <label
                     htmlFor="venture-name"
                     className="text-[11px] uppercase tracking-[0.28em] text-slate-400"
@@ -1849,7 +1850,7 @@ export default function FeatureFilesDashboard({
                     value={newVentureName}
                     onChange={(event) => setNewVentureName(event.target.value)}
                     placeholder="Add the next venture to track..."
-                    className="rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-500"
+                    className="w-full max-w-full min-w-0 rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-500"
                   />
                   <label
                     htmlFor="venture-project"
@@ -1863,37 +1864,42 @@ export default function FeatureFilesDashboard({
                     onChange={(event) =>
                       updateNewVentureProjectDirectory(event.target.value)
                     }
-                    className="agent-chat-scrollbar rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
+                    className="agent-chat-scrollbar w-full max-w-full min-w-0 rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
                   >
                     <option value="">No project tag</option>
                     {availableProjectDirectories.length > 0 ? (
                       availableProjectDirectories.map((projectDirectory) => (
                         <option key={projectDirectory} value={projectDirectory}>
-                          {projectDirectory}
+                          {getProjectLabel(
+                            projectDirectory,
+                            availableProjectDirectories,
+                          )}
                         </option>
                       ))
                     ) : (
                       <option value={DEFAULT_PROJECT_DIRECTORY}>
-                        {DEFAULT_PROJECT_DIRECTORY}
+                        {getProjectLabel(DEFAULT_PROJECT_DIRECTORY, [
+                          DEFAULT_PROJECT_DIRECTORY,
+                        ])}
                       </option>
                     )}
                   </select>
                   {newVentureProjectDirectory ? (
-                    <div className="grid gap-3">
+                    <div className="grid min-w-0 max-w-full gap-3">
                       <label
                         htmlFor="venture-feature-tag"
                         className="text-[11px] uppercase tracking-[0.28em] text-slate-400"
                       >
                         Tagged features
                       </label>
-                      <div className="flex flex-wrap items-center gap-3">
+                      <div className="flex min-w-0 max-w-full flex-wrap items-center gap-3 overflow-x-hidden">
                         <select
                           id="venture-feature-tag"
                           value={newVentureSelectedFeaturePath}
                           onChange={(event) =>
                             setNewVentureSelectedFeaturePath(event.target.value)
                           }
-                          className="agent-chat-scrollbar min-w-0 flex-1 rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
+                          className="agent-chat-scrollbar w-full max-w-full min-w-0 flex-1 rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
                         >
                           <option value="">Select a feature to tag</option>
                           {newVentureFeatureOptions.map((feature) => (
@@ -1912,7 +1918,7 @@ export default function FeatureFilesDashboard({
                         </button>
                       </div>
                       {newVentureFeatureFilePaths.length > 0 ? (
-                        <div className="flex flex-wrap gap-2 rounded-[1.25rem] border border-white/10 bg-slate-900/50 p-3">
+                        <div className="flex min-w-0 max-w-full flex-wrap gap-2 overflow-x-hidden rounded-[1.25rem] border border-white/10 bg-slate-900/50 p-3">
                           {getFeatureTagsForPaths(
                             projects ?? {},
                             newVentureFeatureFilePaths,
@@ -1956,7 +1962,7 @@ export default function FeatureFilesDashboard({
                     value={newVentureDetails}
                     onChange={(event) => setNewVentureDetails(event.target.value)}
                     placeholder="Add a few details about this venture..."
-                    className="agent-chat-scrollbar min-h-24 rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-500"
+                    className="agent-chat-scrollbar min-h-24 w-full max-w-full min-w-0 rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-500"
                   />
                   <button
                     type="button"
@@ -1995,8 +2001,8 @@ export default function FeatureFilesDashboard({
                     </p>
                   </div>
                 ) : (
-                  <div className="grid gap-4">
-                    <div className="grid gap-2">
+                  <div className="grid min-w-0 max-w-full gap-4 overflow-x-hidden">
+                    <div className="grid min-w-0 gap-2">
                       <label
                         htmlFor="selected-venture"
                         className="text-[11px] uppercase tracking-[0.28em] text-slate-400"
@@ -2007,7 +2013,7 @@ export default function FeatureFilesDashboard({
                         id="selected-venture"
                         value={selectedVenture?.id ?? ""}
                         onChange={(event) => setSelectedVentureId(event.target.value)}
-                        className="agent-chat-scrollbar rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
+                        className="agent-chat-scrollbar w-full max-w-full min-w-0 rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
                       >
                         {ventures.map((venture) => (
                           <option key={venture.id} value={venture.id}>
@@ -2023,10 +2029,10 @@ export default function FeatureFilesDashboard({
 
                     {selectedVenture ? (
                       <div
-                        className={`rounded-[1.5rem] border p-4 shadow-[0_20px_50px_rgba(2,6,23,0.3)] ${getVentureCardClassName(selectedVenture.progressState)}`}
+                        className={`min-w-0 max-w-full overflow-x-hidden rounded-[1.5rem] border p-4 shadow-[0_20px_50px_rgba(2,6,23,0.3)] ${getVentureCardClassName(selectedVenture.progressState)}`}
                       >
                         {editingVentureId === selectedVenture.id ? (
-                          <div className="grid gap-3">
+                          <div className="grid min-w-0 max-w-full gap-3 overflow-x-hidden">
                             <label
                               htmlFor={`venture-edit-name-${selectedVenture.id}`}
                               className="text-[11px] uppercase tracking-[0.28em] text-slate-400"
@@ -2040,7 +2046,7 @@ export default function FeatureFilesDashboard({
                               onChange={(event) =>
                                 setEditingVentureName(event.target.value)
                               }
-                              className="rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
+                              className="w-full max-w-full min-w-0 rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
                             />
                             <label
                               htmlFor={`venture-edit-project-${selectedVenture.id}`}
@@ -2056,7 +2062,7 @@ export default function FeatureFilesDashboard({
                                   event.target.value,
                                 )
                               }
-                              className="agent-chat-scrollbar rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
+                              className="agent-chat-scrollbar w-full max-w-full min-w-0 rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
                             >
                               <option value="">No project tag</option>
                               {editingVentureProjectDirectory &&
@@ -2064,7 +2070,10 @@ export default function FeatureFilesDashboard({
                                 editingVentureProjectDirectory,
                               ) ? (
                                 <option value={editingVentureProjectDirectory}>
-                                  {editingVentureProjectDirectory}
+                                  {getProjectLabel(
+                                    editingVentureProjectDirectory,
+                                    availableProjectDirectories,
+                                  )}
                                 </option>
                               ) : null}
                               {availableProjectDirectories.length > 0 ? (
@@ -2074,13 +2083,18 @@ export default function FeatureFilesDashboard({
                                       key={projectDirectory}
                                       value={projectDirectory}
                                     >
-                                      {projectDirectory}
+                                      {getProjectLabel(
+                                        projectDirectory,
+                                        availableProjectDirectories,
+                                      )}
                                     </option>
                                   ),
                                 )
                               ) : (
                                 <option value={DEFAULT_PROJECT_DIRECTORY}>
-                                  {DEFAULT_PROJECT_DIRECTORY}
+                                  {getProjectLabel(DEFAULT_PROJECT_DIRECTORY, [
+                                    DEFAULT_PROJECT_DIRECTORY,
+                                  ])}
                                 </option>
                               )}
                             </select>
@@ -2091,8 +2105,8 @@ export default function FeatureFilesDashboard({
                               Tagged features
                             </label>
                             {editingVentureProjectDirectory ? (
-                              <div className="grid gap-3">
-                                <div className="flex flex-wrap items-center gap-3">
+                              <div className="grid min-w-0 max-w-full gap-3">
+                                <div className="flex min-w-0 max-w-full flex-wrap items-center gap-3 overflow-x-hidden">
                                   <select
                                     id={`venture-edit-feature-${selectedVenture.id}`}
                                     value={editingVentureSelectedFeaturePath}
@@ -2101,7 +2115,7 @@ export default function FeatureFilesDashboard({
                                         event.target.value,
                                       )
                                     }
-                                    className="agent-chat-scrollbar min-w-0 flex-1 rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
+                                    className="agent-chat-scrollbar w-full max-w-full min-w-0 flex-1 rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
                                   >
                                     <option value="">Select a feature to tag</option>
                                     {editingVentureFeatureOptions.map((feature) => (
@@ -2123,7 +2137,7 @@ export default function FeatureFilesDashboard({
                                   </button>
                                 </div>
                                 {editingVentureFeatureFilePaths.length > 0 ? (
-                                  <div className="flex flex-wrap gap-2 rounded-[1.25rem] border border-white/10 bg-slate-900/50 p-3">
+                                  <div className="flex min-w-0 max-w-full flex-wrap gap-2 overflow-x-hidden rounded-[1.25rem] border border-white/10 bg-slate-900/50 p-3">
                                     {getFeatureTagsForPaths(
                                       projects ?? {},
                                       editingVentureFeatureFilePaths,
@@ -2174,7 +2188,7 @@ export default function FeatureFilesDashboard({
                               onChange={(event) =>
                                 setEditingVentureDetails(event.target.value)
                               }
-                              className="agent-chat-scrollbar min-h-24 rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
+                              className="agent-chat-scrollbar min-h-24 w-full max-w-full min-w-0 rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
                             />
                             <div className="flex flex-wrap items-center gap-3">
                               <button
@@ -2202,7 +2216,7 @@ export default function FeatureFilesDashboard({
                             </div>
                           </div>
                         ) : (
-                          <div className="grid gap-4">
+                          <div className="grid min-w-0 max-w-full gap-4 overflow-x-hidden">
                             <div className="flex flex-wrap items-start justify-between gap-3">
                               <div className="space-y-2">
                                 <p
@@ -2226,8 +2240,13 @@ export default function FeatureFilesDashboard({
                                 <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
                                   Project
                                 </p>
-                                <p className="break-all rounded-full border border-white/10 bg-slate-900/60 px-3 py-2 text-xs text-slate-300">
-                                  {selectedVenture.projectDirectory ||
+                                <p className="min-w-0 max-w-full break-words rounded-full border border-white/10 bg-slate-900/60 px-3 py-2 text-xs text-slate-300">
+                                  {(selectedVenture.projectDirectory
+                                    ? getProjectLabel(
+                                        selectedVenture.projectDirectory,
+                                        availableProjectDirectories,
+                                      )
+                                    : null) ||
                                     "No project tagged"}
                                 </p>
                               </div>
@@ -2250,7 +2269,7 @@ export default function FeatureFilesDashboard({
                                   disabled={
                                     updatingProgressVentureId === selectedVenture.id
                                   }
-                                  className="agent-chat-scrollbar rounded-full border border-white/10 bg-slate-900/80 px-4 py-2 text-sm text-slate-100 outline-none disabled:cursor-not-allowed disabled:bg-slate-800"
+                                  className="agent-chat-scrollbar w-full max-w-full min-w-0 rounded-full border border-white/10 bg-slate-900/80 px-4 py-2 text-sm text-slate-100 outline-none disabled:cursor-not-allowed disabled:bg-slate-800"
                                 >
                                   {VENTURE_PROGRESS_STATES.map((progressState) => (
                                     <option key={progressState} value={progressState}>
@@ -2265,7 +2284,7 @@ export default function FeatureFilesDashboard({
                               <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
                                 Details
                               </p>
-                              <div className="whitespace-pre-wrap rounded-[1.25rem] border border-white/10 bg-slate-900/55 px-4 py-3 text-sm leading-6 text-slate-200">
+                              <div className="min-w-0 max-w-full whitespace-pre-wrap break-words rounded-[1.25rem] border border-white/10 bg-slate-900/55 px-4 py-3 text-sm leading-6 text-slate-200">
                                 {selectedVenture.details || "No details added yet."}
                               </div>
                             </div>
@@ -2275,7 +2294,7 @@ export default function FeatureFilesDashboard({
                                 Tagged features
                               </p>
                               {selectedVentureFeatureTags.length > 0 ? (
-                                <div className="flex flex-wrap gap-2 rounded-[1.25rem] border border-white/10 bg-slate-900/55 p-3">
+                                <div className="flex min-w-0 max-w-full flex-wrap gap-2 overflow-x-hidden rounded-[1.25rem] border border-white/10 bg-slate-900/55 p-3">
                                   {selectedVentureFeatureTags.map((feature) => (
                                     <span
                                       key={feature.filePath}
