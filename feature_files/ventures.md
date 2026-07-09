@@ -1,10 +1,10 @@
 # Ventures
 
 ## Summary
-The Ventures feature adds a Supabase-backed tracking surface to the left-side dev interface so the user and AI can manage venture rows alongside the existing agent chat workflow, including tagging each venture to a project directory, attaching related feature files, and storing optional details.
+The Ventures feature adds a Supabase-backed tracking surface to the graph workspace so the user and AI can manage venture rows alongside feature exploration, including tagging each venture to a project directory, attaching related feature files, and storing optional details.
 
 ## Key Points
-- **Tabbed Dev Interface**: Ventures lives as a second tab inside the existing left dashboard panel instead of introducing a new floating surface.
+- **Drawer Presentation**: Ventures now opens from a left-edge graph handle into a dedicated drawer or sheet instead of living inside a tabbed left utility panel.
 - **Supabase Persistence**: Venture rows load from the authenticated user's `ventures` rows on dashboard mount and persist across page refreshes.
 - **Simple Venture Schema**: Each Venture stores `created_at`, `id`, `progress_state`, `venture_name`, plus optional `project_directory` and `details` fields.
 - **Browser REST Flow**: The frontend uses direct Supabase REST `fetch` calls with the session access token for venture list, create, update, and delete operations.
@@ -15,7 +15,7 @@ The Ventures feature adds a Supabase-backed tracking surface to the left-side de
 - **Picker-Based Viewing**: The Ventures tab uses project dropdowns and a single selected-venture detail panel so the user can inspect one venture at a time instead of scrolling a full list.
 
 ## Relevant Files
-- `daedalus-site/app/feature-files-dashboard.tsx`: Dashboard shell that hosts the Agent Chat and Ventures tabs in the left dev interface.
+- `daedalus-site/app/feature-files-dashboard.tsx`: Workspace shell that hosts the ventures drawer UI, venture CRUD flows, and project-scoped feature tagging controls.
 - `shared/database/migrations/004_create_ventures_table.sql`: Creates the `venture_progress_state` enum and the `ventures` table.
 - `shared/database/migrations/005_enable_ventures_rls.sql`: Enables venture row level security policies for anon browser CRUD access.
 - `shared/database/migrations/006_add_project_directory_to_ventures.sql`: Adds the optional venture project tag and details columns.
@@ -36,3 +36,4 @@ HACKING
 - 2026-07-07: Swapped venture project inputs to project dropdowns and replaced the long ventures list with a selected-venture detail view.
 - 2026-07-07: Added multi-feature tagging to ventures with a new Supabase array column plus project-scoped feature selectors in the create and edit flows.
 - 2026-07-08: Scoped Ventures to authenticated user-owned rows so each signed-in user only sees and mutates their own venture data.
+- 2026-07-09: Moved Ventures out of the old left-side tab strip and into a graph-triggered drawer that expands to near-full-screen on mobile while keeping the same Supabase-backed CRUD and tagging flows.

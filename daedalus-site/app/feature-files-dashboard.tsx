@@ -1,15 +1,29 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient, type Session } from "@supabase/supabase-js";
-import FeatureFileGraph from "./feature-file-graph";
+import AgentSessionPanel from "./agent-session-panel";
+import FeatureFileGraph, {
+  type FeatureGraphSelection,
+} from "./feature-file-graph";
+import ParameterVariableSelector from "./parameter-variable-selector";
 import type {
   AgentChatExchange,
   TargetedFeature,
 } from "@/lib/agent-chat-cache";
 import type { AgentModelsConfig } from "@/lib/agent-models";
 import type { FeatureFileProjects } from "@/lib/feature-file-cache";
-import type { ParameterFileProjects } from "@/lib/parameter-file-cache";
+import type {
+  ParameterFileProjects,
+  ParameterFileRecord,
+} from "@/lib/parameter-file-cache";
+import {
+  getFeatureOptionsForProject,
+  getFeatureTagsForPaths,
+  getParameterFilePathForFeature,
+  normalizeFeatureFilePath,
+  normalizeParameterFilePath,
+} from "./feature-workspace-utils";
 
 type DashboardProps = {
   agentModels: AgentModelsConfig;
@@ -27,8 +41,8 @@ const DAEMON_SENT_RESPONSE = "daemon_sent_response";
 const FEATURE_FILE_LOAD_PURPOSE = "feature_file_load";
 const PARAMETER_FILE_LOAD_PURPOSE = "parameter_file_load";
 const PARAMETER_FILE_UPDATE_PURPOSE = "parameter_file_update";
-const AGENT_PROMPT_PURPOSE = "agent_prompt";
 const PARAMETER_FILE_UPDATE_COMMAND = "parameter_file_update";
+const AGENT_PROMPT_PURPOSE = "agent_prompt";
 const FEATURE_FILES_PAYLOAD_KIND = "feature_files";
 const PARAMETER_FILES_PAYLOAD_KIND = "parameter_files";
 const AGENT_CHAT_PAYLOAD_KIND = "agent_chat";
@@ -38,9 +52,9 @@ const AGENT_CHAT_STORAGE_KEY = "agent-chat-snapshot-v1";
 const AGENT_PROMPT_TIMEOUT_MS = 5 * 60 * 1000;
 const VENTURE_PROGRESS_STATES = ["idle", "in progress", "completed"] as const;
 
-type DevTab = "chat" | "ventures" | "settings";
 type AuthMode = "sign-in" | "sign-up";
-
+type PrimaryOverlay = "feature-detail" | "new-feature" | null;
+type FeatureDetailTab = "chat" | "info" | "params";
 type VentureProgressState = (typeof VENTURE_PROGRESS_STATES)[number];
 
 type VentureRow = {
@@ -70,11 +84,6 @@ type VentureUpdatePayload = {
   project_directory?: string | null;
   progress_state?: VentureProgressState;
   venture_name?: string;
-};
-
-type VentureFeatureOption = {
-  featureName: string;
-  filePath: string;
 };
 
 type AgentPromptQueueStatus =
@@ -120,6 +129,12 @@ type ParameterUpdateRequest = {
   variableName: string;
 };
 
+type SelectedFeatureSession = {
+  featureName: string;
+  filePath: string;
+  projectPath: string;
+};
+
 export default function FeatureFilesDashboard({
   agentModels,
   pollIntervalMs,
@@ -133,11 +148,11 @@ export default function FeatureFilesDashboard({
   const [authEmail, setAuthEmail] = useState("");
   const [authError, setAuthError] = useState("");
   const [authPassword, setAuthPassword] = useState("");
-  const [authStatus, setAuthStatus] = useState<"checking" | "ready" | "submitting">("checking");
+  const [authStatus, setAuthStatus] = useState<
+    "checking" | "ready" | "submitting"
+  >("checking");
   const [session, setSession] = useState<Session | null>(null);
   const defaultModel = agentModels.codex.models[0];
-  const [activeDevTab, setActiveDevTab] = useState<DevTab>("chat");
-  const [isDevInterfaceCollapsed, setIsDevInterfaceCollapsed] = useState(false);
   const [isLoadingFeatureFiles, setIsLoadingFeatureFiles] = useState(false);
   const [isLoadingParameterFiles, setIsLoadingParameterFiles] = useState(false);
   const [isPlanningMode, setIsPlanningMode] = useState(false);
@@ -149,35 +164,58 @@ export default function FeatureFilesDashboard({
   const [promptStatus, setPromptStatus] = useState("");
   const [latestChat, setLatestChat] = useState<AgentChatExchange | null>(null);
   const [isAgentChatCleared, setIsAgentChatCleared] = useState(false);
-  const [agentPromptQueue, setAgentPromptQueue] = useState<AgentPromptQueueEntry[]>([]);
-  const [isAgentPromptQueueHydrated, setIsAgentPromptQueueHydrated] = useState(false);
+  const [agentPromptQueue, setAgentPromptQueue] = useState<
+    AgentPromptQueueEntry[]
+  >([]);
+  const [isAgentPromptQueueHydrated, setIsAgentPromptQueueHydrated] =
+    useState(false);
   const [projects, setProjects] = useState<FeatureFileProjects | null>(null);
-  const [parameterProjects, setParameterProjects] = useState<ParameterFileProjects | null>(null);
+  const [parameterProjects, setParameterProjects] =
+    useState<ParameterFileProjects | null>(null);
   const [selectedModelId, setSelectedModelId] = useState(defaultModel.id);
-  const [selectedReasoning, setSelectedReasoning] = useState(defaultModel.default_reasoning);
+  const [selectedReasoning, setSelectedReasoning] = useState(
+    defaultModel.default_reasoning,
+  );
   const [selectedProjectDirectory, setSelectedProjectDirectory] = useState(
     DEFAULT_PROJECT_DIRECTORY,
   );
-  const [targetedFeatures, setTargetedFeatures] = useState<TargetedFeature[]>([]);
+  const [targetedFeatures, setTargetedFeatures] = useState<TargetedFeature[]>(
+    [],
+  );
+  const [activePrimaryOverlay, setActivePrimaryOverlay] =
+    useState<PrimaryOverlay>(null);
+  const [featureDetailTab, setFeatureDetailTab] =
+    useState<FeatureDetailTab>("chat");
+  const [graphZoom, setGraphZoom] = useState(1);
+  const [isMobileLayout, setIsMobileLayout] = useState(false);
+  const [selectedFeatureSession, setSelectedFeatureSession] =
+    useState<SelectedFeatureSession | null>(null);
+  const [venturesDrawerOpen, setVenturesDrawerOpen] = useState(false);
   const [isLoadingVentures, setIsLoadingVentures] = useState(false);
   const [isCreatingVenture, setIsCreatingVenture] = useState(false);
   const [ventures, setVentures] = useState<VentureItem[]>([]);
   const [newVentureName, setNewVentureName] = useState("");
-  const [newVentureProjectDirectory, setNewVentureProjectDirectory] = useState(
-    "",
-  );
+  const [newVentureProjectDirectory, setNewVentureProjectDirectory] =
+    useState("");
   const [newVentureDetails, setNewVentureDetails] = useState("");
-  const [newVentureFeatureFilePaths, setNewVentureFeatureFilePaths] = useState<string[]>([]);
-  const [newVentureSelectedFeaturePath, setNewVentureSelectedFeaturePath] = useState("");
+  const [newVentureFeatureFilePaths, setNewVentureFeatureFilePaths] = useState<
+    string[]
+  >([]);
+  const [newVentureSelectedFeaturePath, setNewVentureSelectedFeaturePath] =
+    useState("");
   const [selectedVentureId, setSelectedVentureId] = useState("");
   const [editingVentureId, setEditingVentureId] = useState("");
   const [editingVentureDetails, setEditingVentureDetails] = useState("");
-  const [editingVentureFeatureFilePaths, setEditingVentureFeatureFilePaths] = useState<string[]>([]);
+  const [editingVentureFeatureFilePaths, setEditingVentureFeatureFilePaths] =
+    useState<string[]>([]);
   const [editingVentureName, setEditingVentureName] = useState("");
-  const [editingVentureProjectDirectory, setEditingVentureProjectDirectory] = useState("");
-  const [editingVentureSelectedFeaturePath, setEditingVentureSelectedFeaturePath] = useState("");
+  const [editingVentureProjectDirectory, setEditingVentureProjectDirectory] =
+    useState("");
+  const [editingVentureSelectedFeaturePath, setEditingVentureSelectedFeaturePath] =
+    useState("");
   const [savingVentureId, setSavingVentureId] = useState("");
-  const [updatingProgressVentureId, setUpdatingProgressVentureId] = useState("");
+  const [updatingProgressVentureId, setUpdatingProgressVentureId] =
+    useState("");
   const [deletingVentureId, setDeletingVentureId] = useState("");
   const [ventureError, setVentureError] = useState("");
   const [error, setError] = useState("");
@@ -210,11 +248,13 @@ export default function FeatureFilesDashboard({
     }
 
     void loadSession();
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      setSession(nextSession);
-      setAuthStatus("ready");
-      setAuthError("");
-    });
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      (_event, nextSession) => {
+        setSession(nextSession);
+        setAuthStatus("ready");
+        setAuthError("");
+      },
+    );
 
     return () => {
       isMounted = false;
@@ -232,10 +272,13 @@ export default function FeatureFilesDashboard({
 
   useEffect(() => {
     try {
-      const storedQueue = window.localStorage.getItem(AGENT_PROMPT_QUEUE_STORAGE_KEY);
+      const storedQueue = window.localStorage.getItem(
+        AGENT_PROMPT_QUEUE_STORAGE_KEY,
+      );
 
       if (storedQueue) {
         const parsedQueue = JSON.parse(storedQueue) as AgentPromptQueueEntry[];
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setAgentPromptQueue(Array.isArray(parsedQueue) ? parsedQueue : []);
       }
 
@@ -257,7 +300,10 @@ export default function FeatureFilesDashboard({
       return;
     }
 
-    window.localStorage.setItem(AGENT_PROMPT_QUEUE_STORAGE_KEY, JSON.stringify(agentPromptQueue));
+    window.localStorage.setItem(
+      AGENT_PROMPT_QUEUE_STORAGE_KEY,
+      JSON.stringify(agentPromptQueue),
+    );
   }, [agentPromptQueue, isAgentPromptQueueHydrated]);
 
   useEffect(() => {
@@ -266,12 +312,34 @@ export default function FeatureFilesDashboard({
     }
 
     if (latestChat) {
-      window.localStorage.setItem(AGENT_CHAT_STORAGE_KEY, JSON.stringify(latestChat));
+      window.localStorage.setItem(
+        AGENT_CHAT_STORAGE_KEY,
+        JSON.stringify(latestChat),
+      );
       return;
     }
 
     window.localStorage.removeItem(AGENT_CHAT_STORAGE_KEY);
   }, [isAgentPromptQueueHydrated, latestChat]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const mediaQuery = window.matchMedia("(max-width: 767px)");
+
+    function syncLayoutMode() {
+      setIsMobileLayout(mediaQuery.matches);
+    }
+
+    syncLayoutMode();
+    mediaQuery.addEventListener("change", syncLayoutMode);
+
+    return () => {
+      mediaQuery.removeEventListener("change", syncLayoutMode);
+    };
+  }, []);
 
   useEffect(() => {
     if (!currentUser || !accessToken) {
@@ -311,14 +379,21 @@ export default function FeatureFilesDashboard({
       }
     }
 
-    pollMessage();
+    void pollMessage();
     const intervalId = window.setInterval(pollMessage, pollIntervalMs);
 
     return () => {
       isMounted = false;
       window.clearInterval(intervalId);
     };
-  }, [accessToken, currentUser, pollIntervalMs, supabasePublishableKey, supabaseUrl]);
+  }, [
+    accessToken,
+    currentUser,
+    currentUserId,
+    pollIntervalMs,
+    supabasePublishableKey,
+    supabaseUrl,
+  ]);
 
   useEffect(() => {
     if (message !== DAEMON_SENT_FEATURE_FILES) {
@@ -346,7 +421,14 @@ export default function FeatureFilesDashboard({
       setIsLoadingFeatureFiles(false);
       setError("The daemon finished, but the feature-file payload was not available.");
     });
-  }, [accessToken, currentUser, message, supabasePublishableKey, supabaseUrl]);
+  }, [
+    accessToken,
+    currentUser,
+    currentUserId,
+    message,
+    supabasePublishableKey,
+    supabaseUrl,
+  ]);
 
   useEffect(() => {
     if (parameterFileMessage !== DAEMON_SENT_PARAMETER_FILES) {
@@ -374,7 +456,14 @@ export default function FeatureFilesDashboard({
       setIsLoadingParameterFiles(false);
       setError("The daemon finished, but the parameter-file payload was not available.");
     });
-  }, [accessToken, currentUser, parameterFileMessage, supabasePublishableKey, supabaseUrl]);
+  }, [
+    accessToken,
+    currentUser,
+    currentUserId,
+    parameterFileMessage,
+    supabasePublishableKey,
+    supabaseUrl,
+  ]);
 
   useEffect(() => {
     const projectDirectories = Object.keys(projects ?? {});
@@ -388,6 +477,7 @@ export default function FeatureFilesDashboard({
     }
 
     if (projectDirectories.includes(DEFAULT_PROJECT_DIRECTORY)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSelectedProjectDirectory(DEFAULT_PROJECT_DIRECTORY);
       return;
     }
@@ -396,12 +486,18 @@ export default function FeatureFilesDashboard({
   }, [projects, selectedProjectDirectory]);
 
   useEffect(() => {
-    setTargetedFeatures([]);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setTargetedFeatures((currentFeatures) =>
+      currentFeatures.filter(
+        (feature) => feature.projectPath === selectedProjectDirectory,
+      ),
+    );
   }, [selectedProjectDirectory]);
 
   useEffect(() => {
     if (ventures.length === 0) {
       if (selectedVentureId) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setSelectedVentureId("");
       }
 
@@ -417,6 +513,7 @@ export default function FeatureFilesDashboard({
 
   useEffect(() => {
     if (!currentUser || !accessToken) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setVentures([]);
       return;
     }
@@ -458,7 +555,13 @@ export default function FeatureFilesDashboard({
     return () => {
       isMounted = false;
     };
-  }, [accessToken, currentUser, supabasePublishableKey, supabaseUrl]);
+  }, [
+    accessToken,
+    currentUser,
+    currentUserId,
+    supabasePublishableKey,
+    supabaseUrl,
+  ]);
 
   useEffect(() => {
     if (!currentUser || !accessToken) {
@@ -482,20 +585,32 @@ export default function FeatureFilesDashboard({
         }
 
         setAgentPromptMessage(nextMessage);
+        // eslint-disable-next-line react-hooks/immutability
         syncAgentPromptQueueFromRowMessage(nextMessage);
       } catch {
         return;
       }
     }
 
-    pollAgentPromptMessage();
-    const intervalId = window.setInterval(pollAgentPromptMessage, pollIntervalMs);
+    void pollAgentPromptMessage();
+    const intervalId = window.setInterval(
+      pollAgentPromptMessage,
+      pollIntervalMs,
+    );
 
     return () => {
       isMounted = false;
       window.clearInterval(intervalId);
     };
-  }, [accessToken, currentUser, pollIntervalMs, supabasePublishableKey, supabaseUrl]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    accessToken,
+    currentUser,
+    currentUserId,
+    pollIntervalMs,
+    supabasePublishableKey,
+    supabaseUrl,
+  ]);
 
   useEffect(() => {
     if (!currentUser || !accessToken) {
@@ -535,14 +650,24 @@ export default function FeatureFilesDashboard({
       }
     }
 
-    pollParameterFileMessage();
-    const intervalId = window.setInterval(pollParameterFileMessage, pollIntervalMs);
+    void pollParameterFileMessage();
+    const intervalId = window.setInterval(
+      pollParameterFileMessage,
+      pollIntervalMs,
+    );
 
     return () => {
       isMounted = false;
       window.clearInterval(intervalId);
     };
-  }, [accessToken, currentUser, pollIntervalMs, supabasePublishableKey, supabaseUrl]);
+  }, [
+    accessToken,
+    currentUser,
+    currentUserId,
+    pollIntervalMs,
+    supabasePublishableKey,
+    supabaseUrl,
+  ]);
 
   useEffect(() => {
     if (!currentUser || !accessToken) {
@@ -577,14 +702,24 @@ export default function FeatureFilesDashboard({
       }
     }
 
-    pollParameterUpdateMessage();
-    const intervalId = window.setInterval(pollParameterUpdateMessage, pollIntervalMs);
+    void pollParameterUpdateMessage();
+    const intervalId = window.setInterval(
+      pollParameterUpdateMessage,
+      pollIntervalMs,
+    );
 
     return () => {
       isMounted = false;
       window.clearInterval(intervalId);
     };
-  }, [accessToken, currentUser, pollIntervalMs, supabasePublishableKey, supabaseUrl]);
+  }, [
+    accessToken,
+    currentUser,
+    currentUserId,
+    pollIntervalMs,
+    supabasePublishableKey,
+    supabaseUrl,
+  ]);
 
   useEffect(() => {
     const parsedMessage = parseParameterUpdateRowMessage(parameterUpdateMessage);
@@ -611,29 +746,45 @@ export default function FeatureFilesDashboard({
     loadUpdatedParameterProjects().catch(() => {
       setError("The daemon saved the parameter edit, but the refreshed payload was not available.");
     });
-  }, [accessToken, currentUser, parameterUpdateMessage, supabasePublishableKey, supabaseUrl]);
+  }, [
+    accessToken,
+    currentUser,
+    currentUserId,
+    parameterUpdateMessage,
+    supabasePublishableKey,
+    supabaseUrl,
+  ]);
 
   useEffect(() => {
     if (!isAgentPromptQueueHydrated) {
       return;
     }
 
-    const activePrompt = agentPromptQueue.find((item) =>
-      item.status === "sending" || item.status === "running",
+    const activePrompt = agentPromptQueue.find(
+      (item) => item.status === "sending" || item.status === "running",
     );
 
     if (activePrompt) {
       return;
     }
 
-    const nextQueuedPrompt = agentPromptQueue.find((item) => item.status === "queued");
+    const nextQueuedPrompt = agentPromptQueue.find(
+      (item) => item.status === "queued",
+    );
 
     if (!nextQueuedPrompt) {
       return;
     }
 
+    // eslint-disable-next-line react-hooks/immutability
     void dispatchQueuedAgentPrompt(nextQueuedPrompt);
-  }, [accessToken, agentPromptQueue, currentUser, isAgentPromptQueueHydrated]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    accessToken,
+    agentPromptQueue,
+    currentUser,
+    isAgentPromptQueueHydrated,
+  ]);
 
   useEffect(() => {
     if (!isAgentPromptQueueHydrated) {
@@ -676,6 +827,7 @@ export default function FeatureFilesDashboard({
 
         if (nextChat.promptId === currentPromptId) {
           setPromptStatus("Reply received.");
+          // eslint-disable-next-line react-hooks/immutability
           finalizeQueuedAgentPrompt(nextChat.promptId, nextChat);
         }
       } catch {
@@ -683,14 +835,22 @@ export default function FeatureFilesDashboard({
       }
     }
 
-    pollAgentChat();
+    void pollAgentChat();
     const intervalId = window.setInterval(pollAgentChat, pollIntervalMs);
 
     return () => {
       isMounted = false;
       window.clearInterval(intervalId);
     };
-  }, [accessToken, currentUser, isAgentPromptQueueHydrated, pollIntervalMs, supabasePublishableKey, supabaseUrl]);
+  }, [
+    accessToken,
+    currentUser,
+    currentUserId,
+    isAgentPromptQueueHydrated,
+    pollIntervalMs,
+    supabasePublishableKey,
+    supabaseUrl,
+  ]);
 
   useEffect(() => {
     if (!isAgentPromptQueueHydrated) {
@@ -698,8 +858,8 @@ export default function FeatureFilesDashboard({
     }
 
     const intervalId = window.setInterval(() => {
-      const activePrompt = agentPromptQueueRef.current.find((item) =>
-        item.status === "sending" || item.status === "running",
+      const activePrompt = agentPromptQueueRef.current.find(
+        (item) => item.status === "sending" || item.status === "running",
       );
 
       if (!activePrompt?.sentAt) {
@@ -742,7 +902,10 @@ export default function FeatureFilesDashboard({
     const authResult =
       authMode === "sign-up"
         ? await supabase.auth.signUp({ email, password: authPassword })
-        : await supabase.auth.signInWithPassword({ email, password: authPassword });
+        : await supabase.auth.signInWithPassword({
+            email,
+            password: authPassword,
+          });
 
     if (authResult.error) {
       setAuthError(authResult.error.message);
@@ -761,6 +924,9 @@ export default function FeatureFilesDashboard({
     setSession(null);
     setProjects(null);
     setParameterProjects(null);
+    setSelectedFeatureSession(null);
+    setActivePrimaryOverlay(null);
+    setVenturesDrawerOpen(false);
     setVentures([]);
     setLatestChat(null);
   }
@@ -805,32 +971,30 @@ export default function FeatureFilesDashboard({
     setIsLoadingParameterFiles(true);
     const writeStartedAt = Date.now();
     latestLocalWriteStartedAt.current = writeStartedAt;
-    console.log("[dev-environment] button clicked");
 
     try {
-      const [nextFeatureFileMessage, nextParameterFileMessage] = await Promise.all([
-        updateMessage(
-          supabaseUrl,
-          supabasePublishableKey,
-          accessToken,
-          currentUserId,
-          FEATURE_FILE_LOAD_PURPOSE,
-          CLIENT_LOAD_FEATURE_FILES,
-        ),
-        updateMessage(
-          supabaseUrl,
-          supabasePublishableKey,
-          accessToken,
-          currentUserId,
-          PARAMETER_FILE_LOAD_PURPOSE,
-          CLIENT_LOAD_PARAMETER_FILES,
-        ),
-      ]);
-      console.log("[dev-environment] writes completed with messages:", nextFeatureFileMessage, nextParameterFileMessage);
+      const [nextFeatureFileMessage, nextParameterFileMessage] =
+        await Promise.all([
+          updateMessage(
+            supabaseUrl,
+            supabasePublishableKey,
+            accessToken,
+            currentUserId,
+            FEATURE_FILE_LOAD_PURPOSE,
+            CLIENT_LOAD_FEATURE_FILES,
+          ),
+          updateMessage(
+            supabaseUrl,
+            supabasePublishableKey,
+            accessToken,
+            currentUserId,
+            PARAMETER_FILE_LOAD_PURPOSE,
+            CLIENT_LOAD_PARAMETER_FILES,
+          ),
+        ]);
       setMessage(nextFeatureFileMessage);
       setParameterFileMessage(nextParameterFileMessage);
     } catch {
-      console.error("[dev-environment] write failed");
       setIsLoadingFeatureFiles(false);
       setIsLoadingParameterFiles(false);
       setError("Unable to write the dev-environment load requests to Supabase.");
@@ -845,24 +1009,23 @@ export default function FeatureFilesDashboard({
     const promptId = createPromptId();
     const nextPrompt = promptText.trim();
     const targetedFeaturePaths = targetedFeatures.map((feature) => feature.filePath);
-    const modelId = selectedModelId;
-    const reasoning = selectedReasoning;
-    const planningMode = isPlanningMode;
     const nextPromptPayload: AgentPromptQueueEntry = {
       promptId,
       directory: selectedProjectDirectory,
       prompt: nextPrompt,
       provider: "codex",
-      model: modelId,
-      reasoning,
-      planningMode,
+      model: selectedModelId,
+      reasoning: selectedReasoning,
+      planningMode: isPlanningMode,
       targetedFeaturePaths,
       status: "queued",
       enqueuedAt: Date.now(),
     };
 
     setPromptStatus(
-      agentPromptQueueRef.current.some((item) => item.status === "sending" || item.status === "running")
+      agentPromptQueueRef.current.some(
+        (item) => item.status === "sending" || item.status === "running",
+      )
         ? "Prompt queued locally behind the active run."
         : "Prompt queued locally.",
     );
@@ -881,8 +1044,8 @@ export default function FeatureFilesDashboard({
     setIsAgentChatCleared(true);
   }
 
-  function syncAgentPromptQueueFromRowMessage(message: string) {
-    const parsedMessage = parseAgentPromptRowMessage(message);
+  function syncAgentPromptQueueFromRowMessage(messageValue: string) {
+    const parsedMessage = parseAgentPromptRowMessage(messageValue);
 
     if (!parsedMessage) {
       return;
@@ -891,7 +1054,11 @@ export default function FeatureFilesDashboard({
     const activeQueueItem = agentPromptQueueRef.current[0];
     const activeQueuePromptId = activeQueueItem?.promptId ?? activePromptId.current;
 
-    if (parsedMessage.promptId && activeQueuePromptId && parsedMessage.promptId !== activeQueuePromptId) {
+    if (
+      parsedMessage.promptId &&
+      activeQueuePromptId &&
+      parsedMessage.promptId !== activeQueuePromptId
+    ) {
       return;
     }
 
@@ -930,7 +1097,11 @@ export default function FeatureFilesDashboard({
 
     const activeQueueItem = agentPromptQueueRef.current[0];
 
-    if (!activeQueueItem || activeQueueItem.promptId !== queueEntry.promptId || activeQueueItem.status !== "queued") {
+    if (
+      !activeQueueItem ||
+      activeQueueItem.promptId !== queueEntry.promptId ||
+      activeQueueItem.status !== "queued"
+    ) {
       return;
     }
 
@@ -996,7 +1167,10 @@ export default function FeatureFilesDashboard({
     }
   }
 
-  function finalizeQueuedAgentPrompt(promptId: string, replyExchange?: AgentChatExchange | null) {
+  function finalizeQueuedAgentPrompt(
+    promptId: string,
+    replyExchange?: AgentChatExchange | null,
+  ) {
     if (!promptId) {
       return;
     }
@@ -1053,16 +1227,23 @@ export default function FeatureFilesDashboard({
     isLoadingFeatureFiles,
     isLoadingParameterFiles,
   );
-  const currentMessage = formatDevEnvironmentMessage(message, parameterFileMessage);
+  const currentMessage = formatDevEnvironmentMessage(
+    message,
+    parameterFileMessage,
+  );
   const projectEntries = Object.entries(projects ?? {});
-  const availableProjectDirectories = projectEntries.map(([projectDirectory]) => projectDirectory);
-  const selectedModel = agentModels.codex.models.find((model) => model.id === selectedModelId) ?? defaultModel;
-  const reasoningOptions = selectedModel.reasoning;
+  const availableProjectDirectories = projectEntries.map(
+    ([projectDirectory]) => projectDirectory,
+  );
   const currentPromptQueueItem = agentPromptQueue[0] ?? null;
-  const promptQueueStatusText = promptStatus || getAgentPromptQueueStatusText(agentPromptQueue);
-  const isLoadingDevEnvironment = isLoadingFeatureFiles || isLoadingParameterFiles;
+  const promptQueueStatusText =
+    promptStatus || getAgentPromptQueueStatusText(agentPromptQueue);
+  const isLoadingDevEnvironment =
+    isLoadingFeatureFiles || isLoadingParameterFiles;
   const selectedVenture =
-    ventures.find((venture) => venture.id === selectedVentureId) ?? ventures[0] ?? null;
+    ventures.find((venture) => venture.id === selectedVentureId) ??
+    ventures[0] ??
+    null;
   const newVentureFeatureOptions = getFeatureOptionsForProject(
     projects ?? {},
     newVentureProjectDirectory,
@@ -1075,16 +1256,54 @@ export default function FeatureFilesDashboard({
     projects ?? {},
     selectedVenture?.featureFilePaths ?? [],
   );
+  const parameterFilesByProject = useMemo(() => {
+    const nextMap = new Map<string, Map<string, ParameterFileRecord>>();
+
+    Object.entries(parameterProjects ?? {}).forEach(
+      ([projectPath, parameterFiles]) => {
+        nextMap.set(
+          projectPath,
+          new Map(
+            parameterFiles.map((parameterFile) => [
+              normalizeParameterFilePath(parameterFile.path),
+              parameterFile,
+            ]),
+          ),
+        );
+      },
+    );
+
+    return nextMap;
+  }, [parameterProjects]);
+  const selectedFeatureRecord = selectedFeatureSession
+    ? (projects?.[selectedFeatureSession.projectPath] ?? []).find(
+        (featureFile) =>
+          normalizeFeatureFilePath(featureFile.path) ===
+          selectedFeatureSession.filePath,
+      ) ?? null
+    : null;
+  const matchedParameterFile = selectedFeatureSession
+    ? parameterFilesByProject
+        .get(selectedFeatureSession.projectPath)
+        ?.get(getParameterFilePathForFeature(selectedFeatureSession.filePath)) ??
+      null
+    : null;
 
   function selectModel(modelId: string) {
-    const nextModel = agentModels.codex.models.find((model) => model.id === modelId) ?? defaultModel;
+    const nextModel =
+      agentModels.codex.models.find((model) => model.id === modelId) ??
+      defaultModel;
     setSelectedModelId(nextModel.id);
     setSelectedReasoning(nextModel.default_reasoning);
   }
 
   function addTargetedFeature(feature: TargetedFeature) {
     setTargetedFeatures((currentFeatures) => {
-      if (currentFeatures.some((currentFeature) => currentFeature.filePath === feature.filePath)) {
+      if (
+        currentFeatures.some(
+          (currentFeature) => currentFeature.filePath === feature.filePath,
+        )
+      ) {
         return currentFeatures;
       }
 
@@ -1098,6 +1317,53 @@ export default function FeatureFilesDashboard({
     );
   }
 
+  function openNewFeatureOverlay() {
+    setTargetedFeatures([]);
+    setActivePrimaryOverlay("new-feature");
+
+    if (isMobileLayout) {
+      setVenturesDrawerOpen(false);
+    }
+  }
+
+  function closePrimaryOverlay() {
+    setActivePrimaryOverlay(null);
+    setSelectedFeatureSession(null);
+  }
+
+  function closeVenturesDrawer() {
+    setVenturesDrawerOpen(false);
+  }
+
+  function toggleVenturesDrawer() {
+    if (isMobileLayout) {
+      setActivePrimaryOverlay(null);
+      setSelectedFeatureSession(null);
+      setVenturesDrawerOpen(true);
+      return;
+    }
+
+    setVenturesDrawerOpen((currentValue) => !currentValue);
+  }
+
+  function handleFeatureNodeSelect(selection: FeatureGraphSelection) {
+    setSelectedProjectDirectory(selection.projectPath);
+    setTargetedFeatures([
+      {
+        featureName: selection.featureName,
+        filePath: selection.filePath,
+        projectPath: selection.projectPath,
+      },
+    ]);
+    setSelectedFeatureSession(selection);
+    setFeatureDetailTab("chat");
+    setActivePrimaryOverlay("feature-detail");
+
+    if (isMobileLayout) {
+      setVenturesDrawerOpen(false);
+    }
+  }
+
   function updateNewVentureProjectDirectory(projectDirectory: string) {
     setNewVentureProjectDirectory(projectDirectory);
     setNewVentureSelectedFeaturePath("");
@@ -1108,7 +1374,9 @@ export default function FeatureFilesDashboard({
     }
 
     const allowedFeaturePaths = new Set(
-      getFeatureOptionsForProject(projects ?? {}, projectDirectory).map((feature) => feature.filePath),
+      getFeatureOptionsForProject(projects ?? {}, projectDirectory).map(
+        (feature) => feature.filePath,
+      ),
     );
 
     setNewVentureFeatureFilePaths((currentPaths) =>
@@ -1147,7 +1415,9 @@ export default function FeatureFilesDashboard({
     }
 
     const allowedFeaturePaths = new Set(
-      getFeatureOptionsForProject(projects ?? {}, projectDirectory).map((feature) => feature.filePath),
+      getFeatureOptionsForProject(projects ?? {}, projectDirectory).map(
+        (feature) => feature.filePath,
+      ),
     );
 
     setEditingVentureFeatureFilePaths((currentPaths) =>
@@ -1236,7 +1506,13 @@ export default function FeatureFilesDashboard({
     const ventureName = editingVentureName.trim();
     const projectDirectory = editingVentureProjectDirectory.trim();
 
-    if (!editingVentureId || !ventureName || savingVentureId || !currentUser || !accessToken) {
+    if (
+      !editingVentureId ||
+      !ventureName ||
+      savingVentureId ||
+      !currentUser ||
+      !accessToken
+    ) {
       return;
     }
 
@@ -1332,12 +1608,23 @@ export default function FeatureFilesDashboard({
     }
   }
 
+  const venturesDrawerClassName = isMobileLayout
+    ? "pointer-events-auto absolute inset-3 flex flex-col overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/94 shadow-[0_28px_100px_rgba(2,6,23,0.72)] backdrop-blur"
+    : "pointer-events-auto absolute left-4 top-28 bottom-6 flex w-[min(28rem,calc(100vw-8rem))] flex-col overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/90 shadow-[0_28px_100px_rgba(2,6,23,0.72)] backdrop-blur";
+  const primaryOverlayClassName = isMobileLayout
+    ? "pointer-events-auto absolute inset-3 flex flex-col overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/94 shadow-[0_28px_100px_rgba(2,6,23,0.72)] backdrop-blur"
+    : "pointer-events-auto absolute right-4 top-28 bottom-6 flex w-[min(44rem,calc(100vw-10rem))] flex-col overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/90 shadow-[0_28px_100px_rgba(2,6,23,0.72)] backdrop-blur";
+
   if (authStatus === "checking") {
     return (
       <main className="grid min-h-screen place-items-center bg-black px-6 text-slate-100">
         <div className="w-full max-w-md rounded-[1.75rem] border border-white/10 bg-slate-950/82 p-6 text-center shadow-[0_24px_80px_rgba(2,6,23,0.65)]">
-          <p className="text-sm uppercase tracking-[0.28em] text-slate-400">Daedalus</p>
-          <p className="mt-3 text-lg font-semibold text-white">Checking your session...</p>
+          <p className="text-sm uppercase tracking-[0.28em] text-slate-400">
+            Daedalus
+          </p>
+          <p className="mt-3 text-lg font-semibold text-white">
+            Checking your session...
+          </p>
         </div>
       </main>
     );
@@ -1347,7 +1634,9 @@ export default function FeatureFilesDashboard({
     return (
       <main className="grid min-h-screen place-items-center bg-black px-6 text-slate-100">
         <div className="w-full max-w-md rounded-[1.75rem] border border-white/10 bg-slate-950/82 p-6 shadow-[0_24px_80px_rgba(2,6,23,0.65)]">
-          <p className="text-sm uppercase tracking-[0.28em] text-slate-400">Daedalus</p>
+          <p className="text-sm uppercase tracking-[0.28em] text-slate-400">
+            Daedalus
+          </p>
           <h1 className="mt-3 text-2xl font-semibold text-white">
             {authMode === "sign-up" ? "Create your account" : "Sign in"}
           </h1>
@@ -1384,7 +1673,9 @@ export default function FeatureFilesDashboard({
               onClick={() => {
                 void submitAuthForm();
               }}
-              disabled={!authEmail.trim() || !authPassword || authStatus === "submitting"}
+              disabled={
+                !authEmail.trim() || !authPassword || authStatus === "submitting"
+              }
               className="rounded-full bg-cyan-300 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
             >
               {authStatus === "submitting"
@@ -1414,12 +1705,13 @@ export default function FeatureFilesDashboard({
   return (
     <main className="relative h-screen w-screen overflow-hidden bg-black text-slate-100">
       <FeatureFileGraph
+        onNodeSelect={handleFeatureNodeSelect}
+        onOpenNewFeature={openNewFeatureOverlay}
+        onOpenVentures={toggleVenturesDrawer}
+        onZoomChange={setGraphZoom}
         projects={projects ?? {}}
-        parameterProjects={parameterProjects ?? {}}
-        selectedProjectDirectory={selectedProjectDirectory}
-        targetedFeatures={targetedFeatures}
-        onAddTargetedFeature={addTargetedFeature}
-        onRequestParameterUpdate={requestParameterFileUpdate}
+        selectedFeatureFilePath={selectedFeatureSession?.filePath ?? ""}
+        zoom={graphZoom}
       />
 
       <div className="pointer-events-none absolute inset-0">
@@ -1428,18 +1720,19 @@ export default function FeatureFilesDashboard({
             <div className="flex flex-wrap justify-center gap-3">
               <div className="min-w-[180px] max-w-xl flex-1 rounded-[1.5rem] border border-white/10 bg-slate-950/82 p-4 shadow-[0_24px_80px_rgba(2,6,23,0.55)] backdrop-blur sm:flex-none sm:w-[30rem]">
                 <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">
-                  Current message
+                  Messages / Log info
                 </p>
                 <p className="mt-2 whitespace-pre-wrap break-words font-mono text-sm text-slate-100">
                   {currentMessage}
                 </p>
               </div>
-
               <div className="min-w-[180px] rounded-[1.5rem] border border-white/10 bg-slate-950/82 p-4 shadow-[0_24px_80px_rgba(2,6,23,0.55)] backdrop-blur sm:w-64">
                 <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">
                   Status
                 </p>
-                <p className="mt-2 text-xl font-semibold text-white">{statusLabel}</p>
+                <p className="mt-2 text-xl font-semibold text-white">
+                  {statusLabel}
+                </p>
               </div>
             </div>
 
@@ -1451,165 +1744,168 @@ export default function FeatureFilesDashboard({
           </div>
         </div>
 
-        <div className="pointer-events-auto absolute left-4 top-32 bottom-6">
-          {isDevInterfaceCollapsed ? (
-            <button
-              type="button"
-              onClick={() => setIsDevInterfaceCollapsed(false)}
-              className="rounded-full border border-white/10 bg-slate-950/82 px-5 py-3 text-sm font-semibold text-slate-100 shadow-[0_24px_80px_rgba(2,6,23,0.65)] backdrop-blur transition hover:bg-slate-900"
+        <div className="pointer-events-auto absolute right-4 top-4 flex max-w-[24rem] flex-wrap justify-end gap-3">
+          <button
+            type="button"
+            onClick={requestDevEnvironment}
+            aria-label="Refresh dev environment"
+            title="Refresh dev environment"
+            className="inline-flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-white text-slate-950 shadow-[0_20px_60px_rgba(2,6,23,0.32)] transition hover:bg-slate-200"
+          >
+            <svg
+              aria-hidden="true"
+              className={`h-5 w-5 ${isLoadingDevEnvironment ? "animate-spin" : ""}`}
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
             >
-              Open dev interface
-            </button>
-          ) : (
-            <div className="flex h-full max-w-xl flex-col overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/82 p-4 shadow-[0_24px_80px_rgba(2,6,23,0.65)] backdrop-blur">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <button
-                  type="button"
-                  onClick={requestDevEnvironment}
-                  className="w-fit rounded-full bg-white px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-slate-200"
-                >
-                  {isLoadingDevEnvironment ? "Reloading dev environment..." : "Load dev environment"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsDevInterfaceCollapsed(true)}
-                  className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-slate-300 transition hover:bg-white/10"
-                >
-                  Collapse
-                </button>
-              </div>
+              <path d="M20 11a8 8 0 0 0-13.66-5.66L4 7.72" />
+              <path d="M4 4v3.72h3.72" />
+              <path d="M4 13a8 8 0 0 0 13.66 5.66L20 16.28" />
+              <path d="M20 20v-3.72h-3.72" />
+            </svg>
+          </button>
+          <div className="rounded-[1.25rem] border border-white/10 bg-slate-950/82 px-4 py-3 text-right shadow-[0_20px_60px_rgba(2,6,23,0.45)] backdrop-blur">
+            <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400">
+              Workspace
+            </p>
+            <p className="mt-1 max-w-[16rem] break-all text-sm text-slate-200">
+              {currentUser.email ?? currentUserId}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              void signOut();
+            }}
+            className="rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-slate-200 transition hover:bg-white/10"
+          >
+            Sign out
+          </button>
+        </div>
 
-              <div className="mt-3 inline-flex w-fit rounded-full border border-white/10 bg-black/25 p-1">
-                <button
-                  type="button"
-                  onClick={() => setActiveDevTab("chat")}
-                  className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] transition ${
-                    activeDevTab === "chat"
-                      ? "bg-cyan-300 text-slate-950"
-                      : "text-slate-300 hover:bg-white/10"
-                  }`}
-                >
-                  Agent Chat
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveDevTab("ventures")}
-                  className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] transition ${
-                    activeDevTab === "ventures"
-                      ? "bg-cyan-300 text-slate-950"
-                      : "text-slate-300 hover:bg-white/10"
-                  }`}
-                >
+        {venturesDrawerOpen ? (
+          <aside className={venturesDrawerClassName}>
+            <div className="flex items-start justify-between gap-4 border-b border-white/10 px-5 py-4">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">
                   Ventures
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveDevTab("settings")}
-                  className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] transition ${
-                    activeDevTab === "settings"
-                      ? "bg-cyan-300 text-slate-950"
-                      : "text-slate-300 hover:bg-white/10"
-                  }`}
-                >
-                  Settings
-                </button>
+                </p>
+                <h2 className="mt-2 text-xl font-semibold text-white">
+                  Ventures workspace
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-slate-300">
+                  Track venture rows, project tags, feature tags, and details without leaving the graph.
+                </p>
               </div>
+              <button
+                type="button"
+                onClick={closeVenturesDrawer}
+                className="rounded-full border border-white/10 bg-white/6 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:bg-white/10"
+              >
+                X
+              </button>
+            </div>
 
-              <div className="agent-chat-scrollbar mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
-                {activeDevTab === "chat" ? (
-                  <div className="grid gap-3 rounded-[1.5rem] border border-white/10 bg-black/25 p-4">
-                    <label
-                      htmlFor="agent-project"
-                      className="text-[11px] uppercase tracking-[0.28em] text-slate-400"
-                    >
-                      Target project
-                    </label>
-                    <select
-                      id="agent-project"
-                      value={selectedProjectDirectory}
-                      onChange={(event) => setSelectedProjectDirectory(event.target.value)}
-                      className="agent-chat-scrollbar rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
-                    >
-                      {projectEntries.length > 0 ? (
-                        projectEntries.map(([projectDirectory]) => (
-                          <option key={projectDirectory} value={projectDirectory}>
-                            {projectDirectory}
-                          </option>
-                        ))
-                      ) : (
-                        <option value={DEFAULT_PROJECT_DIRECTORY}>
-                          {DEFAULT_PROJECT_DIRECTORY}
+            <div className="agent-chat-scrollbar min-h-0 flex-1 overflow-y-auto px-5 py-4">
+              <div className="grid gap-4">
+                <div className="grid gap-3 rounded-[1.5rem] border border-white/10 bg-black/25 p-4">
+                  <label
+                    htmlFor="venture-name"
+                    className="text-[11px] uppercase tracking-[0.28em] text-slate-400"
+                  >
+                    New venture name
+                  </label>
+                  <input
+                    id="venture-name"
+                    type="text"
+                    value={newVentureName}
+                    onChange={(event) => setNewVentureName(event.target.value)}
+                    placeholder="Add the next venture to track..."
+                    className="rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-500"
+                  />
+                  <label
+                    htmlFor="venture-project"
+                    className="text-[11px] uppercase tracking-[0.28em] text-slate-400"
+                  >
+                    Project directory
+                  </label>
+                  <select
+                    id="venture-project"
+                    value={newVentureProjectDirectory}
+                    onChange={(event) =>
+                      updateNewVentureProjectDirectory(event.target.value)
+                    }
+                    className="agent-chat-scrollbar rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
+                  >
+                    <option value="">No project tag</option>
+                    {availableProjectDirectories.length > 0 ? (
+                      availableProjectDirectories.map((projectDirectory) => (
+                        <option key={projectDirectory} value={projectDirectory}>
+                          {projectDirectory}
                         </option>
-                      )}
-                    </select>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div className="grid gap-2">
-                        <label
-                          htmlFor="agent-model"
-                          className="text-[11px] uppercase tracking-[0.28em] text-slate-400"
-                        >
-                          Model
-                        </label>
+                      ))
+                    ) : (
+                      <option value={DEFAULT_PROJECT_DIRECTORY}>
+                        {DEFAULT_PROJECT_DIRECTORY}
+                      </option>
+                    )}
+                  </select>
+                  {newVentureProjectDirectory ? (
+                    <div className="grid gap-3">
+                      <label
+                        htmlFor="venture-feature-tag"
+                        className="text-[11px] uppercase tracking-[0.28em] text-slate-400"
+                      >
+                        Tagged features
+                      </label>
+                      <div className="flex flex-wrap items-center gap-3">
                         <select
-                          id="agent-model"
-                          value={selectedModelId}
-                          onChange={(event) => selectModel(event.target.value)}
-                          className="agent-chat-scrollbar rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
+                          id="venture-feature-tag"
+                          value={newVentureSelectedFeaturePath}
+                          onChange={(event) =>
+                            setNewVentureSelectedFeaturePath(event.target.value)
+                          }
+                          className="agent-chat-scrollbar min-w-0 flex-1 rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
                         >
-                          {agentModels.codex.models.map((model) => (
-                            <option key={model.id} value={model.id}>
-                              {model.name}
+                          <option value="">Select a feature to tag</option>
+                          {newVentureFeatureOptions.map((feature) => (
+                            <option key={feature.filePath} value={feature.filePath}>
+                              {feature.featureName}
                             </option>
                           ))}
                         </select>
-                      </div>
-
-                      <div className="grid gap-2">
-                        <label
-                          htmlFor="agent-reasoning"
-                          className="text-[11px] uppercase tracking-[0.28em] text-slate-400"
+                        <button
+                          type="button"
+                          onClick={addNewVentureFeatureTag}
+                          disabled={!newVentureSelectedFeaturePath}
+                          className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
                         >
-                          Reasoning
-                        </label>
-                        <select
-                          id="agent-reasoning"
-                          value={selectedReasoning}
-                          onChange={(event) => setSelectedReasoning(event.target.value)}
-                          className="agent-chat-scrollbar rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm capitalize text-slate-100 outline-none"
-                        >
-                          {reasoningOptions.map((reasoning) => (
-                            <option key={reasoning} value={reasoning}>
-                              {reasoning}
-                            </option>
-                          ))}
-                        </select>
+                          Add feature
+                        </button>
                       </div>
-                    </div>
-                    <label className="flex items-center gap-3 rounded-[1.25rem] border border-white/10 bg-slate-900/50 px-4 py-3 text-sm text-slate-200">
-                      <input
-                        type="checkbox"
-                        checked={isPlanningMode}
-                        onChange={(event) => setIsPlanningMode(event.target.checked)}
-                        className="h-4 w-4 accent-cyan-300"
-                      />
-                      Planning mode
-                    </label>
-                    <div className="grid gap-2">
-                      <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">
-                        Targeted Features
-                      </p>
-                      {targetedFeatures.length > 0 ? (
+                      {newVentureFeatureFilePaths.length > 0 ? (
                         <div className="flex flex-wrap gap-2 rounded-[1.25rem] border border-white/10 bg-slate-900/50 p-3">
-                          {targetedFeatures.map((feature) => (
+                          {getFeatureTagsForPaths(
+                            projects ?? {},
+                            newVentureFeatureFilePaths,
+                          ).map((feature) => (
                             <span
                               key={feature.filePath}
                               title={feature.filePath}
                               className="inline-flex items-center gap-2 rounded-full border border-cyan-300/30 bg-cyan-300/12 px-3 py-2 text-sm text-cyan-50"
                             >
-                              <span className="max-w-[13rem] truncate">{feature.featureName}</span>
+                              <span className="max-w-[14rem] truncate">
+                                {feature.featureName}
+                              </span>
                               <button
                                 type="button"
-                                onClick={() => removeTargetedFeature(feature.filePath)}
+                                onClick={() =>
+                                  removeNewVentureFeatureTag(feature.filePath)
+                                }
                                 className="rounded-full border border-cyan-200/20 px-2 py-0.5 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-200/15"
                                 aria-label={`Remove ${feature.featureName}`}
                               >
@@ -1619,603 +1915,576 @@ export default function FeatureFilesDashboard({
                           ))}
                         </div>
                       ) : (
-                        <div className="rounded-[1.25rem] border border-dashed border-white/10 bg-slate-900/30 px-4 py-3 text-sm text-slate-400">
-                          Add feature files from the graph to scope the next prompt.
-                        </div>
+                        <p className="text-sm text-slate-400">
+                          Add one or more feature files from this project to tag the venture.
+                        </p>
                       )}
                     </div>
-                    <label
-                      htmlFor="agent-prompt"
-                      className="text-[11px] uppercase tracking-[0.28em] text-slate-400"
-                    >
-                      Agent prompt
-                    </label>
-                    <textarea
-                      id="agent-prompt"
-                      value={promptText}
-                      onChange={(event) => setPromptText(event.target.value)}
-                      placeholder="Describe the feature you want the daemon to create..."
-                      className="agent-chat-scrollbar min-h-28 rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-500"
-                    />
-                    <div className="flex flex-wrap items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={sendAgentPrompt}
-                        disabled={!promptText.trim()}
-                        className="rounded-full bg-cyan-300 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
-                      >
-                        Send prompt
-                      </button>
-                      <button
-                        type="button"
-                        onClick={clearAgentChat}
-                        className="rounded-full border border-white/10 bg-slate-900/70 px-5 py-3 text-sm font-semibold text-slate-200 transition hover:bg-slate-800"
-                      >
-                        Clear chat
-                      </button>
-                      {!isAgentChatCleared ? (
-                        <p className="text-sm text-slate-300">
-                          {promptQueueStatusText ||
-                            `The daemon will use ${selectedModelId} with ${selectedReasoning} reasoning.`}
-                        </p>
-                      ) : null}
-                    </div>
+                  ) : null}
+                  <label
+                    htmlFor="venture-details"
+                    className="text-[11px] uppercase tracking-[0.28em] text-slate-400"
+                  >
+                    Details
+                  </label>
+                  <textarea
+                    id="venture-details"
+                    value={newVentureDetails}
+                    onChange={(event) => setNewVentureDetails(event.target.value)}
+                    placeholder="Add a few details about this venture..."
+                    className="agent-chat-scrollbar min-h-24 rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void addVenture();
+                    }}
+                    disabled={!newVentureName.trim() || isCreatingVenture}
+                    className="rounded-full bg-cyan-300 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
+                  >
+                    {isCreatingVenture ? "Creating venture..." : "Create venture"}
+                  </button>
+                </div>
 
-                    {!isAgentChatCleared &&
-                    currentPromptQueueItem &&
-                    (currentPromptQueueItem.status === "failed" ||
-                      currentPromptQueueItem.status === "stalled") ? (
-                      <div className="flex flex-wrap gap-3">
-                        <button
-                          type="button"
-                          onClick={() => retryQueuedAgentPrompt(currentPromptQueueItem.promptId)}
-                          className="rounded-full border border-cyan-300/30 bg-cyan-300/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-cyan-100 transition hover:bg-cyan-300/20"
-                        >
-                          Retry prompt
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => abandonQueuedAgentPrompt(currentPromptQueueItem.promptId)}
-                          className="rounded-full border border-white/10 bg-slate-900/70 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-slate-200 transition hover:bg-slate-800"
-                        >
-                          Abandon prompt
-                        </button>
-                      </div>
-                    ) : null}
-
-                    {!isAgentChatCleared && agentPromptMessage ? (
-                      <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
-                        Agent channel: {formatAgentPromptMessage(agentPromptMessage)}
-                      </p>
-                    ) : null}
-
-                    {!isAgentChatCleared && latestChat ? (
-                      <div className="grid gap-3 pt-2">
-                        <div className="flex justify-end">
-                          <div className="max-w-[85%] rounded-[1.5rem] rounded-br-md bg-cyan-300 px-4 py-3 text-sm text-slate-950">
-                            <p>{latestChat.prompt}</p>
-                            {latestChat.model ? (
-                              <p className="mt-2 text-xs text-slate-700">
-                                {latestChat.model} / {latestChat.reasoning}
-                                {latestChat.planningMode ? " / planning" : ""}
-                              </p>
-                            ) : null}
-                          </div>
-                        </div>
-                        <div className="flex justify-start">
-                          <div className="max-w-[85%] whitespace-pre-wrap rounded-[1.5rem] rounded-bl-md border border-white/10 bg-slate-900/90 px-4 py-3 text-sm text-slate-100">
-                            {latestChat.reply || "Waiting for daemon reply..."}
-                          </div>
-                        </div>
-                      </div>
-                    ) : null}
+                {ventureError ? (
+                  <div className="rounded-[1.5rem] border border-rose-400/20 bg-rose-500/12 px-4 py-3 text-sm text-rose-100">
+                    {ventureError}
                   </div>
-                ) : activeDevTab === "settings" ? (
-                  <div className="grid gap-4">
-                    <div className="rounded-[1.5rem] border border-cyan-400/20 bg-cyan-400/8 p-4">
-                      <p className="text-[11px] uppercase tracking-[0.28em] text-cyan-200/80">
-                        Settings
-                      </p>
-                      <p className="mt-2 break-all text-sm leading-6 text-slate-200">
-                        Signed in as {currentUser.email ?? currentUserId}
-                      </p>
-                    </div>
-                    <div className="grid gap-3 rounded-[1.5rem] border border-white/10 bg-black/25 p-4">
-                      <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">
-                        User id
-                      </p>
-                      <code className="break-all rounded-[1.25rem] border border-white/10 bg-slate-950 px-4 py-3 text-sm text-cyan-100">
-                        {currentUserId}
-                      </code>
-                      <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">
-                        Daemon .env
-                      </p>
-                      <pre className="whitespace-pre-wrap break-all rounded-[1.25rem] border border-white/10 bg-slate-950 px-4 py-3 text-sm leading-6 text-slate-100">
-                        {[
-                          `DAEDALUS_USER_ID=${currentUserId}`,
-                          `SUPABASE_URL=${supabaseUrl}`,
-                          `SUPABASE_PUBLISHABLE_KEY=${supabasePublishableKey}`,
-                        ].join("\n")}
-                      </pre>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          void signOut();
-                        }}
-                        className="w-fit rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-slate-200 transition hover:bg-white/10"
-                      >
-                        Sign out
-                      </button>
-                    </div>
+                ) : null}
+
+                {isLoadingVentures && ventures.length === 0 ? (
+                  <div className="rounded-[1.5rem] border border-white/10 bg-slate-950/55 px-5 py-6">
+                    <p className="text-base font-medium text-white">
+                      Loading ventures...
+                    </p>
+                    <p className="mt-2 text-sm text-slate-400">
+                      Pulling the current venture list from Supabase now.
+                    </p>
+                  </div>
+                ) : ventures.length === 0 ? (
+                  <div className="rounded-[1.5rem] border border-dashed border-white/10 bg-slate-950/40 px-5 py-6">
+                    <p className="text-base font-medium text-white">
+                      No ventures yet.
+                    </p>
+                    <p className="mt-2 text-sm text-slate-400">
+                      Add a venture name to create the first tracked row in Supabase.
+                    </p>
                   </div>
                 ) : (
                   <div className="grid gap-4">
-                    <div className="rounded-[1.5rem] border border-cyan-400/20 bg-cyan-400/8 p-4">
-                      <p className="text-[11px] uppercase tracking-[0.28em] text-cyan-200/80">
-                        Ventures workspace
-                      </p>
-                      <p className="mt-2 text-sm leading-6 text-slate-200">
-                        Load ventures from Supabase, then track each one by name and progress state inside the shared workspace.
-                      </p>
-                    </div>
-
-                    <div className="grid gap-3 rounded-[1.5rem] border border-white/10 bg-black/25 p-4">
+                    <div className="grid gap-2">
                       <label
-                        htmlFor="venture-name"
+                        htmlFor="selected-venture"
                         className="text-[11px] uppercase tracking-[0.28em] text-slate-400"
                       >
-                        New venture name
+                        Select venture
                       </label>
-                      <input
-                        id="venture-name"
-                        type="text"
-                        value={newVentureName}
-                        onChange={(event) => setNewVentureName(event.target.value)}
-                        placeholder="Add the next venture to track..."
-                        className="rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-500"
-                      />
-                      <label
-                        htmlFor="venture-project"
-                        className="text-[11px] uppercase tracking-[0.28em] text-slate-400"
+                      <select
+                        id="selected-venture"
+                        value={selectedVenture?.id ?? ""}
+                        onChange={(event) => setSelectedVentureId(event.target.value)}
+                        className="agent-chat-scrollbar rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
                       >
-                        Project directory
-                      </label>
-                        <select
-                          id="venture-project"
-                          value={newVentureProjectDirectory}
-                          onChange={(event) =>
-                            updateNewVentureProjectDirectory(event.target.value)
-                          }
-                          className="agent-chat-scrollbar rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
-                        >
-                        <option value="">No project tag</option>
-                        {availableProjectDirectories.length > 0 ? (
-                          availableProjectDirectories.map((projectDirectory) => (
-                            <option key={projectDirectory} value={projectDirectory}>
-                              {projectDirectory}
-                            </option>
-                          ))
-                        ) : (
-                          <option value={DEFAULT_PROJECT_DIRECTORY}>
-                            {DEFAULT_PROJECT_DIRECTORY}
+                        {ventures.map((venture) => (
+                          <option key={venture.id} value={venture.id}>
+                            {venture.ventureName} (
+                            {formatVentureProgressState(venture.progressState)})
                           </option>
-                        )}
+                        ))}
                       </select>
-                      {newVentureProjectDirectory ? (
-                        <div className="grid gap-3">
-                          <label
-                            htmlFor="venture-feature-tag"
-                            className="text-[11px] uppercase tracking-[0.28em] text-slate-400"
-                          >
-                            Tagged features
-                          </label>
-                          <div className="flex flex-wrap items-center gap-3">
-                            <select
-                              id="venture-feature-tag"
-                              value={newVentureSelectedFeaturePath}
-                              onChange={(event) =>
-                                setNewVentureSelectedFeaturePath(event.target.value)
-                              }
-                              className="agent-chat-scrollbar min-w-0 flex-1 rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
-                            >
-                              <option value="">Select a feature to tag</option>
-                              {newVentureFeatureOptions.map((feature) => (
-                                <option key={feature.filePath} value={feature.filePath}>
-                                  {feature.featureName}
-                                </option>
-                              ))}
-                            </select>
-                            <button
-                              type="button"
-                              onClick={addNewVentureFeatureTag}
-                              disabled={!newVentureSelectedFeaturePath}
-                              className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
-                            >
-                              Add feature
-                            </button>
-                          </div>
-                          {newVentureFeatureFilePaths.length > 0 ? (
-                            <div className="flex flex-wrap gap-2 rounded-[1.25rem] border border-white/10 bg-slate-900/50 p-3">
-                              {getFeatureTagsForPaths(projects ?? {}, newVentureFeatureFilePaths).map(
-                                (feature) => (
-                                  <span
-                                    key={feature.filePath}
-                                    title={feature.filePath}
-                                    className="inline-flex items-center gap-2 rounded-full border border-cyan-300/30 bg-cyan-300/12 px-3 py-2 text-sm text-cyan-50"
-                                  >
-                                    <span className="max-w-[14rem] truncate">
-                                      {feature.featureName}
-                                    </span>
-                                    <button
-                                      type="button"
-                                      onClick={() => removeNewVentureFeatureTag(feature.filePath)}
-                                      className="rounded-full border border-cyan-200/20 px-2 py-0.5 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-200/15"
-                                      aria-label={`Remove ${feature.featureName}`}
-                                    >
-                                      x
-                                    </button>
-                                  </span>
-                                ),
-                              )}
-                            </div>
-                          ) : (
-                            <p className="text-sm text-slate-400">
-                              Add one or more feature files from this project to tag the venture.
-                            </p>
-                          )}
-                        </div>
-                      ) : null}
-                      <label
-                        htmlFor="venture-details"
-                        className="text-[11px] uppercase tracking-[0.28em] text-slate-400"
-                      >
-                        Details
-                      </label>
-                      <textarea
-                        id="venture-details"
-                        value={newVentureDetails}
-                        onChange={(event) => setNewVentureDetails(event.target.value)}
-                        placeholder="Add a few details about this venture..."
-                        className="agent-chat-scrollbar min-h-24 rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-500"
-                      />
-                      <div className="flex flex-wrap items-center gap-3">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            void addVenture();
-                          }}
-                          disabled={!newVentureName.trim() || isCreatingVenture}
-                          className="rounded-full bg-cyan-300 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
-                        >
-                          {isCreatingVenture ? "Saving..." : "Add Venture"}
-                        </button>
-                        <p className="text-sm text-slate-300">
-                          Venture names are required. Project, feature, and details tags are optional. New rows start in the idle state.
-                        </p>
-                      </div>
+                      <p className="text-sm text-slate-400">
+                        Pick one venture to inspect instead of scrolling through the full list.
+                      </p>
                     </div>
 
-                    {ventureError ? (
-                      <div className="rounded-[1.5rem] border border-rose-400/20 bg-rose-500/12 px-5 py-4 text-sm text-rose-100">
-                        {ventureError}
-                      </div>
-                    ) : null}
-
-                    {isLoadingVentures && ventures.length === 0 ? (
-                      <div className="rounded-[1.5rem] border border-white/10 bg-slate-950/55 px-5 py-8 text-center">
-                        <p className="text-base font-medium text-white">Loading ventures...</p>
-                        <p className="mt-2 text-sm leading-6 text-slate-400">
-                          Pulling the current venture list from Supabase now.
-                        </p>
-                      </div>
-                    ) : ventures.length === 0 ? (
-                      <div className="rounded-[1.5rem] border border-dashed border-white/10 bg-slate-950/55 px-5 py-8 text-center">
-                        <p className="text-base font-medium text-white">No Ventures yet.</p>
-                        <p className="mt-2 text-sm leading-6 text-slate-400">
-                          Add a venture name to create the first tracked row in Supabase.
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="grid gap-4">
-                        <div className="grid gap-2 rounded-[1.5rem] border border-white/10 bg-slate-950/55 p-4">
-                          <label
-                            htmlFor="selected-venture"
-                            className="text-[11px] uppercase tracking-[0.28em] text-slate-400"
-                          >
-                            Select venture
-                          </label>
-                          <select
-                            id="selected-venture"
-                            value={selectedVenture?.id ?? ""}
-                            onChange={(event) => {
-                              setSelectedVentureId(event.target.value);
-                              cancelEditingVenture();
-                            }}
-                            className="agent-chat-scrollbar rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
-                          >
-                            {ventures.map((venture) => (
-                              <option key={venture.id} value={venture.id}>
-                                {venture.ventureName} ({formatVentureProgressState(venture.progressState)})
-                              </option>
-                            ))}
-                          </select>
-                          <p className="text-sm text-slate-400">
-                            Pick one venture to inspect instead of scrolling through the full list.
-                          </p>
-                        </div>
-
-                        {selectedVenture ? (
-                          <div
-                            className={`rounded-[1.5rem] border p-4 shadow-[0_20px_50px_rgba(2,6,23,0.3)] ${getVentureCardClassName(selectedVenture.progressState)}`}
-                          >
-                            {editingVentureId === selectedVenture.id ? (
+                    {selectedVenture ? (
+                      <div
+                        className={`rounded-[1.5rem] border p-4 shadow-[0_20px_50px_rgba(2,6,23,0.3)] ${getVentureCardClassName(selectedVenture.progressState)}`}
+                      >
+                        {editingVentureId === selectedVenture.id ? (
+                          <div className="grid gap-3">
+                            <label
+                              htmlFor={`venture-edit-name-${selectedVenture.id}`}
+                              className="text-[11px] uppercase tracking-[0.28em] text-slate-400"
+                            >
+                              Venture name
+                            </label>
+                            <input
+                              id={`venture-edit-name-${selectedVenture.id}`}
+                              type="text"
+                              value={editingVentureName}
+                              onChange={(event) =>
+                                setEditingVentureName(event.target.value)
+                              }
+                              className="rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
+                            />
+                            <label
+                              htmlFor={`venture-edit-project-${selectedVenture.id}`}
+                              className="text-[11px] uppercase tracking-[0.28em] text-slate-400"
+                            >
+                              Project directory
+                            </label>
+                            <select
+                              id={`venture-edit-project-${selectedVenture.id}`}
+                              value={editingVentureProjectDirectory}
+                              onChange={(event) =>
+                                updateEditingVentureProjectDirectory(
+                                  event.target.value,
+                                )
+                              }
+                              className="agent-chat-scrollbar rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
+                            >
+                              <option value="">No project tag</option>
+                              {editingVentureProjectDirectory &&
+                              !availableProjectDirectories.includes(
+                                editingVentureProjectDirectory,
+                              ) ? (
+                                <option value={editingVentureProjectDirectory}>
+                                  {editingVentureProjectDirectory}
+                                </option>
+                              ) : null}
+                              {availableProjectDirectories.length > 0 ? (
+                                availableProjectDirectories.map(
+                                  (projectDirectory) => (
+                                    <option
+                                      key={projectDirectory}
+                                      value={projectDirectory}
+                                    >
+                                      {projectDirectory}
+                                    </option>
+                                  ),
+                                )
+                              ) : (
+                                <option value={DEFAULT_PROJECT_DIRECTORY}>
+                                  {DEFAULT_PROJECT_DIRECTORY}
+                                </option>
+                              )}
+                            </select>
+                            <label
+                              htmlFor={`venture-edit-feature-${selectedVenture.id}`}
+                              className="text-[11px] uppercase tracking-[0.28em] text-slate-400"
+                            >
+                              Tagged features
+                            </label>
+                            {editingVentureProjectDirectory ? (
                               <div className="grid gap-3">
-                                <label
-                                  htmlFor={`venture-edit-name-${selectedVenture.id}`}
-                                  className="text-[11px] uppercase tracking-[0.28em] text-slate-400"
-                                >
-                                  Venture name
-                                </label>
-                                <input
-                                  id={`venture-edit-name-${selectedVenture.id}`}
-                                  type="text"
-                                  value={editingVentureName}
-                                  onChange={(event) => setEditingVentureName(event.target.value)}
-                                  className="rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
-                                />
-                                <label
-                                  htmlFor={`venture-edit-project-${selectedVenture.id}`}
-                                  className="text-[11px] uppercase tracking-[0.28em] text-slate-400"
-                                >
-                                  Project directory
-                                </label>
-                                <select
-                                  id={`venture-edit-project-${selectedVenture.id}`}
-                                  value={editingVentureProjectDirectory}
-                                  onChange={(event) =>
-                                    updateEditingVentureProjectDirectory(event.target.value)
-                                  }
-                                  className="agent-chat-scrollbar rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
-                                >
-                                  <option value="">No project tag</option>
-                                  {editingVentureProjectDirectory &&
-                                  !availableProjectDirectories.includes(editingVentureProjectDirectory) ? (
-                                    <option value={editingVentureProjectDirectory}>
-                                      {editingVentureProjectDirectory}
-                                    </option>
-                                  ) : null}
-                                  {availableProjectDirectories.length > 0 ? (
-                                    availableProjectDirectories.map((projectDirectory) => (
-                                      <option key={projectDirectory} value={projectDirectory}>
-                                        {projectDirectory}
+                                <div className="flex flex-wrap items-center gap-3">
+                                  <select
+                                    id={`venture-edit-feature-${selectedVenture.id}`}
+                                    value={editingVentureSelectedFeaturePath}
+                                    onChange={(event) =>
+                                      setEditingVentureSelectedFeaturePath(
+                                        event.target.value,
+                                      )
+                                    }
+                                    className="agent-chat-scrollbar min-w-0 flex-1 rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
+                                  >
+                                    <option value="">Select a feature to tag</option>
+                                    {editingVentureFeatureOptions.map((feature) => (
+                                      <option
+                                        key={feature.filePath}
+                                        value={feature.filePath}
+                                      >
+                                        {feature.featureName}
                                       </option>
-                                    ))
-                                  ) : (
-                                    <option value={DEFAULT_PROJECT_DIRECTORY}>
-                                      {DEFAULT_PROJECT_DIRECTORY}
-                                    </option>
-                                  )}
-                                </select>
-                                <label
-                                  htmlFor={`venture-edit-feature-${selectedVenture.id}`}
-                                  className="text-[11px] uppercase tracking-[0.28em] text-slate-400"
-                                >
-                                  Tagged features
-                                </label>
-                                {editingVentureProjectDirectory ? (
-                                  <div className="grid gap-3">
-                                    <div className="flex flex-wrap items-center gap-3">
-                                      <select
-                                        id={`venture-edit-feature-${selectedVenture.id}`}
-                                        value={editingVentureSelectedFeaturePath}
-                                        onChange={(event) =>
-                                          setEditingVentureSelectedFeaturePath(event.target.value)
-                                        }
-                                        className="agent-chat-scrollbar min-w-0 flex-1 rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
+                                    ))}
+                                  </select>
+                                  <button
+                                    type="button"
+                                    onClick={addEditingVentureFeatureTag}
+                                    disabled={!editingVentureSelectedFeaturePath}
+                                    className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
+                                  >
+                                    Add feature
+                                  </button>
+                                </div>
+                                {editingVentureFeatureFilePaths.length > 0 ? (
+                                  <div className="flex flex-wrap gap-2 rounded-[1.25rem] border border-white/10 bg-slate-900/50 p-3">
+                                    {getFeatureTagsForPaths(
+                                      projects ?? {},
+                                      editingVentureFeatureFilePaths,
+                                    ).map((feature) => (
+                                      <span
+                                        key={feature.filePath}
+                                        title={feature.filePath}
+                                        className="inline-flex items-center gap-2 rounded-full border border-cyan-300/30 bg-cyan-300/12 px-3 py-2 text-sm text-cyan-50"
                                       >
-                                        <option value="">Select a feature to tag</option>
-                                        {editingVentureFeatureOptions.map((feature) => (
-                                          <option key={feature.filePath} value={feature.filePath}>
-                                            {feature.featureName}
-                                          </option>
-                                        ))}
-                                      </select>
-                                      <button
-                                        type="button"
-                                        onClick={addEditingVentureFeatureTag}
-                                        disabled={!editingVentureSelectedFeaturePath}
-                                        className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
-                                      >
-                                        Add feature
-                                      </button>
-                                    </div>
-                                    {editingVentureFeatureFilePaths.length > 0 ? (
-                                      <div className="flex flex-wrap gap-2 rounded-[1.25rem] border border-white/10 bg-slate-900/50 p-3">
-                                        {getFeatureTagsForPaths(
-                                          projects ?? {},
-                                          editingVentureFeatureFilePaths,
-                                        ).map((feature) => (
-                                          <span
-                                            key={feature.filePath}
-                                            title={feature.filePath}
-                                            className="inline-flex items-center gap-2 rounded-full border border-cyan-300/30 bg-cyan-300/12 px-3 py-2 text-sm text-cyan-50"
-                                          >
-                                            <span className="max-w-[14rem] truncate">
-                                              {feature.featureName}
-                                            </span>
-                                            <button
-                                              type="button"
-                                              onClick={() =>
-                                                removeEditingVentureFeatureTag(feature.filePath)
-                                              }
-                                              className="rounded-full border border-cyan-200/20 px-2 py-0.5 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-200/15"
-                                              aria-label={`Remove ${feature.featureName}`}
-                                            >
-                                              x
-                                            </button>
-                                          </span>
-                                        ))}
-                                      </div>
-                                    ) : (
-                                      <p className="text-sm text-slate-400">
-                                        No feature tags added yet.
-                                      </p>
-                                    )}
+                                        <span className="max-w-[14rem] truncate">
+                                          {feature.featureName}
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            removeEditingVentureFeatureTag(
+                                              feature.filePath,
+                                            )
+                                          }
+                                          className="rounded-full border border-cyan-200/20 px-2 py-0.5 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-200/15"
+                                          aria-label={`Remove ${feature.featureName}`}
+                                        >
+                                          x
+                                        </button>
+                                      </span>
+                                    ))}
                                   </div>
                                 ) : (
                                   <p className="text-sm text-slate-400">
-                                    Pick a project first to tag its feature files.
+                                    No feature tags added yet.
                                   </p>
                                 )}
-                                <label
-                                  htmlFor={`venture-edit-details-${selectedVenture.id}`}
-                                  className="text-[11px] uppercase tracking-[0.28em] text-slate-400"
-                                >
-                                  Details
-                                </label>
-                                <textarea
-                                  id={`venture-edit-details-${selectedVenture.id}`}
-                                  value={editingVentureDetails}
-                                  onChange={(event) => setEditingVentureDetails(event.target.value)}
-                                  className="agent-chat-scrollbar min-h-24 rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
-                                />
-                                <div className="flex flex-wrap items-center gap-3">
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      void saveVentureEdits();
-                                    }}
-                                    disabled={!editingVentureName.trim() || savingVentureId === selectedVenture.id}
-                                    className="rounded-full bg-cyan-300 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
-                                  >
-                                    {savingVentureId === selectedVenture.id ? "Saving..." : "Save"}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={cancelEditingVenture}
-                                    className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-white/10"
-                                  >
-                                    Cancel
-                                  </button>
-                                </div>
                               </div>
                             ) : (
-                              <div className="grid gap-4">
-                                <div className="flex flex-wrap items-start justify-between gap-3">
-                                  <div className="space-y-2">
-                                    <p
-                                      className={`text-base font-semibold ${
-                                        selectedVenture.progressState === "completed"
-                                          ? "text-emerald-100 line-through decoration-2"
-                                          : "text-white"
-                                      }`}
-                                    >
-                                      {selectedVenture.ventureName}
-                                    </p>
-                                    <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
-                                      {formatVentureProgressState(selectedVenture.progressState)} • Created{" "}
-                                      {formatVentureCreatedAt(selectedVenture.createdAt)}
-                                    </p>
-                                  </div>
-                                  <div className="grid gap-2">
-                                    <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
-                                      Project
-                                    </p>
-                                    <p className="break-all rounded-full border border-white/10 bg-slate-900/60 px-3 py-2 text-xs text-slate-300">
-                                      {selectedVenture.projectDirectory || "No project tagged"}
-                                    </p>
-                                  </div>
-                                  <div className="grid gap-2">
-                                    <label
-                                      htmlFor={`venture-progress-${selectedVenture.id}`}
-                                      className="text-[11px] uppercase tracking-[0.24em] text-slate-500"
-                                    >
-                                      Progress state
-                                    </label>
-                                    <select
-                                      id={`venture-progress-${selectedVenture.id}`}
-                                      value={selectedVenture.progressState}
-                                      onChange={(event) => {
-                                        void updateVentureProgressState(
-                                          selectedVenture.id,
-                                          event.target.value as VentureProgressState,
-                                        );
-                                      }}
-                                      disabled={updatingProgressVentureId === selectedVenture.id}
-                                      className="agent-chat-scrollbar rounded-full border border-white/10 bg-slate-900/80 px-4 py-2 text-sm text-slate-100 outline-none disabled:cursor-not-allowed disabled:bg-slate-800"
-                                    >
-                                      {VENTURE_PROGRESS_STATES.map((progressState) => (
-                                        <option key={progressState} value={progressState}>
-                                          {formatVentureProgressState(progressState)}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  </div>
-                                </div>
-
-                                <div className="grid gap-2">
-                                  <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
-                                    Details
-                                  </p>
-                                  <div className="whitespace-pre-wrap rounded-[1.25rem] border border-white/10 bg-slate-900/55 px-4 py-3 text-sm leading-6 text-slate-200">
-                                    {selectedVenture.details || "No details added yet."}
-                                  </div>
-                                </div>
-
-                                <div className="grid gap-2">
-                                  <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
-                                    Tagged features
-                                  </p>
-                                  {selectedVentureFeatureTags.length > 0 ? (
-                                    <div className="flex flex-wrap gap-2 rounded-[1.25rem] border border-white/10 bg-slate-900/55 p-3">
-                                      {selectedVentureFeatureTags.map((feature) => (
-                                        <span
-                                          key={feature.filePath}
-                                          title={feature.filePath}
-                                          className="inline-flex items-center rounded-full border border-cyan-300/25 bg-cyan-300/10 px-3 py-2 text-xs text-cyan-50"
-                                        >
-                                          {feature.featureName}
-                                        </span>
-                                      ))}
-                                    </div>
-                                  ) : (
-                                    <div className="rounded-[1.25rem] border border-white/10 bg-slate-900/55 px-4 py-3 text-sm text-slate-400">
-                                      No feature tags added yet.
-                                    </div>
-                                  )}
-                                </div>
-
-                                <div className="flex flex-wrap items-center gap-3">
-                                  <button
-                                    type="button"
-                                    onClick={() => startEditingVenture(selectedVenture)}
-                                    className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-white/10"
-                                  >
-                                    Edit
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      void deleteVenture(selectedVenture.id);
-                                    }}
-                                    disabled={deletingVentureId === selectedVenture.id}
-                                    className="rounded-full border border-rose-400/20 bg-rose-500/10 px-4 py-2 text-sm font-semibold text-rose-100 transition hover:bg-rose-500/15"
-                                  >
-                                    {deletingVentureId === selectedVenture.id ? "Deleting..." : "Delete"}
-                                  </button>
-                                </div>
-                              </div>
+                              <p className="text-sm text-slate-400">
+                                Pick a project first to tag its feature files.
+                              </p>
                             )}
+                            <label
+                              htmlFor={`venture-edit-details-${selectedVenture.id}`}
+                              className="text-[11px] uppercase tracking-[0.28em] text-slate-400"
+                            >
+                              Details
+                            </label>
+                            <textarea
+                              id={`venture-edit-details-${selectedVenture.id}`}
+                              value={editingVentureDetails}
+                              onChange={(event) =>
+                                setEditingVentureDetails(event.target.value)
+                              }
+                              className="agent-chat-scrollbar min-h-24 rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
+                            />
+                            <div className="flex flex-wrap items-center gap-3">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  void saveVentureEdits();
+                                }}
+                                disabled={
+                                  !editingVentureName.trim() ||
+                                  savingVentureId === selectedVenture.id
+                                }
+                                className="rounded-full bg-cyan-300 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
+                              >
+                                {savingVentureId === selectedVenture.id
+                                  ? "Saving..."
+                                  : "Save"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={cancelEditingVenture}
+                                className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-white/10"
+                              >
+                                Cancel
+                              </button>
+                            </div>
                           </div>
-                        ) : null}
+                        ) : (
+                          <div className="grid gap-4">
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div className="space-y-2">
+                                <p
+                                  className={`text-base font-semibold ${
+                                    selectedVenture.progressState === "completed"
+                                      ? "text-emerald-100 line-through decoration-2"
+                                      : "text-white"
+                                  }`}
+                                >
+                                  {selectedVenture.ventureName}
+                                </p>
+                                <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
+                                  {formatVentureProgressState(
+                                    selectedVenture.progressState,
+                                  )}{" "}
+                                  • Created{" "}
+                                  {formatVentureCreatedAt(selectedVenture.createdAt)}
+                                </p>
+                              </div>
+                              <div className="grid gap-2">
+                                <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
+                                  Project
+                                </p>
+                                <p className="break-all rounded-full border border-white/10 bg-slate-900/60 px-3 py-2 text-xs text-slate-300">
+                                  {selectedVenture.projectDirectory ||
+                                    "No project tagged"}
+                                </p>
+                              </div>
+                              <div className="grid gap-2">
+                                <label
+                                  htmlFor={`venture-progress-${selectedVenture.id}`}
+                                  className="text-[11px] uppercase tracking-[0.24em] text-slate-500"
+                                >
+                                  Progress state
+                                </label>
+                                <select
+                                  id={`venture-progress-${selectedVenture.id}`}
+                                  value={selectedVenture.progressState}
+                                  onChange={(event) => {
+                                    void updateVentureProgressState(
+                                      selectedVenture.id,
+                                      event.target.value as VentureProgressState,
+                                    );
+                                  }}
+                                  disabled={
+                                    updatingProgressVentureId === selectedVenture.id
+                                  }
+                                  className="agent-chat-scrollbar rounded-full border border-white/10 bg-slate-900/80 px-4 py-2 text-sm text-slate-100 outline-none disabled:cursor-not-allowed disabled:bg-slate-800"
+                                >
+                                  {VENTURE_PROGRESS_STATES.map((progressState) => (
+                                    <option key={progressState} value={progressState}>
+                                      {formatVentureProgressState(progressState)}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+
+                            <div className="grid gap-2">
+                              <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
+                                Details
+                              </p>
+                              <div className="whitespace-pre-wrap rounded-[1.25rem] border border-white/10 bg-slate-900/55 px-4 py-3 text-sm leading-6 text-slate-200">
+                                {selectedVenture.details || "No details added yet."}
+                              </div>
+                            </div>
+
+                            <div className="grid gap-2">
+                              <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
+                                Tagged features
+                              </p>
+                              {selectedVentureFeatureTags.length > 0 ? (
+                                <div className="flex flex-wrap gap-2 rounded-[1.25rem] border border-white/10 bg-slate-900/55 p-3">
+                                  {selectedVentureFeatureTags.map((feature) => (
+                                    <span
+                                      key={feature.filePath}
+                                      title={feature.filePath}
+                                      className="inline-flex items-center rounded-full border border-cyan-300/25 bg-cyan-300/10 px-3 py-2 text-xs text-cyan-50"
+                                    >
+                                      {feature.featureName}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : (
+                                <div className="rounded-[1.25rem] border border-white/10 bg-slate-900/55 px-4 py-3 text-sm text-slate-400">
+                                  No feature tags added yet.
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-3">
+                              <button
+                                type="button"
+                                onClick={() => startEditingVenture(selectedVenture)}
+                                className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-white/10"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  void deleteVenture(selectedVenture.id);
+                                }}
+                                disabled={deletingVentureId === selectedVenture.id}
+                                className="rounded-full border border-rose-400/20 bg-rose-500/10 px-4 py-2 text-sm font-semibold text-rose-100 transition hover:bg-rose-500/15"
+                              >
+                                {deletingVentureId === selectedVenture.id
+                                  ? "Deleting..."
+                                  : "Delete"}
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    )}
+                    ) : null}
                   </div>
                 )}
               </div>
             </div>
-          )}
-        </div>
+          </aside>
+        ) : null}
+
+        {activePrimaryOverlay === "new-feature" ? (
+          <section className={primaryOverlayClassName}>
+            <div className="flex items-start justify-between gap-4 border-b border-white/10 px-5 py-4">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">
+                  New feature
+                </p>
+                <h2 className="mt-2 text-xl font-semibold text-white">
+                  Start a new feature session
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-slate-300">
+                  Use the graph-first workspace to scope a new feature, pick tagged features, and send the next prompt.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closePrimaryOverlay}
+                className="rounded-full border border-white/10 bg-white/6 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:bg-white/10"
+              >
+                X
+              </button>
+            </div>
+            <div className="agent-chat-scrollbar min-h-0 flex-1 overflow-y-auto px-5 py-4">
+              <AgentSessionPanel
+                agentModels={agentModels}
+                agentPromptMessage={agentPromptMessage}
+                availableProjectDirectories={availableProjectDirectories}
+                currentPromptQueueItem={currentPromptQueueItem}
+                defaultProjectDirectory={DEFAULT_PROJECT_DIRECTORY}
+                formatAgentPromptMessage={formatAgentPromptMessage}
+                isAgentChatCleared={isAgentChatCleared}
+                isPlanningMode={isPlanningMode}
+                latestChat={latestChat}
+                onAbandonQueuedAgentPrompt={abandonQueuedAgentPrompt}
+                onClearAgentChat={clearAgentChat}
+                onPlanningModeChange={setIsPlanningMode}
+                onPromptTextChange={setPromptText}
+                onRemoveTargetedFeature={removeTargetedFeature}
+                onRetryQueuedAgentPrompt={retryQueuedAgentPrompt}
+                onSelectedProjectDirectoryChange={setSelectedProjectDirectory}
+                onSelectedReasoningChange={setSelectedReasoning}
+                onSelectModel={selectModel}
+                onSendPrompt={sendAgentPrompt}
+                onTargetedFeatureAdd={addTargetedFeature}
+                projects={projects ?? {}}
+                promptQueueStatusText={promptQueueStatusText}
+                promptText={promptText}
+                selectedModelId={selectedModelId}
+                selectedProjectDirectory={selectedProjectDirectory}
+                selectedReasoning={selectedReasoning}
+                targetedFeatures={targetedFeatures}
+              />
+            </div>
+          </section>
+        ) : null}
+
+        {activePrimaryOverlay === "feature-detail" && selectedFeatureSession ? (
+          <section className={primaryOverlayClassName}>
+            <div className="flex items-start justify-between gap-4 border-b border-white/10 px-5 py-4">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">
+                  Feature node
+                </p>
+                <h2 className="mt-2 text-xl font-semibold text-white">
+                  {selectedFeatureSession.featureName}
+                </h2>
+                <p className="mt-2 break-all text-xs leading-5 text-slate-400">
+                  {selectedFeatureSession.filePath}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closePrimaryOverlay}
+                className="rounded-full border border-white/10 bg-white/6 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:bg-white/10"
+              >
+                X
+              </button>
+            </div>
+            <div className="border-b border-white/10 px-5 py-3">
+              <div className="inline-flex rounded-full border border-white/10 bg-black/25 p-1">
+                <button
+                  type="button"
+                  onClick={() => setFeatureDetailTab("chat")}
+                  className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] transition ${
+                    featureDetailTab === "chat"
+                      ? "bg-cyan-300 text-slate-950"
+                      : "text-slate-300 hover:bg-white/10"
+                  }`}
+                >
+                  Chat
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFeatureDetailTab("info")}
+                  className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] transition ${
+                    featureDetailTab === "info"
+                      ? "bg-cyan-300 text-slate-950"
+                      : "text-slate-300 hover:bg-white/10"
+                  }`}
+                >
+                  Info
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFeatureDetailTab("params")}
+                  className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] transition ${
+                    featureDetailTab === "params"
+                      ? "bg-cyan-300 text-slate-950"
+                      : "text-slate-300 hover:bg-white/10"
+                  }`}
+                >
+                  Params
+                </button>
+              </div>
+            </div>
+            <div className="agent-chat-scrollbar min-h-0 flex-1 overflow-y-auto px-5 py-4">
+              {featureDetailTab === "chat" ? (
+                <AgentSessionPanel
+                  agentModels={agentModels}
+                  agentPromptMessage={agentPromptMessage}
+                  availableProjectDirectories={availableProjectDirectories}
+                  currentPromptQueueItem={currentPromptQueueItem}
+                  defaultProjectDirectory={DEFAULT_PROJECT_DIRECTORY}
+                  formatAgentPromptMessage={formatAgentPromptMessage}
+                  isAgentChatCleared={isAgentChatCleared}
+                  isPlanningMode={isPlanningMode}
+                  latestChat={latestChat}
+                  onAbandonQueuedAgentPrompt={abandonQueuedAgentPrompt}
+                  onClearAgentChat={clearAgentChat}
+                  onPlanningModeChange={setIsPlanningMode}
+                  onPromptTextChange={setPromptText}
+                  onRemoveTargetedFeature={removeTargetedFeature}
+                  onRetryQueuedAgentPrompt={retryQueuedAgentPrompt}
+                  onSelectedProjectDirectoryChange={setSelectedProjectDirectory}
+                  onSelectedReasoningChange={setSelectedReasoning}
+                  onSelectModel={selectModel}
+                  onSendPrompt={sendAgentPrompt}
+                  onTargetedFeatureAdd={addTargetedFeature}
+                  projects={projects ?? {}}
+                  promptQueueStatusText={promptQueueStatusText}
+                  promptText={promptText}
+                  selectedModelId={selectedModelId}
+                  selectedProjectDirectory={selectedProjectDirectory}
+                  selectedReasoning={selectedReasoning}
+                  targetedFeatures={targetedFeatures}
+                />
+              ) : featureDetailTab === "info" ? (
+                <div className="grid gap-2">
+                  <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">
+                    Feature file
+                  </p>
+                  <pre className="whitespace-pre-wrap break-words rounded-[1.25rem] border border-white/10 bg-slate-900/70 px-4 py-3 text-sm leading-6 text-slate-200">
+                    {selectedFeatureRecord?.markdown ||
+                      "This feature file is no longer available in the loaded payload."}
+                  </pre>
+                </div>
+              ) : (
+                <div className="grid gap-5">
+                  <section className="grid gap-2">
+                    <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">
+                      Parameter file
+                    </p>
+                    <p className="break-all text-xs leading-5 text-slate-500">
+                      {getParameterFilePathForFeature(selectedFeatureSession.filePath)}
+                    </p>
+                    {matchedParameterFile ? (
+                      <ParameterVariableSelector
+                        key={`${selectedFeatureSession.projectPath}:${matchedParameterFile.path}`}
+                        projectPath={selectedFeatureSession.projectPath}
+                        parameterFilePath={matchedParameterFile.path}
+                        parameterFile={matchedParameterFile}
+                        onRequestSave={requestParameterFileUpdate}
+                      />
+                    ) : (
+                      <div className="rounded-[1.25rem] border border-dashed border-white/10 bg-slate-900/40 px-4 py-3 text-sm text-slate-400">
+                        No matching parameter file has been loaded for this feature yet.
+                      </div>
+                    )}
+                  </section>
+                </div>
+              )}
+            </div>
+          </section>
+        ) : null}
 
         {projectEntries.length === 0 ? (
           <div className="pointer-events-none absolute inset-x-4 bottom-6 flex justify-center">
@@ -2248,7 +2517,10 @@ async function fetchCurrentMessage(
   url.searchParams.set("purpose", `eq.${purpose}`);
   url.searchParams.set("limit", "1");
   const response = await fetch(url, {
-    headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
+    headers: getAuthenticatedSupabaseHeaders(
+      supabasePublishableKey,
+      accessToken,
+    ),
     cache: "no-store",
   });
 
@@ -2274,7 +2546,10 @@ async function updateMessage(
   existingRowsUrl.searchParams.set("purpose", `eq.${purpose}`);
   existingRowsUrl.searchParams.set("limit", "1");
   const existingRowsResponse = await fetch(existingRowsUrl, {
-    headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
+    headers: getAuthenticatedSupabaseHeaders(
+      supabasePublishableKey,
+      accessToken,
+    ),
     cache: "no-store",
   });
 
@@ -2282,12 +2557,20 @@ async function updateMessage(
     throw new Error("communications message lookup failed");
   }
 
-  const existingRows = (await existingRowsResponse.json()) as Array<{ message?: string }>;
-  const headers = getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken);
+  const existingRows = (await existingRowsResponse.json()) as Array<{
+    message?: string;
+  }>;
+  const headers = getAuthenticatedSupabaseHeaders(
+    supabasePublishableKey,
+    accessToken,
+  );
   const response =
     existingRows.length > 0
       ? await fetch(
-          new URL(`/rest/v1/communications?user_id=eq.${userId}&purpose=eq.${purpose}`, supabaseUrl),
+          new URL(
+            `/rest/v1/communications?user_id=eq.${userId}&purpose=eq.${purpose}`,
+            supabaseUrl,
+          ),
           {
             method: "PATCH",
             headers,
@@ -2321,7 +2604,10 @@ async function fetchDaemonPayload<TPayload>(
   url.searchParams.set("limit", "1");
 
   const response = await fetch(url, {
-    headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
+    headers: getAuthenticatedSupabaseHeaders(
+      supabasePublishableKey,
+      accessToken,
+    ),
     cache: "no-store",
   });
 
@@ -2354,7 +2640,10 @@ async function fetchVentures(
   url.searchParams.set("order", "created_at.desc");
 
   const response = await fetch(url, {
-    headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
+    headers: getAuthenticatedSupabaseHeaders(
+      supabasePublishableKey,
+      accessToken,
+    ),
     cache: "no-store",
   });
 
@@ -2379,9 +2668,13 @@ async function createVenture(
   const url = new URL("/rest/v1/ventures", supabaseUrl);
   const response = await fetch(url, {
     method: "POST",
-    headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken, {
-      Prefer: "return=representation",
-    }),
+    headers: getAuthenticatedSupabaseHeaders(
+      supabasePublishableKey,
+      accessToken,
+      {
+        Prefer: "return=representation",
+      },
+    ),
     body: JSON.stringify({
       details,
       feature_file_paths: featureFilePaths,
@@ -2420,9 +2713,13 @@ async function updateVenture(
 
   const response = await fetch(url, {
     method: "PATCH",
-    headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken, {
-      Prefer: "return=representation",
-    }),
+    headers: getAuthenticatedSupabaseHeaders(
+      supabasePublishableKey,
+      accessToken,
+      {
+        Prefer: "return=representation",
+      },
+    ),
     body: JSON.stringify(updates),
   });
 
@@ -2453,7 +2750,10 @@ async function deleteVentureRow(
 
   const response = await fetch(url, {
     method: "DELETE",
-    headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
+    headers: getAuthenticatedSupabaseHeaders(
+      supabasePublishableKey,
+      accessToken,
+    ),
   });
 
   if (!response.ok) {
@@ -2476,7 +2776,10 @@ function parseAgentPromptRowMessage(message: string): ParsedAgentPromptRow | nul
     return null;
   }
 
-  if (trimmedMessage === DAEMON_RECEIVED_MESSAGE || trimmedMessage === DAEMON_SENT_RESPONSE) {
+  if (
+    trimmedMessage === DAEMON_RECEIVED_MESSAGE ||
+    trimmedMessage === DAEMON_SENT_RESPONSE
+  ) {
     return {
       state: trimmedMessage,
     };
@@ -2490,8 +2793,14 @@ function parseAgentPromptRowMessage(message: string): ParsedAgentPromptRow | nul
     }
 
     return {
-      promptId: typeof parsedMessage.promptId === "string" ? parsedMessage.promptId : undefined,
-      state: typeof parsedMessage.state === "string" ? parsedMessage.state : undefined,
+      promptId:
+        typeof parsedMessage.promptId === "string"
+          ? parsedMessage.promptId
+          : undefined,
+      state:
+        typeof parsedMessage.state === "string"
+          ? parsedMessage.state
+          : undefined,
     };
   } catch {
     return null;
@@ -2499,7 +2808,9 @@ function parseAgentPromptRowMessage(message: string): ParsedAgentPromptRow | nul
 }
 
 function getAgentPromptQueueStatusText(queue: AgentPromptQueueEntry[]) {
-  const activePrompt = queue.find((item) => item.status === "sending" || item.status === "running");
+  const activePrompt = queue.find(
+    (item) => item.status === "sending" || item.status === "running",
+  );
 
   if (activePrompt) {
     if (activePrompt.status === "sending") {
@@ -2566,7 +2877,10 @@ function parseParameterUpdateRowMessage(message: string): { state?: string } | n
     }
 
     return {
-      state: typeof parsedMessage.state === "string" ? parsedMessage.state : undefined,
+      state:
+        typeof parsedMessage.state === "string"
+          ? parsedMessage.state
+          : undefined,
     };
   } catch {
     return null;
@@ -2642,14 +2956,20 @@ function formatAgentPromptMessage(message: string) {
   }
 
   if (parsedMessage.state === DAEMON_RECEIVED_MESSAGE) {
-    return parsedMessage.promptId ? `Daemon received prompt ${parsedMessage.promptId}` : "Daemon received prompt";
+    return parsedMessage.promptId
+      ? `Daemon received prompt ${parsedMessage.promptId}`
+      : "Daemon received prompt";
   }
 
   if (parsedMessage.state === DAEMON_SENT_RESPONSE) {
-    return parsedMessage.promptId ? `Daemon sent response for ${parsedMessage.promptId}` : "Daemon sent response";
+    return parsedMessage.promptId
+      ? `Daemon sent response for ${parsedMessage.promptId}`
+      : "Daemon sent response";
   }
 
-  return parsedMessage.promptId ? `Prompt queued ${parsedMessage.promptId}` : "Prompt queued";
+  return parsedMessage.promptId
+    ? `Prompt queued ${parsedMessage.promptId}`
+    : "Prompt queued";
 }
 
 function mapVentureRowToItem(row: VentureRow): VentureItem {
@@ -2662,53 +2982,6 @@ function mapVentureRowToItem(row: VentureRow): VentureItem {
     progressState: row.progress_state,
     ventureName: row.venture_name,
   };
-}
-
-function getFeatureOptionsForProject(
-  projects: FeatureFileProjects,
-  projectDirectory: string,
-): VentureFeatureOption[] {
-  if (!projectDirectory) {
-    return [];
-  }
-
-  const projectFeatures = projects[projectDirectory] ?? [];
-
-  return projectFeatures.map((feature) => ({
-    featureName: getFeatureNameFromMarkdown(feature.markdown, feature.path),
-    filePath: feature.path,
-  }));
-}
-
-function getFeatureTagsForPaths(
-  projects: FeatureFileProjects,
-  featureFilePaths: string[],
-): VentureFeatureOption[] {
-  const featureNameByPath = new Map<string, string>();
-
-  Object.values(projects).forEach((projectFeatures) => {
-    projectFeatures.forEach((feature) => {
-      featureNameByPath.set(
-        feature.path,
-        getFeatureNameFromMarkdown(feature.markdown, feature.path),
-      );
-    });
-  });
-
-  return featureFilePaths.map((filePath) => ({
-    featureName: featureNameByPath.get(filePath) ?? filePath,
-    filePath,
-  }));
-}
-
-function getFeatureNameFromMarkdown(markdown: string, fallbackPath: string) {
-  const headingLine = markdown.split("\n").find((line) => line.startsWith("# "));
-
-  if (!headingLine) {
-    return fallbackPath;
-  }
-
-  return headingLine.replace(/^# /, "").trim() || fallbackPath;
 }
 
 function formatVentureProgressState(progressState: VentureProgressState) {

@@ -1,7 +1,7 @@
 # Feature-File Graph Display
 
 ## Summary
-The feature-file graph display turns loaded feature files into a full-screen 2D SVG node map inside the Next.js frontend. Each feature file now carries both its own path and markdown content, becomes a circular node labeled from its first H1, can draw project-scoped connections to other feature files referenced by path, and can be added into the chat panel as a targeted prompt scope.
+The feature-file graph display turns loaded feature files into a full-screen 2D SVG node map inside the Next.js frontend. Each feature file now carries both its own path and markdown content, becomes a circular node labeled from its first H1, can draw project-scoped connections to other feature files referenced by path, and reports node selection plus shared zoom changes back to the workspace shell instead of owning the feature-detail overlay itself.
 
 ## Key Points
 - **Node Labels**: The display reads the first markdown line that starts with `# ` and uses the remaining text as the node name.
@@ -13,15 +13,15 @@ The feature-file graph display turns loaded feature files into a full-screen 2D 
 - **Proportional Node Size**: Each node scales against the median feature-file length, so average-sized files stay near the baseline while shorter and longer files shrink or grow relative to that benchmark.
 - **Hover Highlighting**: Hovering a node adds glow, scale emphasis, and an attached in-graph title pill that stays screen-stable as zoom changes.
 - **Connection Intensity**: Nodes with more in-project references render with stronger glow and color intensity so densely connected features stand out faster.
-- **Navigation**: The graph supports wheel panning, drag panning, inertial viewport motion, and zoom controls so the workspace can grow beyond a single screen.
-- **Node Dragging**: Clicking and dragging a node repositions it directly in world space while connection springs and repulsion nudge nearby nodes around it like a simple physics toy.
-- **Node Details**: Clicking a node opens the full feature-file markdown in an overlay panel.
-- **Prompt Targeting**: The right-side node detail panel now exposes an `Add` action that only works when the node belongs to the currently selected chat project, preventing cross-project feature targeting.
-- **HUD Layout**: The graph keeps the load button and collapsible dev panel in the upper-left while a centered top status strip carries the current message, status, project count, and load errors.
+- **Navigation**: The graph supports wheel zoom, ctrl/cmd zoom, touch pinch zoom, drag panning, and inertial viewport motion so the workspace can grow beyond a single screen.
+- **Node Dragging**: Desktop pointer users can still drag nodes directly in world space, while coarse-pointer mobile sessions prioritize tap, pan, and pinch instead of node repositioning.
+- **Shell Controls**: The graph now surfaces a left ventures handle, a circular bottom new-feature trigger, and a right-edge zoom slider while keeping overlay state in the workspace shell.
+- **Node Selection Callback**: Clicking or tapping a node now hands feature identity back to the workspace shell through a dedicated selection path so touch sessions do not rely on inconsistent browser click timing.
 
 ## Relevant Files
-- `daedalus-site/app/feature-files-dashboard.tsx`: Dashboard shell that loads the feature-file payload and renders the lower graph section.
-- `daedalus-site/app/feature-file-graph.tsx`: SVG graph component for node shaping, clustering, path-based reference edges, drift, hover, zoom, and the right-side feature detail panel.
+- `daedalus-site/app/feature-files-dashboard.tsx`: Workspace shell that loads the feature-file payload and responds to graph callbacks with overlays and drawers.
+- `daedalus-site/app/feature-file-graph.tsx`: SVG graph component for node shaping, clustering, path-based reference edges, drift, hover, shared zoom, and shell-trigger controls.
+- `daedalus-site/app/feature-workspace-utils.ts`: Shared path-normalization helpers used by the graph and overlay shell.
 - `local-daemon/src/daedalus_daemon/scanner.py`: Scanner that now returns project-relative feature-file paths alongside markdown contents.
 - `feature_files/feature-file-communications-system.md`: Dependency reference for how feature-file payloads arrive in the frontend.
 
@@ -46,3 +46,5 @@ HACKING
 - 2026-07-05: Fixed reload-time cluster lookup crashes by keeping the current graph payload mounted during refresh and skipping any transient node or edge whose cluster map has not caught up yet.
 - 2026-07-05: Fixed the right-side feature-file detail panel layout so its markdown scroller uses the remaining panel height and no longer cuts off the bottom of long files.
 - 2026-07-06: Added project-gated node-to-chat targeting so the detail panel can add valid feature files into the prompt-scoping chip row without allowing cross-project selections.
+- 2026-07-09: Reworked the graph into a graph-first workspace surface with shell callbacks, a right-edge zoom slider, and touch-first mobile gestures while moving feature overlays out to the workspace shell.
+- 2026-07-09: Added a dedicated coarse-pointer node tap path and a more circular new-feature action button so node selection feels steadier on mobile and the plus control reads like a floating action button.

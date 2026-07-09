@@ -8,16 +8,11 @@ import {
   type PointerEvent as ReactPointerEvent,
   type WheelEvent as ReactWheelEvent,
 } from "react";
-import type { TargetedFeature } from "@/lib/agent-chat-cache";
 import type {
   FeatureFileProjects,
   FeatureFileRecord,
 } from "@/lib/feature-file-cache";
-import type {
-  ParameterFileProjects,
-  ParameterFileRecord,
-} from "@/lib/parameter-file-cache";
-import ParameterVariableSelector from "./parameter-variable-selector";
+import { normalizeFeatureFilePath } from "./feature-workspace-utils";
 
 const VIEWPORT_WIDTH = 1600;
 const VIEWPORT_HEIGHT = 980;
@@ -39,7 +34,6 @@ type FeatureNode = {
   projectPath: string;
   filePath: string;
   featureName: string;
-  markdown: string;
   contentLength: number;
   connectionCount: number;
   connectionIntensity: number;
@@ -79,18 +73,20 @@ type ClusterColor = {
   text: string;
 };
 
+export type FeatureGraphSelection = {
+  featureName: string;
+  filePath: string;
+  projectPath: string;
+};
+
 type FeatureFileGraphProps = {
+  onNodeSelect: (selection: FeatureGraphSelection) => void;
+  onOpenNewFeature: () => void;
+  onOpenVentures: () => void;
+  onZoomChange: (zoom: number) => void;
   projects: FeatureFileProjects;
-  parameterProjects: ParameterFileProjects;
-  selectedProjectDirectory: string;
-  targetedFeatures: TargetedFeature[];
-  onAddTargetedFeature: (feature: TargetedFeature) => void;
-  onRequestParameterUpdate: (request: {
-    parameterFilePath: string;
-    projectPath: string;
-    value: string;
-    variableName: string;
-  }) => Promise<void>;
+  selectedFeatureFilePath: string;
+  zoom: number;
 };
 
 type FeatureEdge = {
@@ -125,40 +121,102 @@ type NodeDragState = {
   moved: boolean;
 };
 
+type PinchState = {
+  distance: number;
+  midpoint: {
+    x: number;
+    y: number;
+  };
+};
+
+type NodeTapState = {
+  nodeId: string;
+  pointerId: number;
+  startViewX: number;
+  startViewY: number;
+  moved: boolean;
+};
+
 export default function FeatureFileGraph({
+  onNodeSelect,
+  onOpenNewFeature,
+  onOpenVentures,
+  onZoomChange,
   projects,
-  parameterProjects,
-  selectedProjectDirectory,
-  targetedFeatures,
-  onAddTargetedFeature,
-  onRequestParameterUpdate,
+  selectedFeatureFilePath,
+  zoom,
 }: FeatureFileGraphProps) {
   const graphData = useMemo(() => buildGraphData(projects), [projects]);
   const [nodes, setNodes] = useState(graphData.nodes);
-  const [viewport, setViewport] = useState(graphData.defaultViewport);
-  const [hoveredNodeId, setHoveredNodeId] = useState("");
-  const [selectedNodeId, setSelectedNodeId] = useState("");
+  const [viewport, setViewport] = useState({
+    ...graphData.defaultViewport,
+    zoom,
+  });
   const [draggedNodeId, setDraggedNodeId] = useState("");
+  const [isCoarsePointer, setIsCoarsePointer] = useState(false);
   const nodesRef = useRef(graphData.nodes);
-  const viewportRef = useRef(graphData.defaultViewport);
+  const viewportRef = useRef({
+    ...graphData.defaultViewport,
+    zoom,
+  });
   const nodeDragRef = useRef<NodeDragState | null>(null);
+  const nodeTapRef = useRef<NodeTapState | null>(null);
+  const activePointersRef = useRef(new Map<number, { x: number; y: number }>());
+  const pinchRef = useRef<PinchState | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setNodes(graphData.nodes);
-    setHoveredNodeId("");
-    setSelectedNodeId("");
     setDraggedNodeId("");
     nodesRef.current = graphData.nodes;
-    viewportRef.current = graphData.defaultViewport;
+    viewportRef.current = {
+      ...graphData.defaultViewport,
+      zoom,
+    };
     nodeDragRef.current = null;
-    setViewport(graphData.defaultViewport);
-  }, [graphData]);
+    nodeTapRef.current = null;
+    activePointersRef.current.clear();
+    pinchRef.current = null;
+    setViewport({
+      ...graphData.defaultViewport,
+      zoom,
+    });
+  }, [graphData, zoom]);
 
-  function updateViewport(nextViewport: GraphViewport) {
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const mediaQuery = window.matchMedia("(pointer: coarse)");
+
+    function syncPointerMode() {
+      setIsCoarsePointer(mediaQuery.matches);
+    }
+
+    syncPointerMode();
+    mediaQuery.addEventListener("change", syncPointerMode);
+
+    return () => {
+      mediaQuery.removeEventListener("change", syncPointerMode);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (Math.abs(zoom - viewportRef.current.zoom) < 0.001) {
+      return;
+    }
+
+    const nextViewport = applyZoomAtPoint(
+      viewportRef.current,
+      clamp(zoom, MIN_ZOOM, MAX_ZOOM),
+      VIEWPORT_WIDTH / 2,
+      VIEWPORT_HEIGHT / 2,
+    );
     viewportRef.current = nextViewport;
     setViewport(nextViewport);
-  }
+  }, [zoom]);
 
   useEffect(() => {
     if (graphData.nodes.length === 0) {
@@ -187,27 +245,52 @@ export default function FeatureFileGraph({
     };
   }, [draggedNodeId, graphData]);
 
+  function updateViewport(nextViewport: GraphViewport) {
+    viewportRef.current = nextViewport;
+    setViewport(nextViewport);
+  }
+
+  function updateZoom(nextZoom: number, viewX: number, viewY: number) {
+    const clampedZoom = clamp(nextZoom, MIN_ZOOM, MAX_ZOOM);
+    const nextViewport = applyZoomAtPoint(
+      viewportRef.current,
+      clampedZoom,
+      viewX,
+      viewY,
+    );
+
+    updateViewport(nextViewport);
+
+    if (Math.abs(clampedZoom - zoom) > 0.001) {
+      onZoomChange(clampedZoom);
+    }
+  }
+
+  function resetHoverState() {
+    const nextNodes = nodesRef.current.map((node) => ({
+      ...node,
+      isHovered: false,
+    }));
+    nodesRef.current = nextNodes;
+    setNodes(nextNodes);
+  }
+
   function handleWheel(event: ReactWheelEvent<SVGSVGElement>) {
     event.preventDefault();
 
+    const svg = svgRef.current;
+
+    if (!svg) {
+      return;
+    }
+
+    const rect = svg.getBoundingClientRect();
+    const viewX = ((event.clientX - rect.left) / rect.width) * VIEWPORT_WIDTH;
+    const viewY = ((event.clientY - rect.top) / rect.height) * VIEWPORT_HEIGHT;
+
     if (event.ctrlKey || event.metaKey) {
-      const svg = svgRef.current;
-
-      if (!svg) {
-        return;
-      }
-
-      const rect = svg.getBoundingClientRect();
-      const viewX = ((event.clientX - rect.left) / rect.width) * VIEWPORT_WIDTH;
-      const viewY = ((event.clientY - rect.top) / rect.height) * VIEWPORT_HEIGHT;
       const zoomFactor = Math.exp(-event.deltaY * 0.0015);
-      const nextZoom = clamp(
-        viewportRef.current.zoom * zoomFactor,
-        MIN_ZOOM,
-        MAX_ZOOM,
-      );
-
-      updateViewport(applyZoomAtPoint(viewportRef.current, nextZoom, viewX, viewY));
+      updateZoom(viewportRef.current.zoom * zoomFactor, viewX, viewY);
       return;
     }
 
@@ -227,14 +310,26 @@ export default function FeatureFileGraph({
       return;
     }
 
-    setHoveredNodeId("");
-    const nextNodes = nodesRef.current.map((node) => ({
-      ...node,
-      isHovered: false,
-    }));
-    nodesRef.current = nextNodes;
-    setNodes(nextNodes);
+    activePointersRef.current.set(event.pointerId, point);
 
+    if (activePointersRef.current.size === 2) {
+      nodeTapRef.current = null;
+      pinchRef.current = getPinchState(activePointersRef.current);
+      updateViewport({
+        ...viewportRef.current,
+        isDragging: false,
+        dragMoved: true,
+        velocityX: 0,
+        velocityY: 0,
+      });
+      return;
+    }
+
+    if (activePointersRef.current.size > 1) {
+      return;
+    }
+
+    resetHoverState();
     updateViewport({
       ...viewportRef.current,
       isDragging: true,
@@ -255,12 +350,71 @@ export default function FeatureFileGraph({
       return;
     }
 
+    if (activePointersRef.current.has(event.pointerId)) {
+      activePointersRef.current.set(event.pointerId, point);
+    }
+
+    if (nodeTapRef.current?.pointerId === event.pointerId) {
+      const movedFarEnough =
+        nodeTapRef.current.moved ||
+        Math.abs(point.x - nodeTapRef.current.startViewX) > DRAG_CLICK_THRESHOLD ||
+        Math.abs(point.y - nodeTapRef.current.startViewY) > DRAG_CLICK_THRESHOLD;
+
+      nodeTapRef.current = {
+        ...nodeTapRef.current,
+        moved: movedFarEnough,
+      };
+    }
+
+    if (activePointersRef.current.size === 2) {
+      const previousPinchState = pinchRef.current;
+      const nextPinchState = getPinchState(activePointersRef.current);
+
+      if (!previousPinchState || !nextPinchState) {
+        pinchRef.current = nextPinchState;
+        return;
+      }
+
+      const zoomFactor = nextPinchState.distance / previousPinchState.distance;
+      const midpointDeltaX =
+        nextPinchState.midpoint.x - previousPinchState.midpoint.x;
+      const midpointDeltaY =
+        nextPinchState.midpoint.y - previousPinchState.midpoint.y;
+      const nextZoom = viewportRef.current.zoom * zoomFactor;
+      const zoomedViewport = applyZoomAtPoint(
+        viewportRef.current,
+        clamp(nextZoom, MIN_ZOOM, MAX_ZOOM),
+        nextPinchState.midpoint.x,
+        nextPinchState.midpoint.y,
+      );
+      const nextViewport = {
+        ...zoomedViewport,
+        offsetX: zoomedViewport.offsetX + midpointDeltaX,
+        offsetY: zoomedViewport.offsetY + midpointDeltaY,
+        isDragging: false,
+        dragMoved: true,
+        velocityX: 0,
+        velocityY: 0,
+      };
+
+      pinchRef.current = nextPinchState;
+      updateViewport(nextViewport);
+
+      if (Math.abs(nextViewport.zoom - zoom) > 0.001) {
+        onZoomChange(nextViewport.zoom);
+      }
+
+      return;
+    }
+
     if (nodeDragRef.current) {
       const worldPoint = getWorldPoint(point, viewportRef.current);
       const movedFarEnough =
         nodeDragRef.current.moved ||
-        Math.abs(point.x - nodeDragRef.current.startViewX) > DRAG_CLICK_THRESHOLD ||
-        Math.abs(point.y - nodeDragRef.current.startViewY) > DRAG_CLICK_THRESHOLD;
+        Math.abs(point.x - nodeDragRef.current.startViewX) >
+          DRAG_CLICK_THRESHOLD ||
+        Math.abs(point.y - nodeDragRef.current.startViewY) >
+          DRAG_CLICK_THRESHOLD;
 
       const nextNodes = nodesRef.current.map((node) => {
         if (node.id !== nodeDragRef.current?.nodeId) {
@@ -289,6 +443,22 @@ export default function FeatureFileGraph({
       return;
     }
 
+    const tappedNode = nodeTapRef.current;
+
+    if (tappedNode?.pointerId === event.pointerId) {
+      nodeTapRef.current = null;
+
+      if (!tappedNode.moved) {
+        const selectedNode = nodesRef.current.find(
+          (node) => node.id === tappedNode.nodeId,
+        );
+
+        if (selectedNode) {
+          selectNode(selectedNode);
+        }
+      }
+    }
+
     if (!viewportRef.current.isDragging) {
       return;
     }
@@ -312,7 +482,13 @@ export default function FeatureFileGraph({
     });
   }
 
-  function handlePointerEnd(_event: ReactPointerEvent<SVGSVGElement>) {
+  function handlePointerEnd(event: ReactPointerEvent<SVGSVGElement>) {
+    activePointersRef.current.delete(event.pointerId);
+
+    if (activePointersRef.current.size < 2) {
+      pinchRef.current = null;
+    }
+
     if (nodeDragRef.current) {
       const draggedNode = nodeDragRef.current;
 
@@ -320,10 +496,14 @@ export default function FeatureFileGraph({
       setDraggedNodeId("");
 
       if (!draggedNode.moved) {
-        handleNodeSelect(draggedNode.nodeId);
-      }
+        const selectedNode = nodesRef.current.find(
+          (node) => node.id === draggedNode.nodeId,
+        );
 
-      return;
+        if (selectedNode) {
+          emitNodeSelection(selectedNode);
+        }
+      }
     }
 
     if (!viewportRef.current.isDragging) {
@@ -336,76 +516,28 @@ export default function FeatureFileGraph({
     });
   }
 
-  function handleZoomButton(direction: 1 | -1) {
-    const nextZoom = clamp(
-      viewportRef.current.zoom * (direction === 1 ? 1.15 : 0.87),
-      MIN_ZOOM,
-      MAX_ZOOM,
-    );
-
-    updateViewport(
-      applyZoomAtPoint(
-        viewportRef.current,
-        nextZoom,
-        VIEWPORT_WIDTH / 2,
-        VIEWPORT_HEIGHT / 2,
-      ),
-    );
-  }
-
-  function handleNodeEnter(nodeId: string) {
-    if (viewportRef.current.isDragging || draggedNodeId) {
-      return;
-    }
-
-    setHoveredNodeId(nodeId);
-    const nextNodes = nodesRef.current.map((node) => ({
-      ...node,
-      isHovered: node.id === nodeId,
-    }));
-
-    nodesRef.current = nextNodes;
-    setNodes(nextNodes);
-  }
-
-  function handleNodeLeave() {
-    if (viewportRef.current.isDragging || draggedNodeId) {
-      return;
-    }
-
-    setHoveredNodeId("");
-    const nextNodes = nodesRef.current.map((node) => ({
-      ...node,
-      isHovered: false,
-    }));
-
-    nodesRef.current = nextNodes;
-    setNodes(nextNodes);
-  }
-
-  function handleNodeSelect(nodeId: string) {
-    if (viewportRef.current.dragMoved) {
-      updateViewport({
-        ...viewportRef.current,
-        dragMoved: false,
-      });
-      return;
-    }
-
-    setSelectedNodeId((currentNodeId) => (currentNodeId === nodeId ? "" : nodeId));
-  }
-
   function handleNodePointerDown(
     event: ReactPointerEvent<SVGGElement>,
     nodeId: string,
   ) {
-    event.stopPropagation();
-
     const point = getViewPoint(event, svgRef.current);
 
     if (!point) {
       return;
     }
+
+    if (isCoarsePointer || event.pointerType !== "mouse") {
+      nodeTapRef.current = {
+        nodeId,
+        pointerId: event.pointerId,
+        startViewX: point.x,
+        startViewY: point.y,
+        moved: false,
+      };
+      return;
+    }
+
+    event.stopPropagation();
 
     const worldPoint = getWorldPoint(point, viewportRef.current);
     const node = nodesRef.current.find((currentNode) => currentNode.id === nodeId);
@@ -415,7 +547,6 @@ export default function FeatureFileGraph({
     }
 
     setDraggedNodeId(nodeId);
-    setHoveredNodeId(nodeId);
     nodeDragRef.current = {
       nodeId,
       pointerOffsetX: worldPoint.x - node.x,
@@ -433,34 +564,59 @@ export default function FeatureFileGraph({
     setNodes(nextNodes);
   }
 
-  const selectedNode = nodes.find((node) => node.id === selectedNodeId) ?? null;
-  const parameterFilesByProject = useMemo(() => {
-    const nextMap = new Map<string, Map<string, ParameterFileRecord>>();
+  function handleNodeEnter(nodeId: string) {
+    if (viewportRef.current.isDragging || draggedNodeId || isCoarsePointer) {
+      return;
+    }
 
-    Object.entries(parameterProjects).forEach(([projectPath, parameterFiles]) => {
-      nextMap.set(
-        projectPath,
-        new Map(
-          parameterFiles.map((parameterFile) => [
-            normalizeParameterFilePath(parameterFile.path),
-            parameterFile,
-          ]),
-        ),
-      );
+    const nextNodes = nodesRef.current.map((node) => ({
+      ...node,
+      isHovered: node.id === nodeId,
+    }));
+    nodesRef.current = nextNodes;
+    setNodes(nextNodes);
+  }
+
+  function handleNodeLeave() {
+    if (viewportRef.current.isDragging || draggedNodeId || isCoarsePointer) {
+      return;
+    }
+
+    resetHoverState();
+  }
+
+  function emitNodeSelection(node: FeatureNode) {
+    if (viewportRef.current.dragMoved) {
+      updateViewport({
+        ...viewportRef.current,
+        dragMoved: false,
+      });
+      return;
+    }
+
+    onNodeSelect({
+      featureName: node.featureName,
+      filePath: node.filePath,
+      projectPath: node.projectPath,
+    });
+  }
+
+  function selectNode(node: FeatureNode) {
+    updateViewport({
+      ...viewportRef.current,
+      isDragging: false,
+      dragMoved: false,
+      velocityX: 0,
+      velocityY: 0,
     });
 
-    return nextMap;
-  }, [parameterProjects]);
-  const matchedParameterFile = selectedNode
-    ? parameterFilesByProject
-        .get(selectedNode.projectPath)
-        ?.get(getParameterFilePathForFeature(selectedNode.filePath)) ?? null
-    : null;
-  const isSelectedNodeInCurrentProject =
-    selectedNode?.projectPath === selectedProjectDirectory;
-  const isSelectedNodeAlreadyTargeted = targetedFeatures.some(
-    (feature) => feature.filePath === selectedNode?.filePath,
-  );
+    onNodeSelect({
+      featureName: node.featureName,
+      filePath: node.filePath,
+      projectPath: node.projectPath,
+    });
+  }
+
   const clusterByProjectIndex = new Map(
     graphData.clusters.map((cluster) => [cluster.projectIndex, cluster]),
   );
@@ -476,38 +632,44 @@ export default function FeatureFileGraph({
       return [];
     }
 
-    return [{
-      edge,
-      cluster,
-      sourceNode,
-      targetNode,
-    }];
+    return [
+      {
+        edge,
+        cluster,
+        sourceNode,
+        targetNode,
+      },
+    ];
   });
   const renderedNodes = nodes
     .filter((node) => clusterByProjectIndex.has(node.projectIndex))
     .sort((leftNode, rightNode) => {
-      if (leftNode.isHovered === rightNode.isHovered) {
-        return 0;
-      }
+      const leftPriority = Number(
+        leftNode.isHovered || leftNode.filePath === selectedFeatureFilePath,
+      );
+      const rightPriority = Number(
+        rightNode.isHovered || rightNode.filePath === selectedFeatureFilePath,
+      );
 
-      return leftNode.isHovered ? 1 : -1;
+      return leftPriority - rightPriority;
     });
 
   return (
-    <div className="absolute inset-0 bg-black">
+    <div className="absolute inset-0 bg-[#05070c]">
       <svg
         ref={svgRef}
         viewBox={`0 0 ${VIEWPORT_WIDTH} ${VIEWPORT_HEIGHT}`}
-        className={`h-full w-full select-none ${
+        className={`h-full w-full select-none touch-none ${
           viewport.isDragging || draggedNodeId ? "cursor-grabbing" : "cursor-grab"
         }`}
         role="img"
         aria-label="Feature file graph display"
         onWheel={handleWheel}
+        onPointerCancel={handlePointerEnd}
         onPointerDown={handlePointerDown}
+        onPointerLeave={handlePointerEnd}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerEnd}
-        onPointerLeave={handlePointerEnd}
       >
         <defs>
           <filter id="node-glow" x="-120%" y="-120%" width="340%" height="340%">
@@ -519,25 +681,30 @@ export default function FeatureFileGraph({
           </filter>
         </defs>
 
-        <rect x="0" y="0" width={VIEWPORT_WIDTH} height={VIEWPORT_HEIGHT} fill="#020617" />
+        <rect
+          x="0"
+          y="0"
+          width={VIEWPORT_WIDTH}
+          height={VIEWPORT_HEIGHT}
+          fill="#05070c"
+        />
 
         <g
           transform={`translate(${viewport.offsetX} ${viewport.offsetY}) scale(${viewport.zoom})`}
         >
-          {renderedEdges.map(({ edge, cluster, sourceNode, targetNode }) => {
-            return (
-              <line
-                key={edge.id}
-                x1={sourceNode.x}
-                y1={sourceNode.y}
-                x2={targetNode.x}
-                y2={targetNode.y}
-                stroke={cluster.color.stroke}
-                strokeOpacity="0.32"
-                strokeWidth="1.6"
-              />
-            );
-          })}
+          {renderedEdges.map(({ edge, cluster, sourceNode, targetNode }) => (
+            <line
+              key={edge.id}
+              x1={sourceNode.x}
+              y1={sourceNode.y}
+              x2={targetNode.x}
+              y2={targetNode.y}
+              stroke={cluster.color.stroke}
+              strokeOpacity="0.32"
+              strokeWidth="1.6"
+            />
+          ))}
+
           {renderedNodes.map((node) => {
             const cluster = clusterByProjectIndex.get(node.projectIndex);
 
@@ -545,11 +712,13 @@ export default function FeatureFileGraph({
               return null;
             }
 
+            const isSelected = node.filePath === selectedFeatureFilePath;
             const labelLines = getLabelLines(node.featureName, node.radius);
-            const scale = node.isHovered ? 1.14 : 1;
+            const scale = node.isHovered || isSelected ? 1.14 : 1;
             const hoverLabelWidth = Math.max(132, node.featureName.length * 12.8);
             const screenStableScale = 1 / (viewport.zoom * scale);
-            const hoverLabelOffset = (node.radius + 24) / (viewport.zoom * scale);
+            const hoverLabelOffset =
+              (node.radius + 24) / (viewport.zoom * scale);
             const labelFontSize = clamp(node.radius * 0.3, 5.6, 10.4);
             const lineGap = labelFontSize * 1.55;
             const glowRadius = node.radius + 7 + node.connectionIntensity * 12;
@@ -562,26 +731,43 @@ export default function FeatureFileGraph({
                 key={node.id}
                 data-node="true"
                 transform={`translate(${node.x} ${node.y}) scale(${scale})`}
+                onClick={() => emitNodeSelection(node)}
                 onPointerDown={(event) => handleNodePointerDown(event, node.id)}
                 onPointerEnter={() => handleNodeEnter(node.id)}
                 onPointerLeave={handleNodeLeave}
-                className={draggedNodeId === node.id ? "cursor-grabbing" : "cursor-grab"}
+                className={draggedNodeId === node.id ? "cursor-grabbing" : "cursor-pointer"}
               >
                 <circle
                   r={glowRadius}
                   fill={cluster.color.glow}
-                  opacity={node.isHovered || draggedNodeId === node.id ? "0.98" : glowOpacity}
+                  opacity={
+                    node.isHovered || draggedNodeId === node.id || isSelected
+                      ? "0.98"
+                      : glowOpacity
+                  }
                   filter="url(#node-glow)"
                 />
                 <circle
                   r={node.radius}
                   fill={cluster.color.fill}
                   fillOpacity={fillOpacity}
-                  stroke={node.isHovered || draggedNodeId === node.id ? "#ffffff" : cluster.color.stroke}
-                  strokeOpacity={node.isHovered || draggedNodeId === node.id ? 1 : strokeOpacity}
-                  strokeWidth={node.isHovered || draggedNodeId === node.id ? 3.2 : 1.9}
+                  stroke={
+                    node.isHovered || draggedNodeId === node.id || isSelected
+                      ? "#ffffff"
+                      : cluster.color.stroke
+                  }
+                  strokeOpacity={
+                    node.isHovered || draggedNodeId === node.id || isSelected
+                      ? 1
+                      : strokeOpacity
+                  }
+                  strokeWidth={
+                    node.isHovered || draggedNodeId === node.id || isSelected
+                      ? 3.2
+                      : 1.9
+                  }
                 />
-                {node.isHovered ? (
+                {node.isHovered || isSelected ? (
                   <g transform={`translate(0 ${-hoverLabelOffset})`}>
                     <g transform={`scale(${screenStableScale})`}>
                       <rect
@@ -633,109 +819,47 @@ export default function FeatureFileGraph({
           })}
         </g>
       </svg>
-      <div className="pointer-events-auto absolute bottom-4 right-4 flex gap-2">
-        <button
-          type="button"
-          onClick={() => handleZoomButton(-1)}
-          className="rounded-full border border-white/10 bg-slate-950/82 px-4 py-3 text-lg font-semibold text-white shadow-[0_20px_60px_rgba(2,6,23,0.45)] backdrop-blur transition hover:bg-slate-900"
-        >
-          -
-        </button>
-        <button
-          type="button"
-          onClick={() => handleZoomButton(1)}
-          className="rounded-full border border-white/10 bg-slate-950/82 px-4 py-3 text-lg font-semibold text-white shadow-[0_20px_60px_rgba(2,6,23,0.45)] backdrop-blur transition hover:bg-slate-900"
-        >
-          +
-        </button>
+
+      <button
+        type="button"
+        onClick={onOpenVentures}
+        className="pointer-events-auto absolute left-3 top-1/2 -translate-y-1/2 rounded-r-[1.25rem] border border-white/10 border-l-0 bg-slate-950/82 px-3 py-8 text-xs font-semibold uppercase tracking-[0.22em] text-slate-100 shadow-[0_20px_60px_rgba(2,6,23,0.5)] backdrop-blur transition hover:bg-slate-900"
+      >
+        Ventures
+      </button>
+
+      <button
+        type="button"
+        onClick={onOpenNewFeature}
+        className="pointer-events-auto absolute bottom-5 left-1/2 inline-flex h-16 w-16 -translate-x-1/2 items-center justify-center rounded-full border border-amber-100/30 bg-amber-300 text-[2rem] font-semibold leading-none text-slate-950 shadow-[0_20px_60px_rgba(245,158,11,0.32)] ring-1 ring-amber-50/20 transition hover:scale-[1.03] hover:bg-amber-200"
+        aria-label="Open new feature session"
+      >
+        +
+      </button>
+
+      <div className="pointer-events-auto absolute right-3 top-1/2 flex -translate-y-1/2 flex-col items-center gap-3 rounded-[1.5rem] border border-white/10 bg-slate-950/82 px-3 py-4 shadow-[0_20px_60px_rgba(2,6,23,0.45)] backdrop-blur">
+        <span className="text-sm font-semibold text-white">+</span>
+        <input
+          type="range"
+          min={MIN_ZOOM}
+          max={MAX_ZOOM}
+          step="0.01"
+          value={zoom}
+          onChange={(event) =>
+            updateZoom(
+              Number(event.target.value),
+              VIEWPORT_WIDTH / 2,
+              VIEWPORT_HEIGHT / 2,
+            )
+          }
+          className="workspace-zoom-slider h-52 w-6 accent-amber-300"
+          aria-label="Graph zoom"
+        />
+        <span className="text-sm font-semibold text-white">-</span>
+        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold text-slate-200">
+          {Math.round(zoom * 100)}%
+        </span>
       </div>
-
-      {selectedNode ? (
-        <aside className="pointer-events-auto absolute top-28 right-4 bottom-20 flex w-[min(32rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/90 shadow-[0_28px_100px_rgba(2,6,23,0.72)] backdrop-blur">
-          <div className="flex items-start justify-between gap-4 border-b border-white/10 px-5 py-4">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">
-                Feature file
-              </p>
-              <h2 className="mt-2 text-xl font-semibold text-white">
-                {selectedNode.featureName}
-              </h2>
-              <p className="mt-2 break-all text-xs leading-5 text-slate-400">
-                {selectedNode.filePath}
-              </p>
-              <p className="mt-2 break-all text-xs leading-5 text-slate-400">
-                {selectedNode.projectPath}
-              </p>
-              <div className="mt-4 flex flex-wrap items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() =>
-                    onAddTargetedFeature({
-                      projectPath: selectedNode.projectPath,
-                      filePath: selectedNode.filePath,
-                      featureName: selectedNode.featureName,
-                    })
-                  }
-                  disabled={!isSelectedNodeInCurrentProject || isSelectedNodeAlreadyTargeted}
-                  className="rounded-full bg-cyan-300 px-4 py-2 text-xs font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
-                >
-                  {isSelectedNodeAlreadyTargeted
-                    ? "Added"
-                    : isSelectedNodeInCurrentProject
-                      ? "Add"
-                      : "Wrong project"}
-                </button>
-                {!isSelectedNodeInCurrentProject ? (
-                  <p className="text-xs text-amber-200">
-                    Switch the chat target project before adding this feature.
-                  </p>
-                ) : null}
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => setSelectedNodeId("")}
-              className="rounded-full border border-white/10 bg-white/6 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:bg-white/10"
-            >
-              Close
-            </button>
-          </div>
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-            <div className="grid gap-5">
-              <section className="grid gap-2">
-                <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">
-                  Variable selector
-                </p>
-                <p className="break-all text-xs leading-5 text-slate-500">
-                  {getParameterFilePathForFeature(selectedNode.filePath)}
-                </p>
-                {matchedParameterFile ? (
-                  <ParameterVariableSelector
-                    key={`${selectedNode.projectPath}:${matchedParameterFile.path}`}
-                    projectPath={selectedNode.projectPath}
-                    parameterFilePath={matchedParameterFile.path}
-                    parameterFile={matchedParameterFile}
-                    onRequestSave={onRequestParameterUpdate}
-                  />
-                ) : (
-                  <div className="rounded-[1.25rem] border border-dashed border-white/10 bg-slate-900/40 px-4 py-3 text-sm text-slate-400">
-                    No matching parameter file has been loaded for this feature yet.
-                  </div>
-                )}
-              </section>
-
-              <section className="grid gap-2">
-                <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">
-                  Feature file
-                </p>
-                <pre className="whitespace-pre-wrap break-words rounded-[1.25rem] border border-white/10 bg-slate-900/70 px-4 py-3 text-sm leading-6 text-slate-200">
-                  {selectedNode.markdown}
-                </pre>
-              </section>
-            </div>
-          </div>
-        </aside>
-      ) : null}
     </div>
   );
 }
@@ -756,11 +880,10 @@ function buildGraphData(projects: FeatureFileProjects): GraphData {
 
     edges.push(
       ...projectLayout.edges.map((edge) => ({
-        id:
-          createEdgeId(
-            nodeIdByFilePath.get(edge.sourceFilePath) ?? edge.sourceFilePath,
-            nodeIdByFilePath.get(edge.targetFilePath) ?? edge.targetFilePath,
-          ),
+        id: createEdgeId(
+          nodeIdByFilePath.get(edge.sourceFilePath) ?? edge.sourceFilePath,
+          nodeIdByFilePath.get(edge.targetFilePath) ?? edge.targetFilePath,
+        ),
         projectPath: edge.projectPath,
         sourceNodeId:
           nodeIdByFilePath.get(edge.sourceFilePath) ?? edge.sourceFilePath,
@@ -771,6 +894,7 @@ function buildGraphData(projects: FeatureFileProjects): GraphData {
 
     nodes.push(...projectNodes);
   });
+
   const nodesWithVisualMetrics = applyNodeVisualMetrics(nodes, edges);
   const worldWidth = getWorldWidth(projectEntries.length);
   const worldHeight = getWorldHeight(projectEntries.length);
@@ -795,7 +919,7 @@ function buildGraphData(projects: FeatureFileProjects): GraphData {
   };
 }
 
-function createClusters(projectEntries: Array<[string, FeatureFileRecord[]]>): ProjectCluster[] {
+function createClusters(projectEntries: Array<[string, FeatureFileRecord[]]>) {
   const columnCount = Math.max(1, Math.ceil(Math.sqrt(projectEntries.length)));
 
   return projectEntries.map(([,], index) => {
@@ -829,7 +953,6 @@ function createNode(
     projectPath: safeProjectPath,
     filePath,
     featureName,
-    markdown: featureFile.markdown,
     contentLength: featureFile.markdown.length,
     connectionCount: 0,
     connectionIntensity: 0,
@@ -911,13 +1034,17 @@ function buildProjectFeatureLayout(
     .filter((filePath) => (neighborsByPath.get(filePath)?.size ?? 0) > 0)
     .sort((leftPath, rightPath) => {
       const degreeDifference =
-        (neighborsByPath.get(rightPath)?.size ?? 0) - (neighborsByPath.get(leftPath)?.size ?? 0);
+        (neighborsByPath.get(rightPath)?.size ?? 0) -
+        (neighborsByPath.get(leftPath)?.size ?? 0);
 
       if (degreeDifference !== 0) {
         return degreeDifference;
       }
 
-      return (originalIndexByPath.get(leftPath) ?? 0) - (originalIndexByPath.get(rightPath) ?? 0);
+      return (
+        (originalIndexByPath.get(leftPath) ?? 0) -
+        (originalIndexByPath.get(rightPath) ?? 0)
+      );
     });
 
   for (const startPath of connectedPaths) {
@@ -951,7 +1078,10 @@ function buildProjectFeatureLayout(
             return degreeDifference;
           }
 
-          return (originalIndexByPath.get(leftPath) ?? 0) - (originalIndexByPath.get(rightPath) ?? 0);
+          return (
+            (originalIndexByPath.get(leftPath) ?? 0) -
+            (originalIndexByPath.get(rightPath) ?? 0)
+          );
         },
       );
 
@@ -1153,6 +1283,28 @@ function getWorldPoint(
   };
 }
 
+function getPinchState(
+  pointers: Map<number, { x: number; y: number }>,
+): PinchState | null {
+  const points = [...pointers.values()];
+
+  if (points.length !== 2) {
+    return null;
+  }
+
+  const [firstPoint, secondPoint] = points;
+  const dx = firstPoint.x - secondPoint.x;
+  const dy = firstPoint.y - secondPoint.y;
+
+  return {
+    distance: Math.max(1, Math.sqrt(dx * dx + dy * dy)),
+    midpoint: {
+      x: (firstPoint.x + secondPoint.x) / 2,
+      y: (firstPoint.y + secondPoint.y) / 2,
+    },
+  };
+}
+
 function applyNodeVisualMetrics(nodes: FeatureNode[], edges: FeatureEdge[]) {
   if (nodes.length === 0) {
     return nodes;
@@ -1188,7 +1340,11 @@ function applyNodeVisualMetrics(nodes: FeatureNode[], edges: FeatureEdge[]) {
       ...node,
       connectionCount,
       connectionIntensity: connectionCount / maxConnectionCount,
-      radius: clamp(NODE_RADIUS * sizeRatio, NODE_RADIUS * 0.6, NODE_RADIUS * 2.4),
+      radius: clamp(
+        NODE_RADIUS * sizeRatio,
+        NODE_RADIUS * 0.6,
+        NODE_RADIUS * 2.4,
+      ),
     };
   });
 }
@@ -1210,20 +1366,6 @@ function getMedianValue(values: number[]) {
 function extractFeatureFileReferences(markdown: string) {
   const matches = markdown.match(FEATURE_FILE_REFERENCE_REGEX) ?? [];
   return [...new Set(matches.map(normalizeFeatureFilePath))];
-}
-
-function normalizeFeatureFilePath(path: string) {
-  return path.replace(/\\/g, "/").replace(/^\.\//, "");
-}
-
-function normalizeParameterFilePath(path: string) {
-  return path.replace(/\\/g, "/").replace(/^\.\//, "");
-}
-
-function getParameterFilePathForFeature(featureFilePath: string) {
-  return normalizeFeatureFilePath(featureFilePath)
-    .replace(/^feature_files\//, "parameter_files/")
-    .replace(/\.md$/, ".toml");
 }
 
 function createEdgeId(sourceNodeId: string, targetNodeId: string) {

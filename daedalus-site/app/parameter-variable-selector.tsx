@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { ParameterFileRecord } from "@/lib/parameter-file-cache";
 import {
   parseParameterFile,
@@ -25,48 +25,33 @@ export default function ParameterVariableSelector({
   parameterFile,
   onRequestSave,
 }: ParameterVariableSelectorProps) {
-  const [currentToml, setCurrentToml] = useState(parameterFile.toml);
-  const [selectedVariableName, setSelectedVariableName] = useState("");
-  const [draftValue, setDraftValue] = useState("");
+  const initialVariables = parseParameterFile(parameterFile.toml).variables;
+  const [selectedVariableName, setSelectedVariableName] = useState(
+    initialVariables[0]?.name ?? "",
+  );
+  const [draftValue, setDraftValue] = useState(
+    initialVariables[0]?.displayValue ?? "",
+  );
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
   const [saveTone, setSaveTone] = useState<"error" | "success">("success");
 
   const parsedFile = useMemo(
-    () => parseParameterFile(currentToml),
-    [currentToml],
+    () => parseParameterFile(parameterFile.toml),
+    [parameterFile.toml],
   );
   const variables = parsedFile.variables;
   const selectedVariable =
     variables.find((variable) => variable.name === selectedVariableName) ??
     variables[0] ??
     null;
+  const effectiveDraftValue =
+    selectedVariable && selectedVariable.name !== selectedVariableName
+      ? selectedVariable.displayValue
+      : draftValue;
   const validation = selectedVariable
-    ? validateParameterVariableDraft(selectedVariable, draftValue)
+    ? validateParameterVariableDraft(selectedVariable, effectiveDraftValue)
     : null;
-
-  useEffect(() => {
-    setCurrentToml(parameterFile.toml);
-    setSelectedVariableName("");
-    setDraftValue("");
-    setSaveMessage("");
-    setSaveTone("success");
-    setIsSaving(false);
-  }, [parameterFile.path, parameterFile.toml]);
-
-  useEffect(() => {
-    if (!selectedVariable) {
-      setSelectedVariableName("");
-      setDraftValue("");
-      return;
-    }
-
-    if (selectedVariable.name !== selectedVariableName) {
-      setSelectedVariableName(selectedVariable.name);
-    }
-
-    setDraftValue(selectedVariable.displayValue);
-  }, [selectedVariable?.name, selectedVariableName, currentToml]);
 
   async function handleSave() {
     if (!selectedVariable || !validation?.ok) {
@@ -81,7 +66,7 @@ export default function ParameterVariableSelector({
       await onRequestSave({
         parameterFilePath,
         projectPath,
-        value: draftValue,
+        value: effectiveDraftValue,
         variableName: selectedVariable.name,
       });
       setSaveTone("success");
@@ -115,7 +100,11 @@ export default function ParameterVariableSelector({
         <select
           value={selectedVariable.name}
           onChange={(event) => {
+            const nextVariable =
+              variables.find((variable) => variable.name === event.target.value) ??
+              null;
             setSelectedVariableName(event.target.value);
+            setDraftValue(nextVariable?.displayValue ?? "");
             setSaveMessage("");
           }}
           className="rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-cyan-300"
@@ -155,7 +144,7 @@ export default function ParameterVariableSelector({
         </span>
         {selectedVariable.kind === "boolean" ? (
           <select
-            value={draftValue}
+            value={effectiveDraftValue}
             onChange={(event) => {
               setDraftValue(event.target.value);
               setSaveMessage("");
@@ -167,7 +156,7 @@ export default function ParameterVariableSelector({
           </select>
         ) : selectedVariable.kind === "array" ? (
           <textarea
-            value={draftValue}
+            value={effectiveDraftValue}
             onChange={(event) => {
               setDraftValue(event.target.value);
               setSaveMessage("");
@@ -178,7 +167,7 @@ export default function ParameterVariableSelector({
         ) : (
           <input
             type="text"
-            value={draftValue}
+            value={effectiveDraftValue}
             onChange={(event) => {
               setDraftValue(event.target.value);
               setSaveMessage("");
