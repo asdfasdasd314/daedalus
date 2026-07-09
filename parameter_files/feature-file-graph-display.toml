@@ -1,1 +1,7 @@
+desktop_min_zoom = 0.42
+desktop_max_zoom = 2.6
+desktop_default_zoom = 1.0
 
+mobile_min_zoom = 0.78
+mobile_max_zoom = 4.1
+mobile_default_zoom = 1.45

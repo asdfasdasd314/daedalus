@@ -14,8 +14,10 @@ The feature-file graph display turns loaded feature files into a full-screen 2D 
 - **Hover Highlighting**: Hovering a node adds glow, scale emphasis, and an attached in-graph title pill that stays screen-stable as zoom changes.
 - **Connection Intensity**: Nodes with more in-project references render with stronger glow and color intensity so densely connected features stand out faster.
 - **Navigation**: The graph supports wheel zoom, ctrl/cmd zoom, touch pinch zoom, drag panning, and inertial viewport motion so the workspace can grow beyond a single screen.
+- **Absolute Node Scale**: Node radii stay tied to feature-file content and graph-world coordinates rather than viewport size, so mobile sees the same graph closer in instead of rescaled nodes.
 - **Node Dragging**: Desktop pointer users can still drag nodes directly in world space, while coarse-pointer mobile sessions prioritize tap, pan, and pinch instead of node repositioning.
 - **Shell Controls**: The graph now surfaces a compact upper-left ventures trigger on mobile, a circular bottom new-feature trigger, and a custom right-edge zoom slider while keeping overlay state in the workspace shell.
+- **Zoom Contract**: The graph no longer hardcodes one global zoom range and instead renders against shell-provided min/max bounds so mobile and desktop can share the same world with different readable framing.
 - **Touch Sessions**: Mobile one-finger gestures always start as graph-surface pans, only resolve into node opens on clean tap release, and derive inertia from recent gesture samples instead of noisy last-frame deltas.
 - **Node Selection Callback**: Clicking or tapping a node now hands feature identity back to the workspace shell through a dedicated selection path so touch sessions do not rely on inconsistent browser click timing.
 
@@ -23,7 +25,7 @@ The feature-file graph display turns loaded feature files into a full-screen 2D 
 - `daedalus-site/app/feature-files-dashboard.tsx`: Workspace shell that loads the feature-file payload and responds to graph callbacks with overlays and drawers.
 - `daedalus-site/app/feature-file-graph.tsx`: SVG graph component for node shaping, clustering, path-based reference edges, drift, hover, shared zoom, and shell-trigger controls.
 - `daedalus-site/app/feature-workspace-utils.ts`: Shared path-normalization helpers used by the graph and overlay shell.
-- `parameter_files/feature-file-graph-display.toml`: Sibling parameter file placeholder for graph-owned tuning if touch or zoom constants need future adjustment.
+- `parameter_files/feature-file-graph-display.toml`: Graph zoom profile values for desktop and mobile framing.
 - `local-daemon/src/daedalus_daemon/scanner.py`: Scanner that now returns project-relative feature-file paths alongside markdown contents.
 - `feature_files/feature-file-communications-system.md`: Dependency reference for how feature-file payloads arrive in the frontend.
 
@@ -52,3 +54,4 @@ HACKING
 - 2026-07-09: Added a dedicated coarse-pointer node tap path and a more circular new-feature action button so node selection feels steadier on mobile and the plus control reads like a floating action button.
 - 2026-07-09: Kept touch drags on the graph surface even when they begin over nodes, preserved zoom state across pinch updates, moved the ventures trigger up and out of the main drag lane, and tightened the zoom slider styling so mobile graph control feels smoother and more centered.
 - 2026-07-09: Replaced the mobile node tap path with graph-surface touch sessions, anchored pinch math to a stable viewport, sampled pan momentum from recent gesture history, and swapped the native vertical range input for a centered custom zoom rail.
+- 2026-07-09: Stopped tying graph readability to one shared zoom envelope by keeping node size absolute and letting the shell feed device-specific zoom bounds from the graph parameter file.

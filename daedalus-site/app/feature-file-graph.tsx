@@ -22,8 +22,6 @@ const SPIRAL_STEP = 92;
 const CLUSTER_GAP_X = 1180;
 const CLUSTER_GAP_Y = 900;
 const CLUSTER_MARGIN = 520;
-const MIN_ZOOM = 0.42;
-const MAX_ZOOM = 2.6;
 const DRAG_CLICK_THRESHOLD = 8;
 const FEATURE_FILE_REFERENCE_REGEX = /feature_files\/[A-Za-z0-9._/-]+\.md/g;
 
@@ -80,6 +78,8 @@ export type FeatureGraphSelection = {
 };
 
 type FeatureFileGraphProps = {
+  maxZoom: number;
+  minZoom: number;
   onNodeSelect: (selection: FeatureGraphSelection) => void;
   onOpenNewFeature: () => void;
   onOpenVentures: () => void;
@@ -166,14 +166,19 @@ const TOUCH_VELOCITY_WINDOW_MS = 140;
 const TOUCH_VELOCITY_FRAME_MS = 16;
 const TOUCH_VELOCITY_MAX_SAMPLES = 8;
 
-function getZoomRatio(zoom: number) {
-  return (clamp(zoom, MIN_ZOOM, MAX_ZOOM) - MIN_ZOOM) / (MAX_ZOOM - MIN_ZOOM);
+function getZoomRatio(zoom: number, minZoom: number, maxZoom: number) {
+  return (clamp(zoom, minZoom, maxZoom) - minZoom) / (maxZoom - minZoom);
 }
 
-function getSliderZoomForClientY(clientY: number, rect: DOMRect) {
+function getSliderZoomForClientY(
+  clientY: number,
+  rect: DOMRect,
+  minZoom: number,
+  maxZoom: number,
+) {
   const ratio = clamp((clientY - rect.top) / rect.height, 0, 1);
 
-  return MAX_ZOOM - ratio * (MAX_ZOOM - MIN_ZOOM);
+  return maxZoom - ratio * (maxZoom - minZoom);
 }
 
 function appendTouchVelocitySample(
@@ -324,6 +329,8 @@ function getRemainingPointer(
 }
 
 export default function FeatureFileGraph({
+  maxZoom,
+  minZoom,
   onNodeSelect,
   onOpenNewFeature,
   onOpenVentures,
@@ -400,13 +407,13 @@ export default function FeatureFileGraph({
 
     const nextViewport = applyZoomAtPoint(
       viewportRef.current,
-      clamp(zoom, MIN_ZOOM, MAX_ZOOM),
+      clamp(zoom, minZoom, maxZoom),
       VIEWPORT_WIDTH / 2,
       VIEWPORT_HEIGHT / 2,
     );
     viewportRef.current = nextViewport;
     setViewport(nextViewport);
-  }, [zoom]);
+  }, [maxZoom, minZoom, zoom]);
 
   useEffect(() => {
     if (graphData.nodes.length === 0) {
@@ -441,7 +448,7 @@ export default function FeatureFileGraph({
   }
 
   function updateZoom(nextZoom: number, viewX: number, viewY: number) {
-    const clampedZoom = clamp(nextZoom, MIN_ZOOM, MAX_ZOOM);
+    const clampedZoom = clamp(nextZoom, minZoom, maxZoom);
     const nextViewport = applyZoomAtPoint(
       viewportRef.current,
       clampedZoom,
@@ -600,7 +607,7 @@ export default function FeatureFileGraph({
         (nextPinchState.distance / pinchSession.startDistance);
       const zoomedViewport = applyZoomAtPoint(
         pinchSession.anchorViewport,
-        clamp(nextZoom, MIN_ZOOM, MAX_ZOOM),
+        clamp(nextZoom, minZoom, maxZoom),
         pinchSession.startMidpoint.x,
         pinchSession.startMidpoint.y,
       );
@@ -941,6 +948,8 @@ export default function FeatureFileGraph({
       getSliderZoomForClientY(
         event.clientY,
         event.currentTarget.getBoundingClientRect(),
+        minZoom,
+        maxZoom,
       ),
       VIEWPORT_WIDTH / 2,
       VIEWPORT_HEIGHT / 2,
@@ -959,6 +968,8 @@ export default function FeatureFileGraph({
       getSliderZoomForClientY(
         event.clientY,
         event.currentTarget.getBoundingClientRect(),
+        minZoom,
+        maxZoom,
       ),
       VIEWPORT_WIDTH / 2,
       VIEWPORT_HEIGHT / 2,
@@ -1031,7 +1042,7 @@ export default function FeatureFileGraph({
 
       return leftPriority - rightPriority;
     });
-  const zoomRatio = getZoomRatio(zoom);
+  const zoomRatio = getZoomRatio(zoom, minZoom, maxZoom);
 
   return (
     <div className="absolute inset-0 bg-[#05070c]">
@@ -1228,8 +1239,8 @@ export default function FeatureFileGraph({
         <div
           role="slider"
           aria-label="Graph zoom"
-          aria-valuemin={MIN_ZOOM}
-          aria-valuemax={MAX_ZOOM}
+          aria-valuemin={minZoom}
+          aria-valuemax={maxZoom}
           aria-valuenow={zoom}
           tabIndex={0}
           onPointerCancel={handleZoomSliderPointerEnd}

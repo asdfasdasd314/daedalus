@@ -17,6 +17,7 @@ import type {
   ParameterFileProjects,
   ParameterFileRecord,
 } from "@/lib/parameter-file-cache";
+import { parseParameterFile } from "@/lib/parameter-file-parser";
 import {
   getFeatureOptionsForProject,
   getFeatureTagsForPaths,
@@ -51,6 +52,13 @@ const AGENT_PROMPT_QUEUE_STORAGE_KEY = "agent-prompt-queue-v1";
 const AGENT_CHAT_STORAGE_KEY = "agent-chat-snapshot-v1";
 const AGENT_PROMPT_TIMEOUT_MS = 5 * 60 * 1000;
 const VENTURE_PROGRESS_STATES = ["idle", "in progress", "completed"] as const;
+const DEFAULT_DESKTOP_MIN_ZOOM = 0.42;
+const DEFAULT_DESKTOP_MAX_ZOOM = 2.6;
+const DEFAULT_DESKTOP_ZOOM = 1;
+const DEFAULT_MOBILE_MIN_ZOOM = 0.78;
+const DEFAULT_MOBILE_MAX_ZOOM = 4.1;
+const DEFAULT_MOBILE_ZOOM = 1.45;
+const GRAPH_PARAMETER_FILE_PATH = "parameter_files/feature-file-graph-display.toml";
 
 type AuthMode = "sign-in" | "sign-up";
 type DevEnvironmentState = "idle" | "loading" | "ready" | "error";
@@ -225,6 +233,7 @@ export default function FeatureFilesDashboard({
   const activePromptId = useRef("");
   const clearedAgentChatPrompt = useRef("");
   const agentPromptQueueRef = useRef<AgentPromptQueueEntry[]>([]);
+  const graphZoomProfileRef = useRef("");
   const latestChatRef = useRef<AgentChatExchange | null>(null);
   const currentUser = session?.user ?? null;
   const currentUserId = currentUser?.id ?? "";
@@ -341,6 +350,35 @@ export default function FeatureFilesDashboard({
       mediaQuery.removeEventListener("change", syncLayoutMode);
     };
   }, []);
+
+  const graphZoomSettings = useMemo(
+    () => getGraphZoomSettings(parameterProjects, isMobileLayout),
+    [isMobileLayout, parameterProjects],
+  );
+
+  useEffect(() => {
+    const nextProfileKey = [
+      isMobileLayout ? "mobile" : "desktop",
+      graphZoomSettings.minZoom,
+      graphZoomSettings.maxZoom,
+      graphZoomSettings.defaultZoom,
+    ].join(":");
+
+    setGraphZoom((currentZoom) => {
+      const clampedZoom = clampNumber(
+        currentZoom,
+        graphZoomSettings.minZoom,
+        graphZoomSettings.maxZoom,
+      );
+
+      if (graphZoomProfileRef.current !== nextProfileKey) {
+        graphZoomProfileRef.current = nextProfileKey;
+        return graphZoomSettings.defaultZoom;
+      }
+
+      return clampedZoom;
+    });
+  }, [graphZoomSettings, isMobileLayout]);
 
   useEffect(() => {
     if (!currentUser || !accessToken) {
@@ -1701,6 +1739,8 @@ export default function FeatureFilesDashboard({
   return (
     <main className="relative h-screen w-screen overflow-hidden bg-black text-slate-100">
       <FeatureFileGraph
+        maxZoom={graphZoomSettings.maxZoom}
+        minZoom={graphZoomSettings.minZoom}
         onNodeSelect={handleFeatureNodeSelect}
         onOpenNewFeature={openNewFeatureOverlay}
         onOpenVentures={toggleVenturesDrawer}
@@ -2854,6 +2894,91 @@ function getDevEnvironmentState(
   }
 
   return "idle";
+}
+
+function getGraphZoomSettings(
+  parameterProjects: ParameterFileProjects | null,
+  isMobileLayout: boolean,
+) {
+  const graphParameterFile = findParameterFileByPath(
+    parameterProjects,
+    GRAPH_PARAMETER_FILE_PATH,
+  );
+  const parsedVariables = graphParameterFile
+    ? parseParameterFile(graphParameterFile.toml).variables
+    : [];
+
+  const minZoom = getNumericParameterValue(
+    parsedVariables,
+    isMobileLayout ? "mobile_min_zoom" : "desktop_min_zoom",
+    isMobileLayout ? DEFAULT_MOBILE_MIN_ZOOM : DEFAULT_DESKTOP_MIN_ZOOM,
+  );
+  const maxZoom = getNumericParameterValue(
+    parsedVariables,
+    isMobileLayout ? "mobile_max_zoom" : "desktop_max_zoom",
+    isMobileLayout ? DEFAULT_MOBILE_MAX_ZOOM : DEFAULT_DESKTOP_MAX_ZOOM,
+  );
+  const safeMinZoom = Math.min(minZoom, maxZoom);
+  const safeMaxZoom = Math.max(minZoom, maxZoom);
+  const defaultZoom = getNumericParameterValue(
+    parsedVariables,
+    isMobileLayout ? "mobile_default_zoom" : "desktop_default_zoom",
+    isMobileLayout ? DEFAULT_MOBILE_ZOOM : DEFAULT_DESKTOP_ZOOM,
+  );
+
+  return {
+    defaultZoom: clampNumber(defaultZoom, safeMinZoom, safeMaxZoom),
+    maxZoom: safeMaxZoom,
+    minZoom: safeMinZoom,
+  };
+}
+
+function findParameterFileByPath(
+  parameterProjects: ParameterFileProjects | null,
+  targetPath: string,
+) {
+  const normalizedTargetPath = normalizeParameterFilePath(targetPath);
+
+  for (const parameterFiles of Object.values(parameterProjects ?? {})) {
+    const matchingParameterFile = parameterFiles.find(
+      (parameterFile) =>
+        normalizeParameterFilePath(parameterFile.path) === normalizedTargetPath,
+    );
+
+    if (matchingParameterFile) {
+      return matchingParameterFile;
+    }
+  }
+
+  return null;
+}
+
+function getNumericParameterValue(
+  variables: ReturnType<typeof parseParameterFile>["variables"],
+  variableName: string,
+  fallbackValue: number,
+) {
+  const matchingVariable = variables.find(
+    (variable) =>
+      variable.name === variableName &&
+      (variable.kind === "integer" || variable.kind === "float"),
+  );
+
+  if (!matchingVariable) {
+    return fallbackValue;
+  }
+
+  const parsedValue = Number(matchingVariable.displayValue);
+
+  if (!Number.isFinite(parsedValue)) {
+    return fallbackValue;
+  }
+
+  return parsedValue;
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
 }
 
 async function fetchLatestAgentChat(
