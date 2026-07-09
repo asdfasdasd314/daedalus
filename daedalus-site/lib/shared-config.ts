@@ -3,9 +3,7 @@ import path from "node:path";
 
 export type SharedConfig = {
   supabaseUrl: string;
-  supabaseAnonKey: string;
-  supabaseServiceRoleKey: string;
-  frontendBaseUrl: string;
+  supabasePublishableKey: string;
   pollIntervalMs: number;
 };
 

@@ -1,26 +1,19 @@
-import {
-  getCachedExchange,
-  setCachedExchange,
-  type AgentChatExchange,
-} from "@/lib/agent-chat-cache";
-
 export async function GET() {
-  return Response.json({
-    chat: getCachedExchange(),
-  });
+  return Response.json(
+    {
+      ok: false,
+      error: "Agent chat payloads are read from Supabase daemon_payloads.",
+    },
+    { status: 410 },
+  );
 }
 
-export async function POST(request: Request) {
-  const body = await request.json();
-
-  if (body.source !== "daemon") {
-    return Response.json(
-      { ok: false, error: "Only daemon payloads are accepted." },
-      { status: 400 },
-    );
-  }
-
-  setCachedExchange(body as AgentChatExchange);
-
-  return Response.json({ ok: true });
+export async function POST() {
+  return Response.json(
+    {
+      ok: false,
+      error: "Daemon agent chat payloads are written to Supabase daemon_payloads.",
+    },
+    { status: 410 },
+  );
 }

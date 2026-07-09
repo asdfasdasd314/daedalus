@@ -1,17 +1,17 @@
 # Agent Prompt Chat
 
 ## Summary
-The agent prompt chat adds a simple prompt composer to the existing dashboard and stores prompt text in Supabase through the shared `communications` table. It keeps the feature-file loading protocol separate by writing each workflow into its own `purpose` row, and now lets the operator scope the next prompt to selected feature files from the graph.
+The agent prompt chat adds a simple prompt composer to the existing dashboard and stores prompt text in Supabase through the user-owned `communications` table. It keeps the feature-file loading protocol separate by writing each workflow into its own `purpose` row, and now lets the operator scope the next prompt to selected feature files from the graph.
 
 ## Key Points
-- **Shared Transport**: The dashboard and local daemon both read and write the `communications` table by `purpose` instead of using one shared message row.
+- **Shared Transport**: The dashboard and local daemon both read and write the `communications` table by `user_id` and `purpose` instead of using one shared message row.
 - **Prompt Composer**: The MVP UI is one textarea and one send button on the existing dashboard.
 - **Purpose Split**: Feature-file loading uses `purpose = "feature_file_load"` and prompt submission uses `purpose = "agent_prompt"`.
 - **Prompt Payload**: The `agent_prompt` row stores the `message` as a JSON string with `directory` and `prompt` so the daemon can tell which repo should receive the request.
 - **Model Controls**: Codex model and reasoning options are hardcoded in shared JSON, then sent with each prompt payload.
 - **Planning Mode**: Planning mode wraps the user prompt with a fixed instruction preamble before daemon execution.
 - **Targeted Feature Scope**: The chat panel keeps a separate `Targeted Features` chip row for the next outbound prompt only, and each prompt now carries a `targetedFeaturePaths` list of project-relative `feature_files/*.md` paths.
-- **Execution Loop**: The daemon now replaces the queued `agent_prompt` JSON with progress markers, runs `codex exec` inside the requested repo, and posts the latest prompt/reply pair back to the frontend over REST.
+- **Execution Loop**: The daemon now replaces the queued `agent_prompt` JSON with progress markers, runs `codex exec` inside the requested repo, and writes the latest prompt/reply pair into `daemon_payloads`.
 - **Chat Progress**: The dashboard watches the `agent_prompt` row so it can show daemon pickup and completion updates while the reply is still being generated.
 - **Queued Prompt Safety**: If a newer prompt arrives while an older one is still running, the daemon leaves the newer row in place instead of overwriting it with `daemon_sent_response`.
 - **Latest Pair Only**: The UI keeps only the newest submitted prompt and daemon reply instead of a full transcript.
@@ -19,8 +19,7 @@ The agent prompt chat adds a simple prompt composer to the existing dashboard an
 
 ## Relevant Files
 - `daedalus-site/app/feature-files-dashboard.tsx`: Existing dashboard that now includes the prompt composer and purpose-aware Supabase writes.
-- `daedalus-site/lib/agent-chat-cache.ts`: Shared in-memory latest-exchange cache shape for prompt metadata returned from the daemon.
-- `daedalus-site/app/api/agent-chat/route.ts`: Local REST endpoint that receives the latest daemon chat reply and serves it back to the browser.
+- `shared/database/migrations/008_auth_scoped_daedalus.sql`: Adds the user-owned daemon payload row used for latest chat replies.
 - `daedalus-site/lib/agent-models.ts`: Server helper that loads the shared hardcoded model configuration for the dashboard.
 - `shared/agent_models.json`: Shared Codex provider model and reasoning options for the prompt composer and daemon payload.
 - `shared/database/migrations/003_add_communication_purpose.sql`: Migration that adds the `purpose` column and backfills the feature-file row.
@@ -50,3 +49,4 @@ HACKING
 - 2026-07-06: Added a local clear button to the agent prompt chat so the current transcript can be hidden without mutating the daemon-backed `agent_prompt` row.
 - 2026-07-06: Hardened the daemon chat completion path so a newer queued prompt is preserved when an older codex run finishes instead of being overwritten by the completion marker.
 - 2026-07-06: Fixed the daemon chat handoff to send `promptId` and the rest of the reply payload in the correct order, and updated the daemon tests to cover the JSON state-marker flow used by queued prompt preservation.
+- 2026-07-08: Moved latest agent chat replies from the local Next cache route into user-owned Supabase daemon payloads.

@@ -85,6 +85,12 @@ type FeatureFileGraphProps = {
   selectedProjectDirectory: string;
   targetedFeatures: TargetedFeature[];
   onAddTargetedFeature: (feature: TargetedFeature) => void;
+  onRequestParameterUpdate: (request: {
+    parameterFilePath: string;
+    projectPath: string;
+    value: string;
+    variableName: string;
+  }) => Promise<void>;
 };
 
 type FeatureEdge = {
@@ -125,6 +131,7 @@ export default function FeatureFileGraph({
   selectedProjectDirectory,
   targetedFeatures,
   onAddTargetedFeature,
+  onRequestParameterUpdate,
 }: FeatureFileGraphProps) {
   const graphData = useMemo(() => buildGraphData(projects), [projects]);
   const [nodes, setNodes] = useState(graphData.nodes);
@@ -708,6 +715,7 @@ export default function FeatureFileGraph({
                     projectPath={selectedNode.projectPath}
                     parameterFilePath={matchedParameterFile.path}
                     parameterFile={matchedParameterFile}
+                    onRequestSave={onRequestParameterUpdate}
                   />
                 ) : (
                   <div className="rounded-[1.25rem] border border-dashed border-white/10 bg-slate-900/40 px-4 py-3 text-sm text-slate-400">

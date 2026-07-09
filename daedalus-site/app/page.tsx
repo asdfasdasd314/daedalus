@@ -10,7 +10,7 @@ export default async function Home() {
     <FeatureFilesDashboard
       agentModels={agentModels}
       pollIntervalMs={config.pollIntervalMs}
-      supabaseAnonKey={config.supabaseAnonKey}
+      supabasePublishableKey={config.supabasePublishableKey}
       supabaseUrl={config.supabaseUrl}
     />
   );

@@ -6,10 +6,10 @@ The dev environment loader expands Daedalus beyond feature-file markdown so the 
 ## Key Points
 - **Dual Load Tasks**: One UI action now writes both the feature-file load request and the parameter-file load request into the communications table.
 - **Sibling Discovery**: Parameter files live under `parameter_files` directories and are matched to feature files by mirrored project-relative path and stem.
-- **Separate Payloads**: Feature files and parameter files travel through parallel daemon scans, caches, and API routes instead of being merged into one transport object.
+- **Separate Payloads**: Feature files and parameter files travel through parallel daemon scans and user-owned Supabase daemon payload rows instead of being merged into one transport object.
 - **Feature-Only Graph**: The graph still renders only `feature_files/*.md` nodes so the existing layout and targeting behavior stay simple.
 - **Detail Pairing**: Clicking a feature node resolves `feature_files/foo/bar.md` to `parameter_files/foo/bar.toml` and renders a typed variable selector first when it exists.
-- **Typed Editing**: Parameter variables are parsed from flat TOML assignments, matched with their leading comments, and edited through type-checked controls before the file is rewritten.
+- **Typed Editing**: Parameter variables are parsed from flat TOML assignments, matched with their leading comments, and saved by sending a user-scoped command for the local daemon to rewrite the file.
 
 ## Relevant Files
 - `local-daemon/src/daedalus_daemon/scanner.py`: Scans both `feature_files/*.md` and `parameter_files/*.toml`.
@@ -20,7 +20,7 @@ The dev environment loader expands Daedalus beyond feature-file markdown so the 
 - `daedalus-site/app/parameter-variable-selector.tsx`: Lets the user choose a parameter variable, inspect its leading-comment context, and save typed edits.
 - `daedalus-site/lib/parameter-file-cache.ts`: Stores the daemon-delivered parameter-file payload.
 - `daedalus-site/lib/parameter-file-parser.ts`: Parses flat TOML assignments, infers simple types, and rewrites edited values back into the file text.
-- `daedalus-site/app/api/parameter-files/route.ts`: Receives cached parameter-file payloads and persists typed variable edits back to disk.
+- `shared/database/migrations/008_auth_scoped_daedalus.sql`: Adds the daemon payload and communications rows used for parameter payload delivery and update commands.
 
 ## Dev Mode
 HACKING
@@ -33,3 +33,4 @@ HACKING
 - 2026-07-07: Re-centered the current-message and status cards by replacing the stale three-column header grid with a centered two-card layout.
 - 2026-07-07: Moved communications-table polling and writes behind a same-origin API route so dev-environment loads no longer depend on browser CORS access to Supabase.
 - 2026-07-07: Replaced the raw parameter TOML view with a variable selector that parses leading comments, validates typed edits, and writes saved changes back to the matching `.toml` file.
+- 2026-07-08: Moved parameter-file payload delivery and typed variable saves into user-scoped Supabase rows with local daemon execution for filesystem edits.

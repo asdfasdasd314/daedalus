@@ -2,15 +2,19 @@ import json
 from urllib import request
 
 
+AGENT_CHAT_PAYLOAD_KIND = "agent_chat"
+AGENT_PROMPT_PURPOSE = "agent_prompt"
 CLIENT_LOAD_FEATURE_FILES = "client_load_feature_files"
 CLIENT_LOAD_PARAMETER_FILES = "client_load_parameter_files"
 DAEMON_RECEIVED_MESSAGE = "daemon_received_message"
 DAEMON_SENT_FEATURE_FILES = "daemon_sent_feature_files"
 DAEMON_SENT_PARAMETER_FILES = "daemon_sent_parameter_files"
 DAEMON_SENT_RESPONSE = "daemon_sent_response"
+FEATURE_FILES_PAYLOAD_KIND = "feature_files"
 FEATURE_FILE_LOAD_PURPOSE = "feature_file_load"
+PARAMETER_FILES_PAYLOAD_KIND = "parameter_files"
 PARAMETER_FILE_LOAD_PURPOSE = "parameter_file_load"
-AGENT_PROMPT_PURPOSE = "agent_prompt"
+PARAMETER_FILE_UPDATE_PURPOSE = "parameter_file_update"
 
 
 def fetch_current_message(config: dict, purpose: str) -> str:
@@ -23,89 +27,61 @@ def fetch_current_message(config: dict, purpose: str) -> str:
 
 
 def fetch_communication_rows(config: dict, purpose: str) -> list[dict]:
-    url = (
-        f"{config['supabaseUrl']}/rest/v1/communications"
-        f"?select=message,purpose&purpose=eq.{purpose}&limit=1"
+    body = json.dumps({
+        "p_purpose": purpose,
+        "p_user_id": config["daemonUserId"],
+    }).encode("utf-8")
+    http_request = request.Request(
+        f"{config['supabaseUrl']}/rest/v1/rpc/daemon_get_communication",
+        data=body,
+        headers=get_supabase_headers(config),
+        method="POST",
     )
-    headers = {
-        "apikey": config["supabaseServiceRoleKey"],
-        "Authorization": f"Bearer {config['supabaseServiceRoleKey']}",
-    }
-    http_request = request.Request(url, headers=headers, method="GET")
 
     with request.urlopen(http_request) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
 def update_current_message(config: dict, purpose: str, message: str) -> None:
-    rows = fetch_communication_rows(config, purpose)
-
-    if rows:
-        patch_current_message(config, purpose, message)
-        return
-
-    insert_current_message(config, purpose, message)
-
-
-def patch_current_message(config: dict, purpose: str, message: str) -> None:
-    url = (
-        f"{config['supabaseUrl']}/rest/v1/communications"
-        f"?purpose=eq.{purpose}"
+    body = json.dumps({
+        "p_message": message,
+        "p_purpose": purpose,
+        "p_user_id": config["daemonUserId"],
+    }).encode("utf-8")
+    http_request = request.Request(
+        f"{config['supabaseUrl']}/rest/v1/rpc/daemon_upsert_communication",
+        data=body,
+        headers=get_supabase_headers(config),
+        method="POST",
     )
-    headers = {
-        "apikey": config["supabaseServiceRoleKey"],
-        "Authorization": f"Bearer {config['supabaseServiceRoleKey']}",
-        "Content-Type": "application/json",
-    }
-    body = json.dumps({"message": message, "purpose": purpose}).encode("utf-8")
-    http_request = request.Request(url, data=body, headers=headers, method="PATCH")
 
     with request.urlopen(http_request):
         return
 
 
-def insert_current_message(config: dict, purpose: str, message: str) -> None:
-    url = f"{config['supabaseUrl']}/rest/v1/communications"
-    headers = {
-        "apikey": config["supabaseServiceRoleKey"],
-        "Authorization": f"Bearer {config['supabaseServiceRoleKey']}",
-        "Content-Type": "application/json",
-    }
-    body = json.dumps({"message": message, "purpose": purpose}).encode("utf-8")
-    http_request = request.Request(url, data=body, headers=headers, method="POST")
+def upsert_daemon_payload(config: dict, kind: str, payload: dict) -> None:
+    body = json.dumps({
+        "p_kind": kind,
+        "p_payload": payload,
+        "p_user_id": config["daemonUserId"],
+    }).encode("utf-8")
+    http_request = request.Request(
+        f"{config['supabaseUrl']}/rest/v1/rpc/daemon_upsert_payload",
+        data=body,
+        headers=get_supabase_headers(config),
+        method="POST",
+    )
 
     with request.urlopen(http_request):
         return
 
 
 def post_feature_files(config: dict, projects: dict[str, list[dict[str, str]]]) -> None:
-    url = f"{config['frontendBaseUrl']}/api/feature-files"
-    headers = {
-        "Content-Type": "application/json",
-    }
-    body = json.dumps({
-        "source": "daemon",
-        "projects": projects,
-    }).encode("utf-8")
-    http_request = request.Request(url, data=body, headers=headers, method="POST")
-
-    with request.urlopen(http_request):
-        return
+    upsert_daemon_payload(config, FEATURE_FILES_PAYLOAD_KIND, {"projects": projects})
 
 
 def post_parameter_files(config: dict, projects: dict[str, list[dict[str, str]]]) -> None:
-    url = f"{config['frontendBaseUrl']}/api/parameter-files"
-    headers = {
-        "Content-Type": "application/json",
-    }
-    body = json.dumps({
-        "source": "daemon",
-        "projects": projects,
-    }).encode("utf-8")
-    http_request = request.Request(url, data=body, headers=headers, method="POST")
-
-    with request.urlopen(http_request):
-        return
+    upsert_daemon_payload(config, PARAMETER_FILES_PAYLOAD_KIND, {"projects": projects})
 
 
 def post_agent_chat(
@@ -120,12 +96,7 @@ def post_agent_chat(
     planning_mode: bool = False,
     targeted_feature_paths: list[str] | None = None,
 ) -> None:
-    url = f"{config['frontendBaseUrl']}/api/agent-chat"
-    headers = {
-        "Content-Type": "application/json",
-    }
-    body = json.dumps({
-        "source": "daemon",
+    upsert_daemon_payload(config, AGENT_CHAT_PAYLOAD_KIND, {
         "promptId": prompt_id,
         "directory": directory,
         "prompt": prompt,
@@ -135,8 +106,14 @@ def post_agent_chat(
         "reasoning": reasoning,
         "planningMode": planning_mode,
         "targetedFeaturePaths": targeted_feature_paths or [],
-    }).encode("utf-8")
-    http_request = request.Request(url, data=body, headers=headers, method="POST")
+    })
 
-    with request.urlopen(http_request):
-        return
+
+def get_supabase_headers(config: dict) -> dict[str, str]:
+    publishable_key = config["supabasePublishableKey"]
+
+    return {
+        "apikey": publishable_key,
+        "Authorization": f"Bearer {publishable_key}",
+        "Content-Type": "application/json",
+    }

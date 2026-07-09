@@ -7,6 +7,8 @@ import time
 
 DEFAULT_CODEX_MODEL = "gpt-5.5"
 DEFAULT_CODEX_REASONING = "medium"
+DAEMON_ERROR = "daemon_error"
+PARAMETER_FILE_UPDATE_COMMAND = "parameter_file_update"
 PLANNING_PROMPT_PREFIX = """You are in planning mode.
 
 Do not edit files.
@@ -32,6 +34,7 @@ if __package__ in {None, ""}:
         DAEMON_SENT_RESPONSE,
         FEATURE_FILE_LOAD_PURPOSE,
         PARAMETER_FILE_LOAD_PURPOSE,
+        PARAMETER_FILE_UPDATE_PURPOSE,
         fetch_current_message,
         post_agent_chat,
         post_feature_files,
@@ -54,6 +57,7 @@ else:
         DAEMON_SENT_RESPONSE,
         FEATURE_FILE_LOAD_PURPOSE,
         PARAMETER_FILE_LOAD_PURPOSE,
+        PARAMETER_FILE_UPDATE_PURPOSE,
         fetch_current_message,
         post_agent_chat,
         post_feature_files,
@@ -99,6 +103,51 @@ def run_parameter_file_poll_cycle(
         write_message,
         scan_projects,
         deliver_projects,
+    )
+
+
+def run_parameter_file_update_cycle(
+    config: dict,
+    read_message=fetch_current_message,
+    write_message=update_current_message,
+    scan_projects=scan_parameter_file_projects,
+    deliver_projects=post_parameter_files,
+) -> None:
+    message = read_message(config, PARAMETER_FILE_UPDATE_PURPOSE)
+    update_request = parse_parameter_file_update_message(message)
+
+    if not update_request:
+        return
+
+    if update_request.get("state") in {
+        DAEMON_RECEIVED_MESSAGE,
+        DAEMON_SENT_PARAMETER_FILES,
+        DAEMON_ERROR,
+    }:
+        return
+
+    write_message(
+        config,
+        PARAMETER_FILE_UPDATE_PURPOSE,
+        build_parameter_file_update_state_message(DAEMON_RECEIVED_MESSAGE),
+    )
+
+    try:
+        apply_parameter_file_update(update_request)
+        projects = scan_projects()
+        deliver_projects(config, projects)
+    except Exception as error:
+        write_message(
+            config,
+            PARAMETER_FILE_UPDATE_PURPOSE,
+            build_parameter_file_update_state_message(DAEMON_ERROR, str(error)),
+        )
+        return
+
+    write_message(
+        config,
+        PARAMETER_FILE_UPDATE_PURPOSE,
+        build_parameter_file_update_state_message(DAEMON_SENT_PARAMETER_FILES),
     )
 
 
@@ -221,6 +270,177 @@ def parse_agent_prompt_message(message: str) -> dict[str, object] | None:
     return parsed_message
 
 
+def parse_parameter_file_update_message(message: str) -> dict[str, object] | None:
+    trimmed_message = message.strip()
+
+    if not trimmed_message:
+        return None
+
+    try:
+        parsed_message = json.loads(trimmed_message)
+    except json.JSONDecodeError:
+        return None
+
+    if not isinstance(parsed_message, dict):
+        return None
+
+    if parsed_message.get("state") in {DAEMON_RECEIVED_MESSAGE, DAEMON_SENT_PARAMETER_FILES, DAEMON_ERROR}:
+        return parsed_message
+
+    if parsed_message.get("command") != PARAMETER_FILE_UPDATE_COMMAND:
+        return None
+
+    for field_name in ("projectPath", "path", "variableName", "value"):
+        if not isinstance(parsed_message.get(field_name), str):
+            return None
+
+    return parsed_message
+
+
+def build_parameter_file_update_state_message(state: str, error: str = "") -> str:
+    payload = {
+        "command": PARAMETER_FILE_UPDATE_COMMAND,
+        "state": state,
+    }
+
+    if error:
+        payload["error"] = error
+
+    return json.dumps(payload)
+
+
+def apply_parameter_file_update(update_request: dict[str, object]) -> None:
+    project_path = str(update_request["projectPath"])
+    parameter_path = str(update_request["path"])
+    variable_name = str(update_request["variableName"])
+    value = str(update_request["value"])
+
+    if not parameter_path.startswith("parameter_files/") or not parameter_path.endswith(".toml"):
+        raise ValueError("Only parameter_files/*.toml can be edited.")
+
+    project_root = Path(project_path).resolve()
+    absolute_path = (project_root / parameter_path).resolve()
+
+    if absolute_path != project_root and project_root not in absolute_path.parents:
+        raise ValueError("Parameter file path must stay inside the selected project.")
+
+    current_toml = absolute_path.read_text(encoding="utf-8")
+    updated_toml = update_parameter_variable_in_toml(current_toml, variable_name, value)
+    absolute_path.write_text(updated_toml, encoding="utf-8")
+
+
+def update_parameter_variable_in_toml(toml: str, variable_name: str, draft_value: str) -> str:
+    lines = toml.split("\n")
+    current_section = ""
+
+    for index, line in enumerate(lines):
+        trimmed_line = line.strip()
+
+        if not trimmed_line or trimmed_line.startswith("#"):
+            continue
+
+        section_match = re.fullmatch(r"\[(.+)\]", trimmed_line)
+
+        if section_match:
+            current_section = section_match.group(1).strip()
+            continue
+
+        assignment_match = re.match(r"^(\s*([A-Za-z0-9_.-]+)\s*=\s*)(.+)$", line)
+
+        if not assignment_match:
+            continue
+
+        key = assignment_match.group(2).strip()
+        full_name = f"{current_section}.{key}" if current_section else key
+
+        if full_name != variable_name:
+            continue
+
+        value_text, inline_comment = split_toml_value_and_comment(
+            assignment_match.group(3).strip(),
+        )
+        serialized_value = serialize_parameter_value(value_text, draft_value)
+        lines[index] = (
+            assignment_match.group(1)
+            + serialized_value
+            + (f" {inline_comment}" if inline_comment else "")
+        )
+        return "\n".join(lines)
+
+    raise ValueError(f'Variable "{variable_name}" was not found in this parameter file.')
+
+
+def split_toml_value_and_comment(value_text: str) -> tuple[str, str]:
+    in_single_quote = False
+    in_double_quote = False
+
+    for index, character in enumerate(value_text):
+        previous_character = value_text[index - 1] if index > 0 else ""
+
+        if character == '"' and not in_single_quote and previous_character != "\\":
+            in_double_quote = not in_double_quote
+            continue
+
+        if character == "'" and not in_double_quote:
+            in_single_quote = not in_single_quote
+            continue
+
+        if character == "#" and not in_single_quote and not in_double_quote:
+            return value_text[:index].strip(), value_text[index:].strip()
+
+    return value_text.strip(), ""
+
+
+def serialize_parameter_value(current_value: str, draft_value: str) -> str:
+    trimmed_draft = draft_value.strip()
+
+    if is_toml_string(current_value):
+        return json.dumps(draft_value)
+
+    if current_value in {"true", "false"}:
+        if trimmed_draft not in {"true", "false"}:
+            raise ValueError("Booleans must be either true or false.")
+
+        return trimmed_draft
+
+    if re.fullmatch(r"[+-]?\d+", current_value):
+        if not re.fullmatch(r"[+-]?\d+", trimmed_draft):
+            raise ValueError("Integers must be whole numbers.")
+
+        return trimmed_draft
+
+    if is_toml_float(current_value):
+        if not is_toml_float(trimmed_draft):
+            raise ValueError("Floats must be valid numbers.")
+
+        return trimmed_draft
+
+    if current_value.startswith("[") and current_value.endswith("]"):
+        if not trimmed_draft.startswith("[") or not trimmed_draft.endswith("]"):
+            raise ValueError("Arrays must stay in TOML array form.")
+
+        return trimmed_draft
+
+    raise ValueError("This TOML value shape is not editable yet.")
+
+
+def is_toml_string(value: str) -> bool:
+    return (
+        (value.startswith('"') and value.endswith('"'))
+        or (value.startswith("'") and value.endswith("'"))
+    )
+
+
+def is_toml_float(value: str) -> bool:
+    return bool(
+        re.fullmatch(
+            r"[+-]?((\d+\.\d*)|(\d*\.\d+)|(\d+e[+-]?\d+)|(\d+\.\d*e[+-]?\d+)|(\d*\.\d+e[+-]?\d+))",
+            value,
+            re.IGNORECASE,
+        ),
+    )
+
+
 def build_agent_prompt_state_message(prompt_id: str, state: str) -> str:
     return json.dumps({
         "promptId": prompt_id,
@@ -329,6 +549,7 @@ def main() -> None:
     while True:
         run_poll_cycle(config)
         run_parameter_file_poll_cycle(config)
+        run_parameter_file_update_cycle(config)
         run_agent_prompt_cycle(config)
         time.sleep(config["pollIntervalMs"] / 1000)
 

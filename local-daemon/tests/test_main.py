@@ -20,14 +20,18 @@ from daedalus_daemon import (
     run_agent_prompt_cycle,
     run_codex_exec,
     run_parameter_file_poll_cycle,
+    run_parameter_file_update_cycle,
     run_poll_cycle,
 )
 from daedalus_daemon.main import (
     PLANNING_PROMPT_PREFIX,
     TARGETED_FEATURES_PROMPT_PREFIX,
+    apply_parameter_file_update,
     build_agent_prompt_state_message,
+    build_parameter_file_update_state_message,
     build_codex_prompt,
     filter_targeted_feature_paths,
+    update_parameter_variable_in_toml,
 )
 
 
@@ -228,6 +232,77 @@ class RunParameterFilePollCycleTests(unittest.TestCase):
             [
                 (PARAMETER_FILE_LOAD_PURPOSE, DAEMON_RECEIVED_MESSAGE),
             ],
+        )
+
+
+class RunParameterFileUpdateCycleTests(unittest.TestCase):
+    def test_handles_parameter_file_update_message(self):
+        writes: list[tuple[str, str]] = []
+        deliveries: list[dict[str, list[dict[str, str]]]] = []
+
+        def fake_read_message(_config, purpose):
+            self.assertEqual(purpose, "parameter_file_update")
+            return json.dumps({
+                "command": "parameter_file_update",
+                "projectPath": "/workspace/project",
+                "path": "parameter_files/alpha.toml",
+                "variableName": "alpha",
+                "value": "2",
+            })
+
+        def fake_write_message(_config, purpose, message):
+            writes.append((purpose, message))
+
+        def fake_scan_projects():
+            return {
+                "/workspace/project": [
+                    {
+                        "path": "parameter_files/alpha.toml",
+                        "toml": "alpha = 2",
+                    },
+                ],
+            }
+
+        def fake_deliver_projects(_config, projects):
+            deliveries.append(projects)
+
+        with patch("daedalus_daemon.main.apply_parameter_file_update"):
+            run_parameter_file_update_cycle(
+                {"pollIntervalMs": 5000},
+                read_message=fake_read_message,
+                write_message=fake_write_message,
+                scan_projects=fake_scan_projects,
+                deliver_projects=fake_deliver_projects,
+            )
+
+        self.assertEqual(writes[0][0], "parameter_file_update")
+        self.assertIn("daemon_received_message", writes[0][1])
+        self.assertEqual(writes[1][0], "parameter_file_update")
+        self.assertIn("daemon_sent_parameter_files", writes[1][1])
+        self.assertEqual(
+            deliveries,
+            [{
+                "/workspace/project": [
+                    {
+                        "path": "parameter_files/alpha.toml",
+                        "toml": "alpha = 2",
+                    },
+                ],
+            }],
+        )
+
+
+class ParameterFileUpdateTests(unittest.TestCase):
+    def test_updates_flat_toml_integer(self):
+        self.assertEqual(
+            update_parameter_variable_in_toml("alpha = 1", "alpha", "2"),
+            "alpha = 2",
+        )
+
+    def test_updates_section_toml_string(self):
+        self.assertEqual(
+            update_parameter_variable_in_toml('[settings]\nname = "old"', "settings.name", "new"),
+            '[settings]\nname = "new"',
         )
 
 

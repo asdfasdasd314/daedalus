@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createClient, type Session } from "@supabase/supabase-js";
 import FeatureFileGraph from "./feature-file-graph";
 import type {
   AgentChatExchange,
@@ -13,7 +14,7 @@ import type { ParameterFileProjects } from "@/lib/parameter-file-cache";
 type DashboardProps = {
   agentModels: AgentModelsConfig;
   pollIntervalMs: number;
-  supabaseAnonKey: string;
+  supabasePublishableKey: string;
   supabaseUrl: string;
 };
 
@@ -25,29 +26,38 @@ const DAEMON_SENT_PARAMETER_FILES = "daemon_sent_parameter_files";
 const DAEMON_SENT_RESPONSE = "daemon_sent_response";
 const FEATURE_FILE_LOAD_PURPOSE = "feature_file_load";
 const PARAMETER_FILE_LOAD_PURPOSE = "parameter_file_load";
+const PARAMETER_FILE_UPDATE_PURPOSE = "parameter_file_update";
 const AGENT_PROMPT_PURPOSE = "agent_prompt";
+const PARAMETER_FILE_UPDATE_COMMAND = "parameter_file_update";
+const FEATURE_FILES_PAYLOAD_KIND = "feature_files";
+const PARAMETER_FILES_PAYLOAD_KIND = "parameter_files";
+const AGENT_CHAT_PAYLOAD_KIND = "agent_chat";
 const DEFAULT_PROJECT_DIRECTORY = "/Users/jameshollingsworth/Projects/daedalus";
 const AGENT_PROMPT_QUEUE_STORAGE_KEY = "agent-prompt-queue-v1";
 const AGENT_CHAT_STORAGE_KEY = "agent-chat-snapshot-v1";
 const AGENT_PROMPT_TIMEOUT_MS = 5 * 60 * 1000;
 const VENTURE_PROGRESS_STATES = ["idle", "in progress", "completed"] as const;
 
-type DevTab = "chat" | "ventures";
+type DevTab = "chat" | "ventures" | "settings";
+type AuthMode = "sign-in" | "sign-up";
 
 type VentureProgressState = (typeof VENTURE_PROGRESS_STATES)[number];
 
 type VentureRow = {
   created_at: string;
   details: string | null;
+  feature_file_paths: string[] | null;
   id: string;
   project_directory: string | null;
   progress_state: VentureProgressState;
+  user_id: string;
   venture_name: string;
 };
 
 type VentureItem = {
   createdAt: string;
   details: string | null;
+  featureFilePaths: string[];
   id: string;
   projectDirectory: string | null;
   progressState: VentureProgressState;
@@ -56,9 +66,15 @@ type VentureItem = {
 
 type VentureUpdatePayload = {
   details?: string | null;
+  feature_file_paths?: string[];
   project_directory?: string | null;
   progress_state?: VentureProgressState;
   venture_name?: string;
+};
+
+type VentureFeatureOption = {
+  featureName: string;
+  filePath: string;
 };
 
 type AgentPromptQueueStatus =
@@ -93,12 +109,32 @@ type ParsedAgentPromptRow = {
   state?: string;
 };
 
+type DaemonPayloadRow<TPayload> = {
+  payload: TPayload;
+};
+
+type ParameterUpdateRequest = {
+  parameterFilePath: string;
+  projectPath: string;
+  value: string;
+  variableName: string;
+};
+
 export default function FeatureFilesDashboard({
   agentModels,
   pollIntervalMs,
-  supabaseAnonKey,
+  supabasePublishableKey,
   supabaseUrl,
 }: DashboardProps) {
+  const [supabase] = useState(() =>
+    createClient(supabaseUrl, supabasePublishableKey),
+  );
+  const [authMode, setAuthMode] = useState<AuthMode>("sign-in");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authError, setAuthError] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authStatus, setAuthStatus] = useState<"checking" | "ready" | "submitting">("checking");
+  const [session, setSession] = useState<Session | null>(null);
   const defaultModel = agentModels.codex.models[0];
   const [activeDevTab, setActiveDevTab] = useState<DevTab>("chat");
   const [isDevInterfaceCollapsed, setIsDevInterfaceCollapsed] = useState(false);
@@ -108,6 +144,7 @@ export default function FeatureFilesDashboard({
   const [message, setMessage] = useState("");
   const [parameterFileMessage, setParameterFileMessage] = useState("");
   const [agentPromptMessage, setAgentPromptMessage] = useState("");
+  const [parameterUpdateMessage, setParameterUpdateMessage] = useState("");
   const [promptText, setPromptText] = useState("");
   const [promptStatus, setPromptStatus] = useState("");
   const [latestChat, setLatestChat] = useState<AgentChatExchange | null>(null);
@@ -127,23 +164,62 @@ export default function FeatureFilesDashboard({
   const [ventures, setVentures] = useState<VentureItem[]>([]);
   const [newVentureName, setNewVentureName] = useState("");
   const [newVentureProjectDirectory, setNewVentureProjectDirectory] = useState(
-    DEFAULT_PROJECT_DIRECTORY,
+    "",
   );
   const [newVentureDetails, setNewVentureDetails] = useState("");
+  const [newVentureFeatureFilePaths, setNewVentureFeatureFilePaths] = useState<string[]>([]);
+  const [newVentureSelectedFeaturePath, setNewVentureSelectedFeaturePath] = useState("");
+  const [selectedVentureId, setSelectedVentureId] = useState("");
   const [editingVentureId, setEditingVentureId] = useState("");
   const [editingVentureDetails, setEditingVentureDetails] = useState("");
+  const [editingVentureFeatureFilePaths, setEditingVentureFeatureFilePaths] = useState<string[]>([]);
   const [editingVentureName, setEditingVentureName] = useState("");
   const [editingVentureProjectDirectory, setEditingVentureProjectDirectory] = useState("");
+  const [editingVentureSelectedFeaturePath, setEditingVentureSelectedFeaturePath] = useState("");
   const [savingVentureId, setSavingVentureId] = useState("");
   const [updatingProgressVentureId, setUpdatingProgressVentureId] = useState("");
   const [deletingVentureId, setDeletingVentureId] = useState("");
   const [ventureError, setVentureError] = useState("");
   const [error, setError] = useState("");
   const latestLocalWriteStartedAt = useRef(0);
+  const latestParameterUpdateWriteStartedAt = useRef(0);
   const activePromptId = useRef("");
   const clearedAgentChatPrompt = useRef("");
   const agentPromptQueueRef = useRef<AgentPromptQueueEntry[]>([]);
   const latestChatRef = useRef<AgentChatExchange | null>(null);
+  const currentUser = session?.user ?? null;
+  const accessToken = session?.access_token ?? "";
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadSession() {
+      const { data, error: sessionError } = await supabase.auth.getSession();
+
+      if (!isMounted) {
+        return;
+      }
+
+      if (sessionError) {
+        setAuthError(sessionError.message);
+      }
+
+      setSession(data.session);
+      setAuthStatus("ready");
+    }
+
+    void loadSession();
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+      setAuthStatus("ready");
+      setAuthError("");
+    });
+
+    return () => {
+      isMounted = false;
+      authListener.subscription.unsubscribe();
+    };
+  }, [supabase]);
 
   useEffect(() => {
     agentPromptQueueRef.current = agentPromptQueue;
@@ -197,13 +273,23 @@ export default function FeatureFilesDashboard({
   }, [isAgentPromptQueueHydrated, latestChat]);
 
   useEffect(() => {
+    if (!currentUser || !accessToken) {
+      return;
+    }
+
     let isMounted = true;
 
     async function pollMessage() {
       const pollStartedAt = Date.now();
 
       try {
-        const nextMessage = await fetchCurrentMessage(FEATURE_FILE_LOAD_PURPOSE);
+        const nextMessage = await fetchCurrentMessage(
+          supabaseUrl,
+          supabasePublishableKey,
+          accessToken,
+          currentUser.id,
+          FEATURE_FILE_LOAD_PURPOSE,
+        );
 
         if (!isMounted) {
           return;
@@ -231,24 +317,26 @@ export default function FeatureFilesDashboard({
       isMounted = false;
       window.clearInterval(intervalId);
     };
-  }, [pollIntervalMs, supabaseAnonKey, supabaseUrl]);
+  }, [accessToken, currentUser, pollIntervalMs, supabasePublishableKey, supabaseUrl]);
 
   useEffect(() => {
     if (message !== DAEMON_SENT_FEATURE_FILES) {
       return;
     }
 
+    if (!currentUser || !accessToken) {
+      return;
+    }
+
     async function loadProjects() {
       setIsLoadingFeatureFiles(true);
-      const response = await fetch("/api/feature-files", {
-        cache: "no-store",
-      });
-
-      if (!response.ok) {
-        throw new Error("feature-file payload request failed");
-      }
-
-      const body = await response.json();
+      const body = await fetchDaemonPayload<{ projects?: FeatureFileProjects }>(
+        supabaseUrl,
+        supabasePublishableKey,
+        accessToken,
+        currentUser.id,
+        FEATURE_FILES_PAYLOAD_KIND,
+      );
       setProjects(body.projects ?? {});
       setIsLoadingFeatureFiles(false);
     }
@@ -257,24 +345,26 @@ export default function FeatureFilesDashboard({
       setIsLoadingFeatureFiles(false);
       setError("The daemon finished, but the feature-file payload was not available.");
     });
-  }, [message]);
+  }, [accessToken, currentUser, message, supabasePublishableKey, supabaseUrl]);
 
   useEffect(() => {
     if (parameterFileMessage !== DAEMON_SENT_PARAMETER_FILES) {
       return;
     }
 
+    if (!currentUser || !accessToken) {
+      return;
+    }
+
     async function loadParameterProjects() {
       setIsLoadingParameterFiles(true);
-      const response = await fetch("/api/parameter-files", {
-        cache: "no-store",
-      });
-
-      if (!response.ok) {
-        throw new Error("parameter-file payload request failed");
-      }
-
-      const body = await response.json();
+      const body = await fetchDaemonPayload<{ projects?: ParameterFileProjects }>(
+        supabaseUrl,
+        supabasePublishableKey,
+        accessToken,
+        currentUser.id,
+        PARAMETER_FILES_PAYLOAD_KIND,
+      );
       setParameterProjects(body.projects ?? {});
       setIsLoadingParameterFiles(false);
     }
@@ -283,7 +373,7 @@ export default function FeatureFilesDashboard({
       setIsLoadingParameterFiles(false);
       setError("The daemon finished, but the parameter-file payload was not available.");
     });
-  }, [parameterFileMessage]);
+  }, [accessToken, currentUser, parameterFileMessage, supabasePublishableKey, supabaseUrl]);
 
   useEffect(() => {
     const projectDirectories = Object.keys(projects ?? {});
@@ -309,13 +399,39 @@ export default function FeatureFilesDashboard({
   }, [selectedProjectDirectory]);
 
   useEffect(() => {
+    if (ventures.length === 0) {
+      if (selectedVentureId) {
+        setSelectedVentureId("");
+      }
+
+      return;
+    }
+
+    if (ventures.some((venture) => venture.id === selectedVentureId)) {
+      return;
+    }
+
+    setSelectedVentureId(ventures[0].id);
+  }, [selectedVentureId, ventures]);
+
+  useEffect(() => {
+    if (!currentUser || !accessToken) {
+      setVentures([]);
+      return;
+    }
+
     let isMounted = true;
 
     async function loadVentures() {
       setIsLoadingVentures(true);
 
       try {
-        const nextVentures = await fetchVentures(supabaseUrl, supabaseAnonKey);
+        const nextVentures = await fetchVentures(
+          supabaseUrl,
+          supabasePublishableKey,
+          accessToken,
+          currentUser.id,
+        );
 
         if (!isMounted) {
           return;
@@ -341,14 +457,24 @@ export default function FeatureFilesDashboard({
     return () => {
       isMounted = false;
     };
-  }, [supabaseAnonKey, supabaseUrl]);
+  }, [accessToken, currentUser, supabasePublishableKey, supabaseUrl]);
 
   useEffect(() => {
+    if (!currentUser || !accessToken) {
+      return;
+    }
+
     let isMounted = true;
 
     async function pollAgentPromptMessage() {
       try {
-        const nextMessage = await fetchCurrentMessage(AGENT_PROMPT_PURPOSE);
+        const nextMessage = await fetchCurrentMessage(
+          supabaseUrl,
+          supabasePublishableKey,
+          accessToken,
+          currentUser.id,
+          AGENT_PROMPT_PURPOSE,
+        );
 
         if (!isMounted) {
           return;
@@ -368,16 +494,26 @@ export default function FeatureFilesDashboard({
       isMounted = false;
       window.clearInterval(intervalId);
     };
-  }, [pollIntervalMs, supabaseAnonKey, supabaseUrl]);
+  }, [accessToken, currentUser, pollIntervalMs, supabasePublishableKey, supabaseUrl]);
 
   useEffect(() => {
+    if (!currentUser || !accessToken) {
+      return;
+    }
+
     let isMounted = true;
 
     async function pollParameterFileMessage() {
       const pollStartedAt = Date.now();
 
       try {
-        const nextMessage = await fetchCurrentMessage(PARAMETER_FILE_LOAD_PURPOSE);
+        const nextMessage = await fetchCurrentMessage(
+          supabaseUrl,
+          supabasePublishableKey,
+          accessToken,
+          currentUser.id,
+          PARAMETER_FILE_LOAD_PURPOSE,
+        );
 
         if (!isMounted) {
           return;
@@ -405,7 +541,76 @@ export default function FeatureFilesDashboard({
       isMounted = false;
       window.clearInterval(intervalId);
     };
-  }, [pollIntervalMs, supabaseAnonKey, supabaseUrl]);
+  }, [accessToken, currentUser, pollIntervalMs, supabasePublishableKey, supabaseUrl]);
+
+  useEffect(() => {
+    if (!currentUser || !accessToken) {
+      return;
+    }
+
+    let isMounted = true;
+
+    async function pollParameterUpdateMessage() {
+      const pollStartedAt = Date.now();
+
+      try {
+        const nextMessage = await fetchCurrentMessage(
+          supabaseUrl,
+          supabasePublishableKey,
+          accessToken,
+          currentUser.id,
+          PARAMETER_FILE_UPDATE_PURPOSE,
+        );
+
+        if (!isMounted) {
+          return;
+        }
+
+        if (pollStartedAt < latestParameterUpdateWriteStartedAt.current) {
+          return;
+        }
+
+        setParameterUpdateMessage(nextMessage);
+      } catch {
+        return;
+      }
+    }
+
+    pollParameterUpdateMessage();
+    const intervalId = window.setInterval(pollParameterUpdateMessage, pollIntervalMs);
+
+    return () => {
+      isMounted = false;
+      window.clearInterval(intervalId);
+    };
+  }, [accessToken, currentUser, pollIntervalMs, supabasePublishableKey, supabaseUrl]);
+
+  useEffect(() => {
+    const parsedMessage = parseParameterUpdateRowMessage(parameterUpdateMessage);
+
+    if (parsedMessage?.state !== DAEMON_SENT_PARAMETER_FILES) {
+      return;
+    }
+
+    if (!currentUser || !accessToken) {
+      return;
+    }
+
+    async function loadUpdatedParameterProjects() {
+      const body = await fetchDaemonPayload<{ projects?: ParameterFileProjects }>(
+        supabaseUrl,
+        supabasePublishableKey,
+        accessToken,
+        currentUser.id,
+        PARAMETER_FILES_PAYLOAD_KIND,
+      );
+      setParameterProjects(body.projects ?? {});
+    }
+
+    loadUpdatedParameterProjects().catch(() => {
+      setError("The daemon saved the parameter edit, but the refreshed payload was not available.");
+    });
+  }, [accessToken, currentUser, parameterUpdateMessage, supabasePublishableKey, supabaseUrl]);
 
   useEffect(() => {
     if (!isAgentPromptQueueHydrated) {
@@ -427,10 +632,14 @@ export default function FeatureFilesDashboard({
     }
 
     void dispatchQueuedAgentPrompt(nextQueuedPrompt);
-  }, [agentPromptQueue, isAgentPromptQueueHydrated]);
+  }, [accessToken, agentPromptQueue, currentUser, isAgentPromptQueueHydrated]);
 
   useEffect(() => {
     if (!isAgentPromptQueueHydrated) {
+      return;
+    }
+
+    if (!currentUser || !accessToken) {
       return;
     }
 
@@ -438,7 +647,12 @@ export default function FeatureFilesDashboard({
 
     async function pollAgentChat() {
       try {
-        const nextChat = await fetchLatestAgentChat();
+        const nextChat = await fetchLatestAgentChat(
+          supabaseUrl,
+          supabasePublishableKey,
+          accessToken,
+          currentUser.id,
+        );
 
         if (!isMounted || !nextChat) {
           return;
@@ -475,7 +689,7 @@ export default function FeatureFilesDashboard({
       isMounted = false;
       window.clearInterval(intervalId);
     };
-  }, [isAgentPromptQueueHydrated, pollIntervalMs]);
+  }, [accessToken, currentUser, isAgentPromptQueueHydrated, pollIntervalMs, supabasePublishableKey, supabaseUrl]);
 
   useEffect(() => {
     if (!isAgentPromptQueueHydrated) {
@@ -514,7 +728,77 @@ export default function FeatureFilesDashboard({
     };
   }, [isAgentPromptQueueHydrated, pollIntervalMs]);
 
+  async function submitAuthForm() {
+    const email = authEmail.trim();
+
+    if (!email || !authPassword || authStatus === "submitting") {
+      return;
+    }
+
+    setAuthStatus("submitting");
+    setAuthError("");
+
+    const authResult =
+      authMode === "sign-up"
+        ? await supabase.auth.signUp({ email, password: authPassword })
+        : await supabase.auth.signInWithPassword({ email, password: authPassword });
+
+    if (authResult.error) {
+      setAuthError(authResult.error.message);
+      setAuthStatus("ready");
+      return;
+    }
+
+    setSession(authResult.data.session);
+    setAuthPassword("");
+    setAuthStatus("ready");
+  }
+
+  async function signOut() {
+    setAuthError("");
+    await supabase.auth.signOut();
+    setSession(null);
+    setProjects(null);
+    setParameterProjects(null);
+    setVentures([]);
+    setLatestChat(null);
+  }
+
+  async function requestParameterFileUpdate({
+    parameterFilePath,
+    projectPath,
+    value,
+    variableName,
+  }: ParameterUpdateRequest) {
+    if (!currentUser || !accessToken) {
+      throw new Error("Sign in before saving parameter edits.");
+    }
+
+    const writeStartedAt = Date.now();
+    latestParameterUpdateWriteStartedAt.current = writeStartedAt;
+    const nextMessage = await updateMessage(
+      supabaseUrl,
+      supabasePublishableKey,
+      accessToken,
+      currentUser.id,
+      PARAMETER_FILE_UPDATE_PURPOSE,
+      JSON.stringify({
+        command: PARAMETER_FILE_UPDATE_COMMAND,
+        projectPath,
+        path: parameterFilePath,
+        variableName,
+        value,
+      }),
+    );
+    setParameterUpdateMessage(nextMessage);
+  }
+
   async function requestDevEnvironment() {
+    if (!currentUser || !accessToken) {
+      setError("Sign in before loading the dev environment.");
+      return;
+    }
+
     setError("");
     setIsLoadingFeatureFiles(true);
     setIsLoadingParameterFiles(true);
@@ -524,8 +808,22 @@ export default function FeatureFilesDashboard({
 
     try {
       const [nextFeatureFileMessage, nextParameterFileMessage] = await Promise.all([
-        updateMessage(FEATURE_FILE_LOAD_PURPOSE, CLIENT_LOAD_FEATURE_FILES),
-        updateMessage(PARAMETER_FILE_LOAD_PURPOSE, CLIENT_LOAD_PARAMETER_FILES),
+        updateMessage(
+          supabaseUrl,
+          supabasePublishableKey,
+          accessToken,
+          currentUser.id,
+          FEATURE_FILE_LOAD_PURPOSE,
+          CLIENT_LOAD_FEATURE_FILES,
+        ),
+        updateMessage(
+          supabaseUrl,
+          supabasePublishableKey,
+          accessToken,
+          currentUser.id,
+          PARAMETER_FILE_LOAD_PURPOSE,
+          CLIENT_LOAD_PARAMETER_FILES,
+        ),
       ]);
       console.log("[dev-environment] writes completed with messages:", nextFeatureFileMessage, nextParameterFileMessage);
       setMessage(nextFeatureFileMessage);
@@ -539,7 +837,7 @@ export default function FeatureFilesDashboard({
   }
 
   async function sendAgentPrompt() {
-    if (!promptText.trim()) {
+    if (!promptText.trim() || !currentUser || !accessToken) {
       return;
     }
 
@@ -625,6 +923,10 @@ export default function FeatureFilesDashboard({
   }
 
   async function dispatchQueuedAgentPrompt(queueEntry: AgentPromptQueueEntry) {
+    if (!currentUser || !accessToken) {
+      return;
+    }
+
     const activeQueueItem = agentPromptQueueRef.current[0];
 
     if (!activeQueueItem || activeQueueItem.promptId !== queueEntry.promptId || activeQueueItem.status !== "queued") {
@@ -659,6 +961,10 @@ export default function FeatureFilesDashboard({
 
     try {
       await updateMessage(
+        supabaseUrl,
+        supabasePublishableKey,
+        accessToken,
+        currentUser.id,
         AGENT_PROMPT_PURPOSE,
         JSON.stringify({
           promptId: queueEntry.promptId,
@@ -748,11 +1054,26 @@ export default function FeatureFilesDashboard({
   );
   const currentMessage = formatDevEnvironmentMessage(message, parameterFileMessage);
   const projectEntries = Object.entries(projects ?? {});
+  const availableProjectDirectories = projectEntries.map(([projectDirectory]) => projectDirectory);
   const selectedModel = agentModels.codex.models.find((model) => model.id === selectedModelId) ?? defaultModel;
   const reasoningOptions = selectedModel.reasoning;
   const currentPromptQueueItem = agentPromptQueue[0] ?? null;
   const promptQueueStatusText = promptStatus || getAgentPromptQueueStatusText(agentPromptQueue);
   const isLoadingDevEnvironment = isLoadingFeatureFiles || isLoadingParameterFiles;
+  const selectedVenture =
+    ventures.find((venture) => venture.id === selectedVentureId) ?? ventures[0] ?? null;
+  const newVentureFeatureOptions = getFeatureOptionsForProject(
+    projects ?? {},
+    newVentureProjectDirectory,
+  );
+  const editingVentureFeatureOptions = getFeatureOptionsForProject(
+    projects ?? {},
+    editingVentureProjectDirectory,
+  );
+  const selectedVentureFeatureTags = getFeatureTagsForPaths(
+    projects ?? {},
+    selectedVenture?.featureFilePaths ?? [],
+  );
 
   function selectModel(modelId: string) {
     const nextModel = agentModels.codex.models.find((model) => model.id === modelId) ?? defaultModel;
@@ -776,12 +1097,90 @@ export default function FeatureFilesDashboard({
     );
   }
 
+  function updateNewVentureProjectDirectory(projectDirectory: string) {
+    setNewVentureProjectDirectory(projectDirectory);
+    setNewVentureSelectedFeaturePath("");
+
+    if (!projectDirectory) {
+      setNewVentureFeatureFilePaths([]);
+      return;
+    }
+
+    const allowedFeaturePaths = new Set(
+      getFeatureOptionsForProject(projects ?? {}, projectDirectory).map((feature) => feature.filePath),
+    );
+
+    setNewVentureFeatureFilePaths((currentPaths) =>
+      currentPaths.filter((filePath) => allowedFeaturePaths.has(filePath)),
+    );
+  }
+
+  function addNewVentureFeatureTag() {
+    if (!newVentureSelectedFeaturePath) {
+      return;
+    }
+
+    setNewVentureFeatureFilePaths((currentPaths) => {
+      if (currentPaths.includes(newVentureSelectedFeaturePath)) {
+        return currentPaths;
+      }
+
+      return [...currentPaths, newVentureSelectedFeaturePath];
+    });
+    setNewVentureSelectedFeaturePath("");
+  }
+
+  function removeNewVentureFeatureTag(filePath: string) {
+    setNewVentureFeatureFilePaths((currentPaths) =>
+      currentPaths.filter((currentPath) => currentPath !== filePath),
+    );
+  }
+
+  function updateEditingVentureProjectDirectory(projectDirectory: string) {
+    setEditingVentureProjectDirectory(projectDirectory);
+    setEditingVentureSelectedFeaturePath("");
+
+    if (!projectDirectory) {
+      setEditingVentureFeatureFilePaths([]);
+      return;
+    }
+
+    const allowedFeaturePaths = new Set(
+      getFeatureOptionsForProject(projects ?? {}, projectDirectory).map((feature) => feature.filePath),
+    );
+
+    setEditingVentureFeatureFilePaths((currentPaths) =>
+      currentPaths.filter((filePath) => allowedFeaturePaths.has(filePath)),
+    );
+  }
+
+  function addEditingVentureFeatureTag() {
+    if (!editingVentureSelectedFeaturePath) {
+      return;
+    }
+
+    setEditingVentureFeatureFilePaths((currentPaths) => {
+      if (currentPaths.includes(editingVentureSelectedFeaturePath)) {
+        return currentPaths;
+      }
+
+      return [...currentPaths, editingVentureSelectedFeaturePath];
+    });
+    setEditingVentureSelectedFeaturePath("");
+  }
+
+  function removeEditingVentureFeatureTag(filePath: string) {
+    setEditingVentureFeatureFilePaths((currentPaths) =>
+      currentPaths.filter((currentPath) => currentPath !== filePath),
+    );
+  }
+
   async function addVenture() {
     const details = newVentureDetails.trim();
     const ventureName = newVentureName.trim();
     const projectDirectory = newVentureProjectDirectory.trim();
 
-    if (!ventureName || isCreatingVenture) {
+    if (!ventureName || isCreatingVenture || !currentUser || !accessToken) {
       return;
     }
 
@@ -791,15 +1190,21 @@ export default function FeatureFilesDashboard({
     try {
       const createdVenture = await createVenture(
         supabaseUrl,
-        supabaseAnonKey,
+        supabasePublishableKey,
+        accessToken,
+        currentUser.id,
         ventureName,
         details || null,
         projectDirectory || null,
+        newVentureFeatureFilePaths,
       );
       setVentures((currentVentures) => [createdVenture, ...currentVentures]);
+      setSelectedVentureId(createdVenture.id);
       setNewVentureDetails("");
+      setNewVentureFeatureFilePaths([]);
       setNewVentureName("");
-      setNewVentureProjectDirectory(selectedProjectDirectory);
+      setNewVentureProjectDirectory("");
+      setNewVentureSelectedFeaturePath("");
     } catch {
       setVentureError("Unable to create the venture right now.");
     } finally {
@@ -809,16 +1214,20 @@ export default function FeatureFilesDashboard({
 
   function startEditingVenture(venture: VentureItem) {
     setEditingVentureDetails(venture.details ?? "");
+    setEditingVentureFeatureFilePaths(venture.featureFilePaths);
     setEditingVentureId(venture.id);
     setEditingVentureName(venture.ventureName);
     setEditingVentureProjectDirectory(venture.projectDirectory ?? "");
+    setEditingVentureSelectedFeaturePath("");
   }
 
   function cancelEditingVenture() {
     setEditingVentureDetails("");
+    setEditingVentureFeatureFilePaths([]);
     setEditingVentureId("");
     setEditingVentureName("");
     setEditingVentureProjectDirectory("");
+    setEditingVentureSelectedFeaturePath("");
   }
 
   async function saveVentureEdits() {
@@ -826,7 +1235,7 @@ export default function FeatureFilesDashboard({
     const ventureName = editingVentureName.trim();
     const projectDirectory = editingVentureProjectDirectory.trim();
 
-    if (!editingVentureId || !ventureName || savingVentureId) {
+    if (!editingVentureId || !ventureName || savingVentureId || !currentUser || !accessToken) {
       return;
     }
 
@@ -836,10 +1245,13 @@ export default function FeatureFilesDashboard({
     try {
       const updatedVenture = await updateVenture(
         supabaseUrl,
-        supabaseAnonKey,
+        supabasePublishableKey,
+        accessToken,
+        currentUser.id,
         editingVentureId,
         {
           details: details || null,
+          feature_file_paths: editingVentureFeatureFilePaths,
           project_directory: projectDirectory || null,
           venture_name: ventureName,
         },
@@ -851,7 +1263,7 @@ export default function FeatureFilesDashboard({
       );
       cancelEditingVenture();
     } catch {
-      setVentureError("Unable to rename the venture right now.");
+      setVentureError("Unable to save the venture right now.");
     } finally {
       setSavingVentureId("");
     }
@@ -861,7 +1273,7 @@ export default function FeatureFilesDashboard({
     ventureId: string,
     progressState: VentureProgressState,
   ) {
-    if (updatingProgressVentureId) {
+    if (updatingProgressVentureId || !currentUser || !accessToken) {
       return;
     }
 
@@ -871,7 +1283,9 @@ export default function FeatureFilesDashboard({
     try {
       const updatedVenture = await updateVenture(
         supabaseUrl,
-        supabaseAnonKey,
+        supabasePublishableKey,
+        accessToken,
+        currentUser.id,
         ventureId,
         { progress_state: progressState },
       );
@@ -888,7 +1302,7 @@ export default function FeatureFilesDashboard({
   }
 
   async function deleteVenture(ventureId: string) {
-    if (deletingVentureId) {
+    if (deletingVentureId || !currentUser || !accessToken) {
       return;
     }
 
@@ -896,7 +1310,13 @@ export default function FeatureFilesDashboard({
     setVentureError("");
 
     try {
-      await deleteVentureRow(supabaseUrl, supabaseAnonKey, ventureId);
+      await deleteVentureRow(
+        supabaseUrl,
+        supabasePublishableKey,
+        accessToken,
+        currentUser.id,
+        ventureId,
+      );
       setVentures((currentVentures) =>
         currentVentures.filter((venture) => venture.id !== ventureId),
       );
@@ -911,6 +1331,85 @@ export default function FeatureFilesDashboard({
     }
   }
 
+  if (authStatus === "checking") {
+    return (
+      <main className="grid min-h-screen place-items-center bg-black px-6 text-slate-100">
+        <div className="w-full max-w-md rounded-[1.75rem] border border-white/10 bg-slate-950/82 p-6 text-center shadow-[0_24px_80px_rgba(2,6,23,0.65)]">
+          <p className="text-sm uppercase tracking-[0.28em] text-slate-400">Daedalus</p>
+          <p className="mt-3 text-lg font-semibold text-white">Checking your session...</p>
+        </div>
+      </main>
+    );
+  }
+
+  if (!currentUser) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-black px-6 text-slate-100">
+        <div className="w-full max-w-md rounded-[1.75rem] border border-white/10 bg-slate-950/82 p-6 shadow-[0_24px_80px_rgba(2,6,23,0.65)]">
+          <p className="text-sm uppercase tracking-[0.28em] text-slate-400">Daedalus</p>
+          <h1 className="mt-3 text-2xl font-semibold text-white">
+            {authMode === "sign-up" ? "Create your account" : "Sign in"}
+          </h1>
+          <div className="mt-6 grid gap-4">
+            <label className="grid gap-2">
+              <span className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">
+                Email
+              </span>
+              <input
+                type="email"
+                value={authEmail}
+                onChange={(event) => setAuthEmail(event.target.value)}
+                className="rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
+              />
+            </label>
+            <label className="grid gap-2">
+              <span className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">
+                Password
+              </span>
+              <input
+                type="password"
+                value={authPassword}
+                onChange={(event) => setAuthPassword(event.target.value)}
+                className="rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
+              />
+            </label>
+            {authError ? (
+              <p className="rounded-[1.25rem] border border-rose-400/20 bg-rose-500/12 px-4 py-3 text-sm text-rose-100">
+                {authError}
+              </p>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => {
+                void submitAuthForm();
+              }}
+              disabled={!authEmail.trim() || !authPassword || authStatus === "submitting"}
+              className="rounded-full bg-cyan-300 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
+            >
+              {authStatus === "submitting"
+                ? "Working..."
+                : authMode === "sign-up"
+                  ? "Sign up"
+                  : "Sign in"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAuthError("");
+                setAuthMode(authMode === "sign-up" ? "sign-in" : "sign-up");
+              }}
+              className="rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-slate-200 transition hover:bg-white/10"
+            >
+              {authMode === "sign-up"
+                ? "Use an existing account"
+                : "Create a new account"}
+            </button>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="relative h-screen w-screen overflow-hidden bg-black text-slate-100">
       <FeatureFileGraph
@@ -919,6 +1418,7 @@ export default function FeatureFilesDashboard({
         selectedProjectDirectory={selectedProjectDirectory}
         targetedFeatures={targetedFeatures}
         onAddTargetedFeature={addTargetedFeature}
+        onRequestParameterUpdate={requestParameterFileUpdate}
       />
 
       <div className="pointer-events-none absolute inset-0">
@@ -1000,6 +1500,17 @@ export default function FeatureFilesDashboard({
                   }`}
                 >
                   Ventures
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveDevTab("settings")}
+                  className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] transition ${
+                    activeDevTab === "settings"
+                      ? "bg-cyan-300 text-slate-950"
+                      : "text-slate-300 hover:bg-white/10"
+                  }`}
+                >
+                  Settings
                 </button>
               </div>
 
@@ -1198,6 +1709,44 @@ export default function FeatureFilesDashboard({
                       </div>
                     ) : null}
                   </div>
+                ) : activeDevTab === "settings" ? (
+                  <div className="grid gap-4">
+                    <div className="rounded-[1.5rem] border border-cyan-400/20 bg-cyan-400/8 p-4">
+                      <p className="text-[11px] uppercase tracking-[0.28em] text-cyan-200/80">
+                        Settings
+                      </p>
+                      <p className="mt-2 break-all text-sm leading-6 text-slate-200">
+                        Signed in as {currentUser.email ?? currentUser.id}
+                      </p>
+                    </div>
+                    <div className="grid gap-3 rounded-[1.5rem] border border-white/10 bg-black/25 p-4">
+                      <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">
+                        User id
+                      </p>
+                      <code className="break-all rounded-[1.25rem] border border-white/10 bg-slate-950 px-4 py-3 text-sm text-cyan-100">
+                        {currentUser.id}
+                      </code>
+                      <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">
+                        Daemon .env
+                      </p>
+                      <pre className="whitespace-pre-wrap break-all rounded-[1.25rem] border border-white/10 bg-slate-950 px-4 py-3 text-sm leading-6 text-slate-100">
+                        {[
+                          `DAEDALUS_USER_ID=${currentUser.id}`,
+                          `SUPABASE_URL=${supabaseUrl}`,
+                          `SUPABASE_PUBLISHABLE_KEY=${supabasePublishableKey}`,
+                        ].join("\n")}
+                      </pre>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void signOut();
+                        }}
+                        className="w-fit rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-slate-200 transition hover:bg-white/10"
+                      >
+                        Sign out
+                      </button>
+                    </div>
+                  </div>
                 ) : (
                   <div className="grid gap-4">
                     <div className="rounded-[1.5rem] border border-cyan-400/20 bg-cyan-400/8 p-4">
@@ -1230,14 +1779,91 @@ export default function FeatureFilesDashboard({
                       >
                         Project directory
                       </label>
-                      <input
-                        id="venture-project"
-                        type="text"
-                        value={newVentureProjectDirectory}
-                        onChange={(event) => setNewVentureProjectDirectory(event.target.value)}
-                        placeholder="Tag this venture to a project directory..."
-                        className="rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-500"
-                      />
+                        <select
+                          id="venture-project"
+                          value={newVentureProjectDirectory}
+                          onChange={(event) =>
+                            updateNewVentureProjectDirectory(event.target.value)
+                          }
+                          className="agent-chat-scrollbar rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
+                        >
+                        <option value="">No project tag</option>
+                        {availableProjectDirectories.length > 0 ? (
+                          availableProjectDirectories.map((projectDirectory) => (
+                            <option key={projectDirectory} value={projectDirectory}>
+                              {projectDirectory}
+                            </option>
+                          ))
+                        ) : (
+                          <option value={DEFAULT_PROJECT_DIRECTORY}>
+                            {DEFAULT_PROJECT_DIRECTORY}
+                          </option>
+                        )}
+                      </select>
+                      {newVentureProjectDirectory ? (
+                        <div className="grid gap-3">
+                          <label
+                            htmlFor="venture-feature-tag"
+                            className="text-[11px] uppercase tracking-[0.28em] text-slate-400"
+                          >
+                            Tagged features
+                          </label>
+                          <div className="flex flex-wrap items-center gap-3">
+                            <select
+                              id="venture-feature-tag"
+                              value={newVentureSelectedFeaturePath}
+                              onChange={(event) =>
+                                setNewVentureSelectedFeaturePath(event.target.value)
+                              }
+                              className="agent-chat-scrollbar min-w-0 flex-1 rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
+                            >
+                              <option value="">Select a feature to tag</option>
+                              {newVentureFeatureOptions.map((feature) => (
+                                <option key={feature.filePath} value={feature.filePath}>
+                                  {feature.featureName}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              type="button"
+                              onClick={addNewVentureFeatureTag}
+                              disabled={!newVentureSelectedFeaturePath}
+                              className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
+                            >
+                              Add feature
+                            </button>
+                          </div>
+                          {newVentureFeatureFilePaths.length > 0 ? (
+                            <div className="flex flex-wrap gap-2 rounded-[1.25rem] border border-white/10 bg-slate-900/50 p-3">
+                              {getFeatureTagsForPaths(projects ?? {}, newVentureFeatureFilePaths).map(
+                                (feature) => (
+                                  <span
+                                    key={feature.filePath}
+                                    title={feature.filePath}
+                                    className="inline-flex items-center gap-2 rounded-full border border-cyan-300/30 bg-cyan-300/12 px-3 py-2 text-sm text-cyan-50"
+                                  >
+                                    <span className="max-w-[14rem] truncate">
+                                      {feature.featureName}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => removeNewVentureFeatureTag(feature.filePath)}
+                                      className="rounded-full border border-cyan-200/20 px-2 py-0.5 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-200/15"
+                                      aria-label={`Remove ${feature.featureName}`}
+                                    >
+                                      x
+                                    </button>
+                                  </span>
+                                ),
+                              )}
+                            </div>
+                          ) : (
+                            <p className="text-sm text-slate-400">
+                              Add one or more feature files from this project to tag the venture.
+                            </p>
+                          )}
+                        </div>
+                      ) : null}
                       <label
                         htmlFor="venture-details"
                         className="text-[11px] uppercase tracking-[0.28em] text-slate-400"
@@ -1263,7 +1889,7 @@ export default function FeatureFilesDashboard({
                           {isCreatingVenture ? "Saving..." : "Add Venture"}
                         </button>
                         <p className="text-sm text-slate-300">
-                          Venture names are required. Project tagging and details are optional. New rows start in the idle state.
+                          Venture names are required. Project, feature, and details tags are optional. New rows start in the idle state.
                         </p>
                       </div>
                     </div>
@@ -1289,166 +1915,298 @@ export default function FeatureFilesDashboard({
                         </p>
                       </div>
                     ) : (
-                      <div className="grid gap-3">
-                        {ventures.map((venture) => {
-                          const isEditing = editingVentureId === venture.id;
+                      <div className="grid gap-4">
+                        <div className="grid gap-2 rounded-[1.5rem] border border-white/10 bg-slate-950/55 p-4">
+                          <label
+                            htmlFor="selected-venture"
+                            className="text-[11px] uppercase tracking-[0.28em] text-slate-400"
+                          >
+                            Select venture
+                          </label>
+                          <select
+                            id="selected-venture"
+                            value={selectedVenture?.id ?? ""}
+                            onChange={(event) => {
+                              setSelectedVentureId(event.target.value);
+                              cancelEditingVenture();
+                            }}
+                            className="agent-chat-scrollbar rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
+                          >
+                            {ventures.map((venture) => (
+                              <option key={venture.id} value={venture.id}>
+                                {venture.ventureName} ({formatVentureProgressState(venture.progressState)})
+                              </option>
+                            ))}
+                          </select>
+                          <p className="text-sm text-slate-400">
+                            Pick one venture to inspect instead of scrolling through the full list.
+                          </p>
+                        </div>
 
-                          return (
-                            <div
-                              key={venture.id}
-                              className={`rounded-[1.5rem] border p-4 shadow-[0_20px_50px_rgba(2,6,23,0.3)] ${getVentureCardClassName(venture.progressState)}`}
-                            >
-                              {isEditing ? (
-                                <div className="grid gap-3">
-                                  <label
-                                    htmlFor={`venture-edit-name-${venture.id}`}
-                                    className="text-[11px] uppercase tracking-[0.28em] text-slate-400"
-                                  >
-                                    Venture name
-                                  </label>
-                                  <input
-                                    id={`venture-edit-name-${venture.id}`}
-                                    type="text"
-                                    value={editingVentureName}
-                                    onChange={(event) => setEditingVentureName(event.target.value)}
-                                    className="rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
-                                  />
-                                  <label
-                                    htmlFor={`venture-edit-project-${venture.id}`}
-                                    className="text-[11px] uppercase tracking-[0.28em] text-slate-400"
-                                  >
-                                    Project directory
-                                  </label>
-                                  <input
-                                    id={`venture-edit-project-${venture.id}`}
-                                    type="text"
-                                    value={editingVentureProjectDirectory}
-                                    onChange={(event) =>
-                                      setEditingVentureProjectDirectory(event.target.value)
-                                    }
-                                    className="rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
-                                  />
-                                  <label
-                                    htmlFor={`venture-edit-details-${venture.id}`}
-                                    className="text-[11px] uppercase tracking-[0.28em] text-slate-400"
-                                  >
-                                    Details
-                                  </label>
-                                  <textarea
-                                    id={`venture-edit-details-${venture.id}`}
-                                    value={editingVentureDetails}
-                                    onChange={(event) => setEditingVentureDetails(event.target.value)}
-                                    className="agent-chat-scrollbar min-h-24 rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
-                                  />
-                                  <div className="flex flex-wrap items-center gap-3">
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        void saveVentureEdits();
-                                      }}
-                                      disabled={!editingVentureName.trim() || savingVentureId === venture.id}
-                                      className="rounded-full bg-cyan-300 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
-                                    >
-                                      {savingVentureId === venture.id ? "Saving..." : "Save"}
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={cancelEditingVenture}
-                                      className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-white/10"
-                                    >
-                                      Cancel
-                                    </button>
-                                  </div>
-                                </div>
-                              ) : (
-                                <div className="grid gap-4">
-                                  <div className="flex flex-wrap items-start justify-between gap-3">
-                                    <div className="space-y-2">
-                                      <p
-                                        className={`text-base font-semibold ${
-                                          venture.progressState === "completed"
-                                            ? "text-emerald-100 line-through decoration-2"
-                                            : "text-white"
-                                        }`}
-                                      >
-                                        {venture.ventureName}
-                                      </p>
-                                      <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
-                                        {formatVentureProgressState(venture.progressState)} • Created{" "}
-                                        {formatVentureCreatedAt(venture.createdAt)}
-                                      </p>
-                                    </div>
-                                    <div className="grid gap-2">
-                                      <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
-                                        Project
-                                      </p>
-                                      <p className="break-all rounded-full border border-white/10 bg-slate-900/60 px-3 py-2 text-xs text-slate-300">
-                                        {venture.projectDirectory || "No project tagged"}
-                                      </p>
-                                    </div>
-                                    <div className="grid gap-2">
-                                      <label
-                                        htmlFor={`venture-progress-${venture.id}`}
-                                        className="text-[11px] uppercase tracking-[0.24em] text-slate-500"
-                                      >
-                                        Progress state
-                                      </label>
+                        {selectedVenture ? (
+                          <div
+                            className={`rounded-[1.5rem] border p-4 shadow-[0_20px_50px_rgba(2,6,23,0.3)] ${getVentureCardClassName(selectedVenture.progressState)}`}
+                          >
+                            {editingVentureId === selectedVenture.id ? (
+                              <div className="grid gap-3">
+                                <label
+                                  htmlFor={`venture-edit-name-${selectedVenture.id}`}
+                                  className="text-[11px] uppercase tracking-[0.28em] text-slate-400"
+                                >
+                                  Venture name
+                                </label>
+                                <input
+                                  id={`venture-edit-name-${selectedVenture.id}`}
+                                  type="text"
+                                  value={editingVentureName}
+                                  onChange={(event) => setEditingVentureName(event.target.value)}
+                                  className="rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
+                                />
+                                <label
+                                  htmlFor={`venture-edit-project-${selectedVenture.id}`}
+                                  className="text-[11px] uppercase tracking-[0.28em] text-slate-400"
+                                >
+                                  Project directory
+                                </label>
+                                <select
+                                  id={`venture-edit-project-${selectedVenture.id}`}
+                                  value={editingVentureProjectDirectory}
+                                  onChange={(event) =>
+                                    updateEditingVentureProjectDirectory(event.target.value)
+                                  }
+                                  className="agent-chat-scrollbar rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
+                                >
+                                  <option value="">No project tag</option>
+                                  {editingVentureProjectDirectory &&
+                                  !availableProjectDirectories.includes(editingVentureProjectDirectory) ? (
+                                    <option value={editingVentureProjectDirectory}>
+                                      {editingVentureProjectDirectory}
+                                    </option>
+                                  ) : null}
+                                  {availableProjectDirectories.length > 0 ? (
+                                    availableProjectDirectories.map((projectDirectory) => (
+                                      <option key={projectDirectory} value={projectDirectory}>
+                                        {projectDirectory}
+                                      </option>
+                                    ))
+                                  ) : (
+                                    <option value={DEFAULT_PROJECT_DIRECTORY}>
+                                      {DEFAULT_PROJECT_DIRECTORY}
+                                    </option>
+                                  )}
+                                </select>
+                                <label
+                                  htmlFor={`venture-edit-feature-${selectedVenture.id}`}
+                                  className="text-[11px] uppercase tracking-[0.28em] text-slate-400"
+                                >
+                                  Tagged features
+                                </label>
+                                {editingVentureProjectDirectory ? (
+                                  <div className="grid gap-3">
+                                    <div className="flex flex-wrap items-center gap-3">
                                       <select
-                                        id={`venture-progress-${venture.id}`}
-                                        value={venture.progressState}
-                                        onChange={(event) => {
-                                          void updateVentureProgressState(
-                                            venture.id,
-                                            event.target.value as VentureProgressState,
-                                          );
-                                        }}
-                                        disabled={updatingProgressVentureId === venture.id}
-                                        className="agent-chat-scrollbar rounded-full border border-white/10 bg-slate-900/80 px-4 py-2 text-sm text-slate-100 outline-none disabled:cursor-not-allowed disabled:bg-slate-800"
+                                        id={`venture-edit-feature-${selectedVenture.id}`}
+                                        value={editingVentureSelectedFeaturePath}
+                                        onChange={(event) =>
+                                          setEditingVentureSelectedFeaturePath(event.target.value)
+                                        }
+                                        className="agent-chat-scrollbar min-w-0 flex-1 rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
                                       >
-                                        {VENTURE_PROGRESS_STATES.map((progressState) => (
-                                          <option key={progressState} value={progressState}>
-                                            {formatVentureProgressState(progressState)}
+                                        <option value="">Select a feature to tag</option>
+                                        {editingVentureFeatureOptions.map((feature) => (
+                                          <option key={feature.filePath} value={feature.filePath}>
+                                            {feature.featureName}
                                           </option>
                                         ))}
                                       </select>
+                                      <button
+                                        type="button"
+                                        onClick={addEditingVentureFeatureTag}
+                                        disabled={!editingVentureSelectedFeaturePath}
+                                        className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
+                                      >
+                                        Add feature
+                                      </button>
                                     </div>
-                                  </div>
-
-                                  {venture.details ? (
-                                    <div className="grid gap-2">
-                                      <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
-                                        Details
-                                      </p>
-                                      <div className="whitespace-pre-wrap rounded-[1.25rem] border border-white/10 bg-slate-900/55 px-4 py-3 text-sm leading-6 text-slate-200">
-                                        {venture.details}
+                                    {editingVentureFeatureFilePaths.length > 0 ? (
+                                      <div className="flex flex-wrap gap-2 rounded-[1.25rem] border border-white/10 bg-slate-900/50 p-3">
+                                        {getFeatureTagsForPaths(
+                                          projects ?? {},
+                                          editingVentureFeatureFilePaths,
+                                        ).map((feature) => (
+                                          <span
+                                            key={feature.filePath}
+                                            title={feature.filePath}
+                                            className="inline-flex items-center gap-2 rounded-full border border-cyan-300/30 bg-cyan-300/12 px-3 py-2 text-sm text-cyan-50"
+                                          >
+                                            <span className="max-w-[14rem] truncate">
+                                              {feature.featureName}
+                                            </span>
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                removeEditingVentureFeatureTag(feature.filePath)
+                                              }
+                                              className="rounded-full border border-cyan-200/20 px-2 py-0.5 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-200/15"
+                                              aria-label={`Remove ${feature.featureName}`}
+                                            >
+                                              x
+                                            </button>
+                                          </span>
+                                        ))}
                                       </div>
-                                    </div>
-                                  ) : null}
-
-                                  <div className="flex flex-wrap items-center gap-3">
-                                    <button
-                                      type="button"
-                                      onClick={() => startEditingVenture(venture)}
-                                      className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-white/10"
+                                    ) : (
+                                      <p className="text-sm text-slate-400">
+                                        No feature tags added yet.
+                                      </p>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <p className="text-sm text-slate-400">
+                                    Pick a project first to tag its feature files.
+                                  </p>
+                                )}
+                                <label
+                                  htmlFor={`venture-edit-details-${selectedVenture.id}`}
+                                  className="text-[11px] uppercase tracking-[0.28em] text-slate-400"
+                                >
+                                  Details
+                                </label>
+                                <textarea
+                                  id={`venture-edit-details-${selectedVenture.id}`}
+                                  value={editingVentureDetails}
+                                  onChange={(event) => setEditingVentureDetails(event.target.value)}
+                                  className="agent-chat-scrollbar min-h-24 rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
+                                />
+                                <div className="flex flex-wrap items-center gap-3">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      void saveVentureEdits();
+                                    }}
+                                    disabled={!editingVentureName.trim() || savingVentureId === selectedVenture.id}
+                                    className="rounded-full bg-cyan-300 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
+                                  >
+                                    {savingVentureId === selectedVenture.id ? "Saving..." : "Save"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={cancelEditingVenture}
+                                    className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-white/10"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="grid gap-4">
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                  <div className="space-y-2">
+                                    <p
+                                      className={`text-base font-semibold ${
+                                        selectedVenture.progressState === "completed"
+                                          ? "text-emerald-100 line-through decoration-2"
+                                          : "text-white"
+                                      }`}
                                     >
-                                      Edit
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        void deleteVenture(venture.id);
+                                      {selectedVenture.ventureName}
+                                    </p>
+                                    <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
+                                      {formatVentureProgressState(selectedVenture.progressState)} • Created{" "}
+                                      {formatVentureCreatedAt(selectedVenture.createdAt)}
+                                    </p>
+                                  </div>
+                                  <div className="grid gap-2">
+                                    <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
+                                      Project
+                                    </p>
+                                    <p className="break-all rounded-full border border-white/10 bg-slate-900/60 px-3 py-2 text-xs text-slate-300">
+                                      {selectedVenture.projectDirectory || "No project tagged"}
+                                    </p>
+                                  </div>
+                                  <div className="grid gap-2">
+                                    <label
+                                      htmlFor={`venture-progress-${selectedVenture.id}`}
+                                      className="text-[11px] uppercase tracking-[0.24em] text-slate-500"
+                                    >
+                                      Progress state
+                                    </label>
+                                    <select
+                                      id={`venture-progress-${selectedVenture.id}`}
+                                      value={selectedVenture.progressState}
+                                      onChange={(event) => {
+                                        void updateVentureProgressState(
+                                          selectedVenture.id,
+                                          event.target.value as VentureProgressState,
+                                        );
                                       }}
-                                      disabled={deletingVentureId === venture.id}
-                                      className="rounded-full border border-rose-400/20 bg-rose-500/10 px-4 py-2 text-sm font-semibold text-rose-100 transition hover:bg-rose-500/15"
+                                      disabled={updatingProgressVentureId === selectedVenture.id}
+                                      className="agent-chat-scrollbar rounded-full border border-white/10 bg-slate-900/80 px-4 py-2 text-sm text-slate-100 outline-none disabled:cursor-not-allowed disabled:bg-slate-800"
                                     >
-                                      {deletingVentureId === venture.id ? "Deleting..." : "Delete"}
-                                    </button>
+                                      {VENTURE_PROGRESS_STATES.map((progressState) => (
+                                        <option key={progressState} value={progressState}>
+                                          {formatVentureProgressState(progressState)}
+                                        </option>
+                                      ))}
+                                    </select>
                                   </div>
                                 </div>
-                              )}
-                            </div>
-                          );
-                        })}
+
+                                <div className="grid gap-2">
+                                  <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
+                                    Details
+                                  </p>
+                                  <div className="whitespace-pre-wrap rounded-[1.25rem] border border-white/10 bg-slate-900/55 px-4 py-3 text-sm leading-6 text-slate-200">
+                                    {selectedVenture.details || "No details added yet."}
+                                  </div>
+                                </div>
+
+                                <div className="grid gap-2">
+                                  <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
+                                    Tagged features
+                                  </p>
+                                  {selectedVentureFeatureTags.length > 0 ? (
+                                    <div className="flex flex-wrap gap-2 rounded-[1.25rem] border border-white/10 bg-slate-900/55 p-3">
+                                      {selectedVentureFeatureTags.map((feature) => (
+                                        <span
+                                          key={feature.filePath}
+                                          title={feature.filePath}
+                                          className="inline-flex items-center rounded-full border border-cyan-300/25 bg-cyan-300/10 px-3 py-2 text-xs text-cyan-50"
+                                        >
+                                          {feature.featureName}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <div className="rounded-[1.25rem] border border-white/10 bg-slate-900/55 px-4 py-3 text-sm text-slate-400">
+                                      No feature tags added yet.
+                                    </div>
+                                  )}
+                                </div>
+
+                                <div className="flex flex-wrap items-center gap-3">
+                                  <button
+                                    type="button"
+                                    onClick={() => startEditingVenture(selectedVenture)}
+                                    className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-white/10"
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      void deleteVenture(selectedVenture.id);
+                                    }}
+                                    disabled={deletingVentureId === selectedVenture.id}
+                                    className="rounded-full border border-rose-400/20 bg-rose-500/10 px-4 py-2 text-sm font-semibold text-rose-100 transition hover:bg-rose-500/15"
+                                  >
+                                    {deletingVentureId === selectedVenture.id ? "Deleting..." : "Delete"}
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ) : null}
                       </div>
                     )}
                   </div>
@@ -1477,10 +2235,19 @@ export default function FeatureFilesDashboard({
 }
 
 async function fetchCurrentMessage(
+  supabaseUrl: string,
+  supabasePublishableKey: string,
+  accessToken: string,
+  userId: string,
   purpose: string,
 ) {
-  console.log("[feature-files] reading current message from local communications route");
-  const response = await fetch(`/api/communications?purpose=${encodeURIComponent(purpose)}`, {
+  const url = new URL("/rest/v1/communications", supabaseUrl);
+  url.searchParams.set("select", "message,purpose");
+  url.searchParams.set("user_id", `eq.${userId}`);
+  url.searchParams.set("purpose", `eq.${purpose}`);
+  url.searchParams.set("limit", "1");
+  const response = await fetch(url, {
+    headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
     cache: "no-store",
   });
 
@@ -1488,51 +2255,105 @@ async function fetchCurrentMessage(
     throw new Error("communications message fetch failed");
   }
 
-  const body = (await response.json()) as { message?: string };
-  console.log("[feature-files] message read response:", body);
-
-  console.log("[feature-files] current message:", body.message ?? "");
-  return body.message ?? "";
+  const rows = (await response.json()) as Array<{ message?: string }>;
+  return rows[0]?.message ?? "";
 }
 
 async function updateMessage(
+  supabaseUrl: string,
+  supabasePublishableKey: string,
+  accessToken: string,
+  userId: string,
   purpose: string,
   message: string,
 ) {
-  console.log("[feature-files] attempting to write message:", purpose, message);
-  const response = await fetch("/api/communications", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ message, purpose }),
+  const existingRowsUrl = new URL("/rest/v1/communications", supabaseUrl);
+  existingRowsUrl.searchParams.set("select", "message,purpose");
+  existingRowsUrl.searchParams.set("user_id", `eq.${userId}`);
+  existingRowsUrl.searchParams.set("purpose", `eq.${purpose}`);
+  existingRowsUrl.searchParams.set("limit", "1");
+  const existingRowsResponse = await fetch(existingRowsUrl, {
+    headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
+    cache: "no-store",
   });
+
+  if (!existingRowsResponse.ok) {
+    throw new Error("communications message lookup failed");
+  }
+
+  const existingRows = (await existingRowsResponse.json()) as Array<{ message?: string }>;
+  const headers = getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken);
+  const response =
+    existingRows.length > 0
+      ? await fetch(
+          new URL(`/rest/v1/communications?user_id=eq.${userId}&purpose=eq.${purpose}`, supabaseUrl),
+          {
+            method: "PATCH",
+            headers,
+            body: JSON.stringify({ message, purpose, user_id: userId }),
+          },
+        )
+      : await fetch(new URL("/rest/v1/communications", supabaseUrl), {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ message, purpose, user_id: userId }),
+        });
 
   if (!response.ok) {
     throw new Error("communications message update failed");
   }
 
-  const body = (await response.json()) as { message?: string };
-  console.log("[feature-files] updated message row:", body.message ?? message);
-  return body.message ?? message;
+  return message;
+}
+
+async function fetchDaemonPayload<TPayload>(
+  supabaseUrl: string,
+  supabasePublishableKey: string,
+  accessToken: string,
+  userId: string,
+  kind: string,
+) {
+  const url = new URL("/rest/v1/daemon_payloads", supabaseUrl);
+  url.searchParams.set("select", "payload");
+  url.searchParams.set("user_id", `eq.${userId}`);
+  url.searchParams.set("kind", `eq.${kind}`);
+  url.searchParams.set("limit", "1");
+
+  const response = await fetch(url, {
+    headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error("daemon payload fetch failed");
+  }
+
+  const rows = (await response.json()) as Array<DaemonPayloadRow<TPayload>>;
+  const row = rows[0];
+
+  if (!row) {
+    throw new Error("daemon payload missing");
+  }
+
+  return row.payload;
 }
 
 async function fetchVentures(
   supabaseUrl: string,
-  supabaseAnonKey: string,
+  supabasePublishableKey: string,
+  accessToken: string,
+  userId: string,
 ) {
   const url = new URL("/rest/v1/ventures", supabaseUrl);
   url.searchParams.set(
     "select",
-    "id,created_at,details,project_directory,progress_state,venture_name",
+    "id,created_at,details,feature_file_paths,project_directory,progress_state,user_id,venture_name",
   );
+  url.searchParams.set("user_id", `eq.${userId}`);
   url.searchParams.set("order", "created_at.desc");
 
   const response = await fetch(url, {
-    headers: {
-      apikey: supabaseAnonKey,
-      Authorization: `Bearer ${supabaseAnonKey}`,
-    },
+    headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
     cache: "no-store",
   });
 
@@ -1546,25 +2367,27 @@ async function fetchVentures(
 
 async function createVenture(
   supabaseUrl: string,
-  supabaseAnonKey: string,
+  supabasePublishableKey: string,
+  accessToken: string,
+  userId: string,
   ventureName: string,
   details: string | null,
   projectDirectory: string | null,
+  featureFilePaths: string[],
 ) {
   const url = new URL("/rest/v1/ventures", supabaseUrl);
   const response = await fetch(url, {
     method: "POST",
-    headers: {
-      apikey: supabaseAnonKey,
-      Authorization: `Bearer ${supabaseAnonKey}`,
-      "Content-Type": "application/json",
+    headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken, {
       Prefer: "return=representation",
-    },
+    }),
     body: JSON.stringify({
       details,
+      feature_file_paths: featureFilePaths,
       project_directory: projectDirectory,
       venture_name: ventureName,
       progress_state: "idle",
+      user_id: userId,
     }),
   });
 
@@ -1584,21 +2407,21 @@ async function createVenture(
 
 async function updateVenture(
   supabaseUrl: string,
-  supabaseAnonKey: string,
+  supabasePublishableKey: string,
+  accessToken: string,
+  userId: string,
   ventureId: string,
   updates: VentureUpdatePayload,
 ) {
   const url = new URL("/rest/v1/ventures", supabaseUrl);
   url.searchParams.set("id", `eq.${ventureId}`);
+  url.searchParams.set("user_id", `eq.${userId}`);
 
   const response = await fetch(url, {
     method: "PATCH",
-    headers: {
-      apikey: supabaseAnonKey,
-      Authorization: `Bearer ${supabaseAnonKey}`,
-      "Content-Type": "application/json",
+    headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken, {
       Prefer: "return=representation",
-    },
+    }),
     body: JSON.stringify(updates),
   });
 
@@ -1618,18 +2441,18 @@ async function updateVenture(
 
 async function deleteVentureRow(
   supabaseUrl: string,
-  supabaseAnonKey: string,
+  supabasePublishableKey: string,
+  accessToken: string,
+  userId: string,
   ventureId: string,
 ) {
   const url = new URL("/rest/v1/ventures", supabaseUrl);
   url.searchParams.set("id", `eq.${ventureId}`);
+  url.searchParams.set("user_id", `eq.${userId}`);
 
   const response = await fetch(url, {
     method: "DELETE",
-    headers: {
-      apikey: supabaseAnonKey,
-      Authorization: `Bearer ${supabaseAnonKey}`,
-    },
+    headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
   });
 
   if (!response.ok) {
@@ -1708,17 +2531,58 @@ function getAgentPromptQueueStatusText(queue: AgentPromptQueueEntry[]) {
   return "";
 }
 
-async function fetchLatestAgentChat() {
-  const response = await fetch("/api/agent-chat", {
-    cache: "no-store",
-  });
+async function fetchLatestAgentChat(
+  supabaseUrl: string,
+  supabasePublishableKey: string,
+  accessToken: string,
+  userId: string,
+) {
+  try {
+    return await fetchDaemonPayload<AgentChatExchange>(
+      supabaseUrl,
+      supabasePublishableKey,
+      accessToken,
+      userId,
+      AGENT_CHAT_PAYLOAD_KIND,
+    );
+  } catch {
+    return null;
+  }
+}
 
-  if (!response.ok) {
-    throw new Error("agent chat fetch failed");
+function parseParameterUpdateRowMessage(message: string): { state?: string } | null {
+  const trimmedMessage = message.trim();
+
+  if (!trimmedMessage) {
+    return null;
   }
 
-  const body = (await response.json()) as { chat: AgentChatExchange | null };
-  return body.chat;
+  try {
+    const parsedMessage = JSON.parse(trimmedMessage) as { state?: unknown };
+
+    if (typeof parsedMessage !== "object" || parsedMessage === null) {
+      return null;
+    }
+
+    return {
+      state: typeof parsedMessage.state === "string" ? parsedMessage.state : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function getAuthenticatedSupabaseHeaders(
+  supabasePublishableKey: string,
+  accessToken: string,
+  extraHeaders: Record<string, string> = {},
+) {
+  return {
+    apikey: supabasePublishableKey,
+    Authorization: `Bearer ${accessToken}`,
+    "Content-Type": "application/json",
+    ...extraHeaders,
+  };
 }
 
 function getStatusLabel(
@@ -1791,11 +2655,59 @@ function mapVentureRowToItem(row: VentureRow): VentureItem {
   return {
     createdAt: row.created_at,
     details: row.details,
+    featureFilePaths: row.feature_file_paths ?? [],
     id: row.id,
     projectDirectory: row.project_directory,
     progressState: row.progress_state,
     ventureName: row.venture_name,
   };
+}
+
+function getFeatureOptionsForProject(
+  projects: FeatureFileProjects,
+  projectDirectory: string,
+): VentureFeatureOption[] {
+  if (!projectDirectory) {
+    return [];
+  }
+
+  const projectFeatures = projects[projectDirectory] ?? [];
+
+  return projectFeatures.map((feature) => ({
+    featureName: getFeatureNameFromMarkdown(feature.markdown, feature.path),
+    filePath: feature.path,
+  }));
+}
+
+function getFeatureTagsForPaths(
+  projects: FeatureFileProjects,
+  featureFilePaths: string[],
+): VentureFeatureOption[] {
+  const featureNameByPath = new Map<string, string>();
+
+  Object.values(projects).forEach((projectFeatures) => {
+    projectFeatures.forEach((feature) => {
+      featureNameByPath.set(
+        feature.path,
+        getFeatureNameFromMarkdown(feature.markdown, feature.path),
+      );
+    });
+  });
+
+  return featureFilePaths.map((filePath) => ({
+    featureName: featureNameByPath.get(filePath) ?? filePath,
+    filePath,
+  }));
+}
+
+function getFeatureNameFromMarkdown(markdown: string, fallbackPath: string) {
+  const headingLine = markdown.split("\n").find((line) => line.startsWith("# "));
+
+  if (!headingLine) {
+    return fallbackPath;
+  }
+
+  return headingLine.replace(/^# /, "").trim() || fallbackPath;
 }
 
 function formatVentureProgressState(progressState: VentureProgressState) {

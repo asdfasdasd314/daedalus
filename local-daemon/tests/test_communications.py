@@ -1,7 +1,6 @@
 import json
 import sys
 import unittest
-from urllib.parse import parse_qs, urlparse
 from pathlib import Path
 from unittest.mock import patch
 
@@ -9,11 +8,15 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from daedalus_daemon.communications import (
+    AGENT_CHAT_PAYLOAD_KIND,
     AGENT_PROMPT_PURPOSE,
+    FEATURE_FILES_PAYLOAD_KIND,
     FEATURE_FILE_LOAD_PURPOSE,
+    PARAMETER_FILES_PAYLOAD_KIND,
     PARAMETER_FILE_LOAD_PURPOSE,
     fetch_current_message,
     post_agent_chat,
+    post_feature_files,
     post_parameter_files,
     update_current_message,
 )
@@ -34,17 +37,16 @@ class FakeResponse:
 
 
 class UpdateCurrentMessageTests(unittest.TestCase):
-    def test_inserts_message_when_no_rows_exist(self):
+    def test_upserts_message_through_daemon_rpc(self):
         seen_methods: list[str] = []
         request_bodies: list[dict] = []
-        request_queries: list[dict[str, list[str]]] = []
+        request_urls: list[str] = []
+        request_headers: list[dict[str, str]] = []
 
         def fake_urlopen(http_request):
             seen_methods.append(http_request.get_method())
-            request_queries.append(parse_qs(urlparse(http_request.full_url).query))
-
-            if http_request.get_method() == "GET":
-                return FakeResponse([])
+            request_urls.append(http_request.full_url)
+            request_headers.append(dict(http_request.header_items()))
 
             if http_request.data is not None:
                 request_bodies.append(json.loads(http_request.data.decode("utf-8")))
@@ -55,70 +57,118 @@ class UpdateCurrentMessageTests(unittest.TestCase):
             update_current_message(
                 {
                     "supabaseUrl": "https://example.supabase.co",
-                    "supabaseServiceRoleKey": "service-role",
+                    "supabasePublishableKey": "publishable-key",
+                    "daemonUserId": "user-1",
                 },
                 FEATURE_FILE_LOAD_PURPOSE,
                 "client_load_feature_files",
             )
 
-        self.assertEqual(seen_methods, ["GET", "POST"])
-        self.assertEqual(
-            request_queries[0]["purpose"],
-            [f"eq.{FEATURE_FILE_LOAD_PURPOSE}"],
-        )
+        self.assertEqual(seen_methods, ["POST"])
+        self.assertEqual(request_urls, ["https://example.supabase.co/rest/v1/rpc/daemon_upsert_communication"])
+        self.assertEqual(request_headers[0]["Apikey"], "publishable-key")
+        self.assertEqual(request_headers[0]["Authorization"], "Bearer publishable-key")
         self.assertEqual(
             request_bodies,
             [{
-                "message": "client_load_feature_files",
-                "purpose": FEATURE_FILE_LOAD_PURPOSE,
+                "p_message": "client_load_feature_files",
+                "p_purpose": FEATURE_FILE_LOAD_PURPOSE,
+                "p_user_id": "user-1",
             }],
         )
 
     def test_reads_message_for_requested_purpose(self):
-        seen_queries: list[dict[str, list[str]]] = []
+        request_bodies: list[dict] = []
+        request_urls: list[str] = []
 
         def fake_urlopen(http_request):
-            seen_queries.append(parse_qs(urlparse(http_request.full_url).query))
+            request_urls.append(http_request.full_url)
+            request_bodies.append(json.loads(http_request.data.decode("utf-8")))
             return FakeResponse([{"message": "daemon_sent_feature_files"}])
 
         with patch("daedalus_daemon.communications.request.urlopen", side_effect=fake_urlopen):
             message = fetch_current_message(
                 {
                     "supabaseUrl": "https://example.supabase.co",
-                    "supabaseServiceRoleKey": "service-role",
+                    "supabasePublishableKey": "publishable-key",
+                    "daemonUserId": "user-1",
                 },
                 FEATURE_FILE_LOAD_PURPOSE,
             )
 
         self.assertEqual(message, "daemon_sent_feature_files")
+        self.assertEqual(request_urls, ["https://example.supabase.co/rest/v1/rpc/daemon_get_communication"])
         self.assertEqual(
-            seen_queries,
-            [{"select": ["message,purpose"], "purpose": [f"eq.{FEATURE_FILE_LOAD_PURPOSE}"], "limit": ["1"]}],
+            request_bodies,
+            [{"p_purpose": FEATURE_FILE_LOAD_PURPOSE, "p_user_id": "user-1"}],
         )
 
     def test_reads_parameter_message_for_requested_purpose(self):
-        seen_queries: list[dict[str, list[str]]] = []
+        request_bodies: list[dict] = []
 
         def fake_urlopen(http_request):
-            seen_queries.append(parse_qs(urlparse(http_request.full_url).query))
+            request_bodies.append(json.loads(http_request.data.decode("utf-8")))
             return FakeResponse([{"message": "daemon_sent_parameter_files"}])
 
         with patch("daedalus_daemon.communications.request.urlopen", side_effect=fake_urlopen):
             message = fetch_current_message(
                 {
                     "supabaseUrl": "https://example.supabase.co",
-                    "supabaseServiceRoleKey": "service-role",
+                    "supabasePublishableKey": "publishable-key",
+                    "daemonUserId": "user-1",
                 },
                 PARAMETER_FILE_LOAD_PURPOSE,
             )
 
         self.assertEqual(message, "daemon_sent_parameter_files")
         self.assertEqual(
-            seen_queries,
-            [{"select": ["message,purpose"], "purpose": [f"eq.{PARAMETER_FILE_LOAD_PURPOSE}"], "limit": ["1"]}],
+            request_bodies,
+            [{"p_purpose": PARAMETER_FILE_LOAD_PURPOSE, "p_user_id": "user-1"}],
         )
 
-    def test_posts_parameter_files_to_frontend_route(self):
+    def test_posts_feature_files_to_daemon_payload_rpc(self):
+        request_bodies: list[dict] = []
+
+        def fake_urlopen(http_request):
+            request_bodies.append(json.loads(http_request.data.decode("utf-8")))
+            return FakeResponse({})
+
+        with patch("daedalus_daemon.communications.request.urlopen", side_effect=fake_urlopen):
+            post_feature_files(
+                {
+                    "supabaseUrl": "https://example.supabase.co",
+                    "supabasePublishableKey": "publishable-key",
+                    "daemonUserId": "user-1",
+                },
+                {
+                    "/workspace/project": [
+                        {
+                            "path": "feature_files/example.md",
+                            "markdown": "# Example",
+                        },
+                    ],
+                },
+            )
+
+        self.assertEqual(
+            request_bodies,
+            [{
+                "p_kind": FEATURE_FILES_PAYLOAD_KIND,
+                "p_payload": {
+                    "projects": {
+                        "/workspace/project": [
+                            {
+                                "path": "feature_files/example.md",
+                                "markdown": "# Example",
+                            },
+                        ],
+                    },
+                },
+                "p_user_id": "user-1",
+            }],
+        )
+
+    def test_posts_parameter_files_to_daemon_payload_rpc(self):
         seen_methods: list[str] = []
         request_bodies: list[dict] = []
 
@@ -130,7 +180,9 @@ class UpdateCurrentMessageTests(unittest.TestCase):
         with patch("daedalus_daemon.communications.request.urlopen", side_effect=fake_urlopen):
             post_parameter_files(
                 {
-                    "frontendBaseUrl": "http://127.0.0.1:3000",
+                    "supabaseUrl": "https://example.supabase.co",
+                    "supabasePublishableKey": "publishable-key",
+                    "daemonUserId": "user-1",
                 },
                 {
                     "/workspace/project": [
@@ -146,19 +198,22 @@ class UpdateCurrentMessageTests(unittest.TestCase):
         self.assertEqual(
             request_bodies,
             [{
-                "source": "daemon",
-                "projects": {
-                    "/workspace/project": [
-                        {
-                            "path": "parameter_files/example.toml",
-                            "toml": "enabled = true",
-                        },
-                    ],
+                "p_kind": PARAMETER_FILES_PAYLOAD_KIND,
+                "p_payload": {
+                    "projects": {
+                        "/workspace/project": [
+                            {
+                                "path": "parameter_files/example.toml",
+                                "toml": "enabled = true",
+                            },
+                        ],
+                    },
                 },
+                "p_user_id": "user-1",
             }],
         )
 
-    def test_posts_agent_chat_to_frontend_route(self):
+    def test_posts_agent_chat_to_daemon_payload_rpc(self):
         seen_methods: list[str] = []
         request_bodies: list[dict] = []
 
@@ -170,7 +225,9 @@ class UpdateCurrentMessageTests(unittest.TestCase):
         with patch("daedalus_daemon.communications.request.urlopen", side_effect=fake_urlopen):
             post_agent_chat(
                 {
-                    "frontendBaseUrl": "http://127.0.0.1:3000",
+                    "supabaseUrl": "https://example.supabase.co",
+                    "supabasePublishableKey": "publishable-key",
+                    "daemonUserId": "user-1",
                 },
                 "prompt-1",
                 "/workspace/project",
@@ -182,16 +239,19 @@ class UpdateCurrentMessageTests(unittest.TestCase):
         self.assertEqual(
             request_bodies,
             [{
-                "source": "daemon",
-                "promptId": "prompt-1",
-                "directory": "/workspace/project",
-                "prompt": "Build the feature",
-                "reply": "Here is the reply",
-                "provider": "codex",
-                "model": "",
-                "reasoning": "",
-                "planningMode": False,
-                "targetedFeaturePaths": [],
+                "p_kind": AGENT_CHAT_PAYLOAD_KIND,
+                "p_payload": {
+                    "promptId": "prompt-1",
+                    "directory": "/workspace/project",
+                    "prompt": "Build the feature",
+                    "reply": "Here is the reply",
+                    "provider": "codex",
+                    "model": "",
+                    "reasoning": "",
+                    "planningMode": False,
+                    "targetedFeaturePaths": [],
+                },
+                "p_user_id": "user-1",
             }],
         )
 
@@ -205,7 +265,9 @@ class UpdateCurrentMessageTests(unittest.TestCase):
         with patch("daedalus_daemon.communications.request.urlopen", side_effect=fake_urlopen):
             post_agent_chat(
                 {
-                    "frontendBaseUrl": "http://127.0.0.1:3000",
+                    "supabaseUrl": "https://example.supabase.co",
+                    "supabasePublishableKey": "publishable-key",
+                    "daemonUserId": "user-1",
                 },
                 "prompt-2",
                 "/workspace/project",
@@ -220,19 +282,22 @@ class UpdateCurrentMessageTests(unittest.TestCase):
         self.assertEqual(
             request_bodies,
             [{
-                "source": "daemon",
-                "promptId": "prompt-2",
-                "directory": "/workspace/project",
-                "prompt": "Build the feature",
-                "reply": "Here is the reply",
-                "provider": "codex",
-                "model": "",
-                "reasoning": "",
-                "planningMode": False,
-                "targetedFeaturePaths": [
-                    "feature_files/agent-prompt-chat.md",
-                    "feature_files/feature-file-graph-display.md",
-                ],
+                "p_kind": AGENT_CHAT_PAYLOAD_KIND,
+                "p_payload": {
+                    "promptId": "prompt-2",
+                    "directory": "/workspace/project",
+                    "prompt": "Build the feature",
+                    "reply": "Here is the reply",
+                    "provider": "codex",
+                    "model": "",
+                    "reasoning": "",
+                    "planningMode": False,
+                    "targetedFeaturePaths": [
+                        "feature_files/agent-prompt-chat.md",
+                        "feature_files/feature-file-graph-display.md",
+                    ],
+                },
+                "p_user_id": "user-1",
             }],
         )
 

@@ -11,12 +11,19 @@ type ParameterVariableSelectorProps = {
   projectPath: string;
   parameterFilePath: string;
   parameterFile: ParameterFileRecord;
+  onRequestSave: (request: {
+    parameterFilePath: string;
+    projectPath: string;
+    value: string;
+    variableName: string;
+  }) => Promise<void>;
 };
 
 export default function ParameterVariableSelector({
   projectPath,
   parameterFilePath,
   parameterFile,
+  onRequestSave,
 }: ParameterVariableSelectorProps) {
   const [currentToml, setCurrentToml] = useState(parameterFile.toml);
   const [selectedVariableName, setSelectedVariableName] = useState("");
@@ -71,37 +78,17 @@ export default function ParameterVariableSelector({
     setSaveTone("success");
 
     try {
-      const response = await fetch("/api/parameter-files", {
-        method: "PATCH",
-        headers: {
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          projectPath,
-          path: parameterFilePath,
-          variableName: selectedVariable.name,
-          value: draftValue,
-        }),
+      await onRequestSave({
+        parameterFilePath,
+        projectPath,
+        value: draftValue,
+        variableName: selectedVariable.name,
       });
-
-      const body = (await response.json()) as {
-        error?: string;
-        ok?: boolean;
-        record?: ParameterFileRecord;
-      };
-
-      if (!response.ok || !body.ok || !body.record) {
-        setSaveTone("error");
-        setSaveMessage(body.error || "Unable to save this parameter yet.");
-        return;
-      }
-
-      setCurrentToml(body.record.toml);
       setSaveTone("success");
-      setSaveMessage("Saved to parameter file.");
-    } catch {
+      setSaveMessage("Save request sent to the daemon.");
+    } catch (error) {
       setSaveTone("error");
-      setSaveMessage("Unable to reach the parameter-file save route.");
+      setSaveMessage(error instanceof Error ? error.message : "Unable to send the save request.");
     } finally {
       setIsSaving(false);
     }

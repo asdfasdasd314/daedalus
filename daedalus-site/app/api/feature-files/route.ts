@@ -1,26 +1,19 @@
-import {
-  getCachedProjects,
-  setCachedProjects,
-  type FeatureFileProjects,
-} from "@/lib/feature-file-cache";
-
 export async function GET() {
-  return Response.json({
-    projects: getCachedProjects(),
-  });
+  return Response.json(
+    {
+      ok: false,
+      error: "Feature-file payloads are read from Supabase daemon_payloads.",
+    },
+    { status: 410 },
+  );
 }
 
-export async function POST(request: Request) {
-  const body = await request.json();
-
-  if (body.source !== "daemon") {
-    return Response.json(
-      { ok: false, error: "Only daemon payloads are accepted." },
-      { status: 400 },
-    );
-  }
-
-  setCachedProjects(body.projects as FeatureFileProjects);
-
-  return Response.json({ ok: true });
+export async function POST() {
+  return Response.json(
+    {
+      ok: false,
+      error: "Daemon feature-file payloads are written to Supabase daemon_payloads.",
+    },
+    { status: 410 },
+  );
 }

@@ -8,12 +8,14 @@ from .communications import (
     DAEMON_SENT_RESPONSE,
     FEATURE_FILE_LOAD_PURPOSE,
     PARAMETER_FILE_LOAD_PURPOSE,
+    PARAMETER_FILE_UPDATE_PURPOSE,
 )
 from .config import load_shared_config
 from .main import (
     run_agent_prompt_cycle,
     run_codex_exec,
     run_parameter_file_poll_cycle,
+    run_parameter_file_update_cycle,
     run_poll_cycle,
 )
 from .scanner import scan_feature_file_projects, scan_parameter_file_projects
@@ -28,10 +30,12 @@ __all__ = [
     "DAEMON_SENT_RESPONSE",
     "FEATURE_FILE_LOAD_PURPOSE",
     "PARAMETER_FILE_LOAD_PURPOSE",
+    "PARAMETER_FILE_UPDATE_PURPOSE",
     "load_shared_config",
     "run_agent_prompt_cycle",
     "run_codex_exec",
     "run_parameter_file_poll_cycle",
+    "run_parameter_file_update_cycle",
     "run_poll_cycle",
     "scan_feature_file_projects",
     "scan_parameter_file_projects",
