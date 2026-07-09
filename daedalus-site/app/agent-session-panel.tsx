@@ -123,7 +123,7 @@ export default function AgentSessionPanel({
   }
 
   return (
-    <div className="grid gap-3 rounded-[1.5rem] border border-white/10 bg-black/25 p-4">
+    <div className="grid min-w-0 gap-3 overflow-x-hidden rounded-[1.5rem] border border-white/10 bg-black/25 p-4">
       <label
         htmlFor="agent-project"
         className="text-[11px] uppercase tracking-[0.28em] text-slate-400"
@@ -205,10 +205,10 @@ export default function AgentSessionPanel({
         <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">
           Feature scope
         </p>
-        <div className="flex flex-wrap items-center gap-3">
-          <select
-            value={effectiveSelectedFeaturePath}
-            onChange={(event) => setSelectedFeaturePath(event.target.value)}
+      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+        <select
+          value={effectiveSelectedFeaturePath}
+          onChange={(event) => setSelectedFeaturePath(event.target.value)}
             className="agent-chat-scrollbar min-w-0 flex-1 rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
           >
             <option value="">Select a feature</option>
@@ -326,8 +326,8 @@ export default function AgentSessionPanel({
 
       {!isAgentChatCleared && latestChat ? (
         <div className="grid gap-3 pt-2">
-          <div className="flex justify-end">
-            <div className="max-w-[85%] rounded-[1.5rem] rounded-br-md bg-cyan-300 px-4 py-3 text-sm text-slate-950">
+          <div className="flex min-w-0 justify-end">
+            <div className="max-w-[85%] break-words rounded-[1.5rem] rounded-br-md bg-cyan-300 px-4 py-3 text-sm text-slate-950">
               <p>{latestChat.prompt}</p>
               {latestChat.model ? (
                 <p className="mt-2 text-xs text-slate-700">
@@ -337,8 +337,8 @@ export default function AgentSessionPanel({
               ) : null}
             </div>
           </div>
-          <div className="flex justify-start">
-            <div className="max-w-[85%] whitespace-pre-wrap rounded-[1.5rem] rounded-bl-md border border-white/10 bg-slate-900/90 px-4 py-3 text-sm text-slate-100">
+          <div className="flex min-w-0 justify-start">
+            <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-[1.5rem] rounded-bl-md border border-white/10 bg-slate-900/90 px-4 py-3 text-sm text-slate-100">
               {latestChat.reply || "Waiting for daemon reply..."}
             </div>
           </div>

@@ -166,13 +166,15 @@ export default function FeatureFileGraph({
   const svgRef = useRef<SVGSVGElement | null>(null);
 
   useEffect(() => {
+    const nextZoom = viewportRef.current.zoom;
+
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setNodes(graphData.nodes);
     setDraggedNodeId("");
     nodesRef.current = graphData.nodes;
     viewportRef.current = {
       ...graphData.defaultViewport,
-      zoom,
+      zoom: nextZoom,
     };
     nodeDragRef.current = null;
     nodeTapRef.current = null;
@@ -180,9 +182,9 @@ export default function FeatureFileGraph({
     pinchRef.current = null;
     setViewport({
       ...graphData.defaultViewport,
-      zoom,
+      zoom: nextZoom,
     });
-  }, [graphData, zoom]);
+  }, [graphData]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -309,6 +311,8 @@ export default function FeatureFileGraph({
     if (!point) {
       return;
     }
+
+    event.currentTarget.setPointerCapture(event.pointerId);
 
     activePointersRef.current.set(event.pointerId, point);
 
@@ -443,22 +447,6 @@ export default function FeatureFileGraph({
       return;
     }
 
-    const tappedNode = nodeTapRef.current;
-
-    if (tappedNode?.pointerId === event.pointerId) {
-      nodeTapRef.current = null;
-
-      if (!tappedNode.moved) {
-        const selectedNode = nodesRef.current.find(
-          (node) => node.id === tappedNode.nodeId,
-        );
-
-        if (selectedNode) {
-          selectNode(selectedNode);
-        }
-      }
-    }
-
     if (!viewportRef.current.isDragging) {
       return;
     }
@@ -483,6 +471,10 @@ export default function FeatureFileGraph({
   }
 
   function handlePointerEnd(event: ReactPointerEvent<SVGSVGElement>) {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
     activePointersRef.current.delete(event.pointerId);
 
     if (activePointersRef.current.size < 2) {
@@ -502,6 +494,22 @@ export default function FeatureFileGraph({
 
         if (selectedNode) {
           emitNodeSelection(selectedNode);
+        }
+      }
+    }
+
+    const tappedNode = nodeTapRef.current;
+
+    if (tappedNode?.pointerId === event.pointerId) {
+      nodeTapRef.current = null;
+
+      if (!tappedNode.moved && activePointersRef.current.size === 0) {
+        const selectedNode = nodesRef.current.find(
+          (node) => node.id === tappedNode.nodeId,
+        );
+
+        if (selectedNode) {
+          selectNode(selectedNode);
         }
       }
     }
@@ -731,7 +739,11 @@ export default function FeatureFileGraph({
                 key={node.id}
                 data-node="true"
                 transform={`translate(${node.x} ${node.y}) scale(${scale})`}
-                onClick={() => emitNodeSelection(node)}
+                onClick={() => {
+                  if (!isCoarsePointer) {
+                    emitNodeSelection(node);
+                  }
+                }}
                 onPointerDown={(event) => handleNodePointerDown(event, node.id)}
                 onPointerEnter={() => handleNodeEnter(node.id)}
                 onPointerLeave={handleNodeLeave}
@@ -823,9 +835,13 @@ export default function FeatureFileGraph({
       <button
         type="button"
         onClick={onOpenVentures}
-        className="pointer-events-auto absolute left-3 top-1/2 -translate-y-1/2 rounded-r-[1.25rem] border border-white/10 border-l-0 bg-slate-950/82 px-3 py-8 text-xs font-semibold uppercase tracking-[0.22em] text-slate-100 shadow-[0_20px_60px_rgba(2,6,23,0.5)] backdrop-blur transition hover:bg-slate-900"
+        className={`pointer-events-auto absolute border border-white/10 bg-slate-950/82 text-slate-100 shadow-[0_20px_60px_rgba(2,6,23,0.5)] backdrop-blur transition hover:bg-slate-900 ${
+          isCoarsePointer
+            ? "left-4 top-4 inline-flex h-11 items-center justify-center rounded-full px-4 text-[11px] font-semibold uppercase tracking-[0.22em]"
+            : "left-3 top-1/2 -translate-y-1/2 rounded-r-[1.25rem] border-l-0 px-3 py-8 text-xs font-semibold uppercase tracking-[0.22em]"
+        }`}
       >
-        Ventures
+        {isCoarsePointer ? "Ventures" : "Ventures"}
       </button>
 
       <button
@@ -852,7 +868,7 @@ export default function FeatureFileGraph({
               VIEWPORT_HEIGHT / 2,
             )
           }
-          className="workspace-zoom-slider h-52 w-6 accent-amber-300"
+          className="workspace-zoom-slider h-52 w-8 accent-amber-300"
           aria-label="Graph zoom"
         />
         <span className="text-sm font-semibold text-white">-</span>

@@ -15,7 +15,7 @@ The feature-file graph display turns loaded feature files into a full-screen 2D 
 - **Connection Intensity**: Nodes with more in-project references render with stronger glow and color intensity so densely connected features stand out faster.
 - **Navigation**: The graph supports wheel zoom, ctrl/cmd zoom, touch pinch zoom, drag panning, and inertial viewport motion so the workspace can grow beyond a single screen.
 - **Node Dragging**: Desktop pointer users can still drag nodes directly in world space, while coarse-pointer mobile sessions prioritize tap, pan, and pinch instead of node repositioning.
-- **Shell Controls**: The graph now surfaces a left ventures handle, a circular bottom new-feature trigger, and a right-edge zoom slider while keeping overlay state in the workspace shell.
+- **Shell Controls**: The graph now surfaces a compact upper-left ventures trigger on mobile, a circular bottom new-feature trigger, and a right-edge zoom slider while keeping overlay state in the workspace shell.
 - **Node Selection Callback**: Clicking or tapping a node now hands feature identity back to the workspace shell through a dedicated selection path so touch sessions do not rely on inconsistent browser click timing.
 
 ## Relevant Files
@@ -48,3 +48,4 @@ HACKING
 - 2026-07-06: Added project-gated node-to-chat targeting so the detail panel can add valid feature files into the prompt-scoping chip row without allowing cross-project selections.
 - 2026-07-09: Reworked the graph into a graph-first workspace surface with shell callbacks, a right-edge zoom slider, and touch-first mobile gestures while moving feature overlays out to the workspace shell.
 - 2026-07-09: Added a dedicated coarse-pointer node tap path and a more circular new-feature action button so node selection feels steadier on mobile and the plus control reads like a floating action button.
+- 2026-07-09: Kept touch drags on the graph surface even when they begin over nodes, preserved zoom state across pinch updates, moved the ventures trigger up and out of the main drag lane, and tightened the zoom slider styling so mobile graph control feels smoother and more centered.

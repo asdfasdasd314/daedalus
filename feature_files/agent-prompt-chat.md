@@ -16,6 +16,7 @@ The agent prompt chat adds a reusable prompt composer to the existing dashboard 
 - **Queued Prompt Safety**: If a newer prompt arrives while an older one is still running, the daemon leaves the newer row in place instead of overwriting it with `daemon_sent_response`.
 - **Latest Pair Only**: The UI keeps only the newest submitted prompt and daemon reply instead of a full transcript.
 - **Clear Control**: The chat panel now includes a local clear action that hides the current prompt/reply block and suppresses the cached exchange until a new prompt is sent.
+- **Mobile Fitting**: The shared chat panel now stacks its feature-tag controls cleanly on narrow screens and wraps transcript content instead of forcing horizontal overlay scroll.
 
 ## Relevant Files
 - `daedalus-site/app/feature-files-dashboard.tsx`: Workspace shell that mounts the shared chat session inside the new-feature and feature-detail overlays.
@@ -53,3 +54,4 @@ HACKING
 - 2026-07-08: Moved latest agent chat replies from the local Next cache route into user-owned Supabase daemon payloads.
 - 2026-07-08: Moved the model catalog into `daedalus-site/config/agent_models.json` so the prompt composer no longer treats frontend-only model choices as shared repo config.
 - 2026-07-09: Split the chat UI out into a shared overlay session panel so new-feature creation and node-focused editing both reuse the same prompt transport and feature-tagging flow.
+- 2026-07-09: Reflowed the shared chat session panel for phone-width overlays by stacking feature-tag controls and forcing both prompt and reply bubbles to wrap instead of pushing the overlay wider than the viewport.

@@ -53,6 +53,7 @@ const AGENT_PROMPT_TIMEOUT_MS = 5 * 60 * 1000;
 const VENTURE_PROGRESS_STATES = ["idle", "in progress", "completed"] as const;
 
 type AuthMode = "sign-in" | "sign-up";
+type DevEnvironmentState = "idle" | "loading" | "ready" | "error";
 type PrimaryOverlay = "feature-detail" | "new-feature" | null;
 type FeatureDetailTab = "chat" | "info" | "params";
 type VentureProgressState = (typeof VENTURE_PROGRESS_STATES)[number];
@@ -1219,18 +1220,6 @@ export default function FeatureFilesDashboard({
     setPromptStatus("Prompt abandoned.");
   }
 
-  const statusLabel = getStatusLabel(
-    message,
-    parameterFileMessage,
-    projects,
-    parameterProjects,
-    isLoadingFeatureFiles,
-    isLoadingParameterFiles,
-  );
-  const currentMessage = formatDevEnvironmentMessage(
-    message,
-    parameterFileMessage,
-  );
   const projectEntries = Object.entries(projects ?? {});
   const availableProjectDirectories = projectEntries.map(
     ([projectDirectory]) => projectDirectory,
@@ -1238,8 +1227,15 @@ export default function FeatureFilesDashboard({
   const currentPromptQueueItem = agentPromptQueue[0] ?? null;
   const promptQueueStatusText =
     promptStatus || getAgentPromptQueueStatusText(agentPromptQueue);
-  const isLoadingDevEnvironment =
-    isLoadingFeatureFiles || isLoadingParameterFiles;
+  const devEnvironmentState = getDevEnvironmentState(
+    error,
+    isLoadingFeatureFiles,
+    isLoadingParameterFiles,
+    message,
+    parameterFileMessage,
+    projects,
+    parameterProjects,
+  );
   const selectedVenture =
     ventures.find((venture) => venture.id === selectedVentureId) ??
     ventures[0] ??
@@ -1609,11 +1605,11 @@ export default function FeatureFilesDashboard({
   }
 
   const venturesDrawerClassName = isMobileLayout
-    ? "pointer-events-auto absolute inset-3 flex flex-col overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/94 shadow-[0_28px_100px_rgba(2,6,23,0.72)] backdrop-blur"
+    ? "pointer-events-auto absolute inset-3 flex min-w-0 flex-col overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/94 shadow-[0_28px_100px_rgba(2,6,23,0.72)] backdrop-blur"
     : "pointer-events-auto absolute left-4 top-28 bottom-6 flex w-[min(28rem,calc(100vw-8rem))] flex-col overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/90 shadow-[0_28px_100px_rgba(2,6,23,0.72)] backdrop-blur";
   const primaryOverlayClassName = isMobileLayout
-    ? "pointer-events-auto absolute inset-3 flex flex-col overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/94 shadow-[0_28px_100px_rgba(2,6,23,0.72)] backdrop-blur"
-    : "pointer-events-auto absolute right-4 top-28 bottom-6 flex w-[min(44rem,calc(100vw-10rem))] flex-col overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/90 shadow-[0_28px_100px_rgba(2,6,23,0.72)] backdrop-blur";
+    ? "pointer-events-auto absolute inset-3 flex min-w-0 flex-col overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/94 shadow-[0_28px_100px_rgba(2,6,23,0.72)] backdrop-blur"
+    : "pointer-events-auto absolute right-4 top-28 bottom-6 flex min-w-0 w-[min(44rem,calc(100vw-10rem))] flex-col overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/90 shadow-[0_28px_100px_rgba(2,6,23,0.72)] backdrop-blur";
 
   if (authStatus === "checking") {
     return (
@@ -1715,46 +1711,21 @@ export default function FeatureFilesDashboard({
       />
 
       <div className="pointer-events-none absolute inset-0">
-        <div className="pointer-events-auto absolute inset-x-4 top-4 flex justify-center">
-          <div className="grid w-full max-w-5xl gap-3">
-            <div className="flex flex-wrap justify-center gap-3">
-              <div className="min-w-[180px] max-w-xl flex-1 rounded-[1.5rem] border border-white/10 bg-slate-950/82 p-4 shadow-[0_24px_80px_rgba(2,6,23,0.55)] backdrop-blur sm:flex-none sm:w-[30rem]">
-                <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">
-                  Messages / Log info
-                </p>
-                <p className="mt-2 whitespace-pre-wrap break-words font-mono text-sm text-slate-100">
-                  {currentMessage}
-                </p>
-              </div>
-              <div className="min-w-[180px] rounded-[1.5rem] border border-white/10 bg-slate-950/82 p-4 shadow-[0_24px_80px_rgba(2,6,23,0.55)] backdrop-blur sm:w-64">
-                <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">
-                  Status
-                </p>
-                <p className="mt-2 text-xl font-semibold text-white">
-                  {statusLabel}
-                </p>
-              </div>
-            </div>
-
-            {error ? (
-              <div className="rounded-[1.5rem] border border-rose-400/20 bg-rose-500/12 px-5 py-4 text-sm text-rose-100 shadow-[0_24px_80px_rgba(127,29,29,0.35)] backdrop-blur">
-                {error}
-              </div>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="pointer-events-auto absolute right-4 top-4 flex max-w-[24rem] flex-wrap justify-end gap-3">
+        <div className="pointer-events-auto absolute right-4 top-4 flex items-center gap-2 sm:gap-3">
           <button
             type="button"
             onClick={requestDevEnvironment}
             aria-label="Refresh dev environment"
             title="Refresh dev environment"
-            className="inline-flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-white text-slate-950 shadow-[0_20px_60px_rgba(2,6,23,0.32)] transition hover:bg-slate-200"
+            className={`inline-flex h-11 w-11 items-center justify-center rounded-full border shadow-[0_20px_60px_rgba(2,6,23,0.32)] transition sm:h-12 sm:w-12 ${
+              devEnvironmentState === "error"
+                ? "border-rose-300/30 bg-rose-200 text-rose-950 hover:bg-rose-100"
+                : "border-white/10 bg-white text-slate-950 hover:bg-slate-200"
+            }`}
           >
             <svg
               aria-hidden="true"
-              className={`h-5 w-5 ${isLoadingDevEnvironment ? "animate-spin" : ""}`}
+              className={`h-5 w-5 ${devEnvironmentState === "loading" ? "animate-spin" : ""}`}
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -1768,28 +1739,41 @@ export default function FeatureFilesDashboard({
               <path d="M20 20v-3.72h-3.72" />
             </svg>
           </button>
-          <div className="rounded-[1.25rem] border border-white/10 bg-slate-950/82 px-4 py-3 text-right shadow-[0_20px_60px_rgba(2,6,23,0.45)] backdrop-blur">
-            <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400">
-              Workspace
-            </p>
-            <p className="mt-1 max-w-[16rem] break-all text-sm text-slate-200">
-              {currentUser.email ?? currentUserId}
-            </p>
-          </div>
           <button
             type="button"
             onClick={() => {
               void signOut();
             }}
-            className="rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-slate-200 transition hover:bg-white/10"
+            aria-label="Sign out"
+            title="Sign out"
+            className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-slate-950/82 text-slate-200 shadow-[0_20px_60px_rgba(2,6,23,0.32)] transition hover:bg-slate-900 sm:h-12 sm:w-12"
           >
-            Sign out
+            <svg
+              aria-hidden="true"
+              className="h-5 w-5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+              <path d="M16 17l5-5-5-5" />
+              <path d="M21 12H9" />
+            </svg>
           </button>
         </div>
 
+        {error ? (
+          <div className="pointer-events-auto absolute right-4 top-18 max-w-[min(22rem,calc(100vw-2rem))] rounded-[1.25rem] border border-rose-400/20 bg-rose-500/14 px-4 py-3 text-sm text-rose-100 shadow-[0_24px_80px_rgba(127,29,29,0.35)] backdrop-blur">
+            {error}
+          </div>
+        ) : null}
+
         {venturesDrawerOpen ? (
           <aside className={venturesDrawerClassName}>
-            <div className="flex items-start justify-between gap-4 border-b border-white/10 px-5 py-4">
+            <div className="flex items-start justify-between gap-4 border-b border-white/10 px-4 py-4 sm:px-5">
               <div>
                 <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">
                   Ventures
@@ -1810,7 +1794,7 @@ export default function FeatureFilesDashboard({
               </button>
             </div>
 
-            <div className="agent-chat-scrollbar min-h-0 flex-1 overflow-y-auto px-5 py-4">
+            <div className="agent-chat-scrollbar min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-4 sm:px-5">
               <div className="grid gap-4">
                 <div className="grid gap-3 rounded-[1.5rem] border border-white/10 bg-black/25 p-4">
                   <label
@@ -2303,7 +2287,7 @@ export default function FeatureFilesDashboard({
 
         {activePrimaryOverlay === "new-feature" ? (
           <section className={primaryOverlayClassName}>
-            <div className="flex items-start justify-between gap-4 border-b border-white/10 px-5 py-4">
+            <div className="flex items-start justify-between gap-4 border-b border-white/10 px-4 py-4 sm:px-5">
               <div>
                 <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">
                   New feature
@@ -2323,7 +2307,7 @@ export default function FeatureFilesDashboard({
                 X
               </button>
             </div>
-            <div className="agent-chat-scrollbar min-h-0 flex-1 overflow-y-auto px-5 py-4">
+            <div className="agent-chat-scrollbar min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-4 sm:px-5">
               <AgentSessionPanel
                 agentModels={agentModels}
                 agentPromptMessage={agentPromptMessage}
@@ -2359,7 +2343,7 @@ export default function FeatureFilesDashboard({
 
         {activePrimaryOverlay === "feature-detail" && selectedFeatureSession ? (
           <section className={primaryOverlayClassName}>
-            <div className="flex items-start justify-between gap-4 border-b border-white/10 px-5 py-4">
+            <div className="flex items-start justify-between gap-4 border-b border-white/10 px-4 py-4 sm:px-5">
               <div>
                 <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">
                   Feature node
@@ -2379,12 +2363,12 @@ export default function FeatureFilesDashboard({
                 X
               </button>
             </div>
-            <div className="border-b border-white/10 px-5 py-3">
-              <div className="inline-flex rounded-full border border-white/10 bg-black/25 p-1">
+            <div className="border-b border-white/10 px-4 py-3 sm:px-5">
+              <div className="flex flex-wrap gap-2 rounded-[1.25rem] border border-white/10 bg-black/25 p-1">
                 <button
                   type="button"
                   onClick={() => setFeatureDetailTab("chat")}
-                  className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] transition ${
+                  className={`min-w-0 flex-1 rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] transition sm:flex-none ${
                     featureDetailTab === "chat"
                       ? "bg-cyan-300 text-slate-950"
                       : "text-slate-300 hover:bg-white/10"
@@ -2395,7 +2379,7 @@ export default function FeatureFilesDashboard({
                 <button
                   type="button"
                   onClick={() => setFeatureDetailTab("info")}
-                  className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] transition ${
+                  className={`min-w-0 flex-1 rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] transition sm:flex-none ${
                     featureDetailTab === "info"
                       ? "bg-cyan-300 text-slate-950"
                       : "text-slate-300 hover:bg-white/10"
@@ -2406,7 +2390,7 @@ export default function FeatureFilesDashboard({
                 <button
                   type="button"
                   onClick={() => setFeatureDetailTab("params")}
-                  className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] transition ${
+                  className={`min-w-0 flex-1 rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] transition sm:flex-none ${
                     featureDetailTab === "params"
                       ? "bg-cyan-300 text-slate-950"
                       : "text-slate-300 hover:bg-white/10"
@@ -2416,7 +2400,7 @@ export default function FeatureFilesDashboard({
                 </button>
               </div>
             </div>
-            <div className="agent-chat-scrollbar min-h-0 flex-1 overflow-y-auto px-5 py-4">
+            <div className="agent-chat-scrollbar min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-4 sm:px-5">
               {featureDetailTab === "chat" ? (
                 <AgentSessionPanel
                   agentModels={agentModels}
@@ -2452,7 +2436,7 @@ export default function FeatureFilesDashboard({
                   <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">
                     Feature file
                   </p>
-                  <pre className="whitespace-pre-wrap break-words rounded-[1.25rem] border border-white/10 bg-slate-900/70 px-4 py-3 text-sm leading-6 text-slate-200">
+                  <pre className="min-w-0 overflow-x-hidden whitespace-pre-wrap break-words rounded-[1.25rem] border border-white/10 bg-slate-900/70 px-4 py-3 text-sm leading-6 text-slate-200">
                     {selectedFeatureRecord?.markdown ||
                       "This feature file is no longer available in the loaded payload."}
                   </pre>
@@ -2843,6 +2827,35 @@ function getAgentPromptQueueStatusText(queue: AgentPromptQueueEntry[]) {
   return "";
 }
 
+function getDevEnvironmentState(
+  error: string,
+  isLoadingFeatureFiles: boolean,
+  isLoadingParameterFiles: boolean,
+  featureFileMessage: string,
+  parameterFileMessage: string,
+  featureProjects: FeatureFileProjects | null,
+  parameterProjects: ParameterFileProjects | null,
+): DevEnvironmentState {
+  if (error) {
+    return "error";
+  }
+
+  if (isLoadingFeatureFiles || isLoadingParameterFiles) {
+    return "loading";
+  }
+
+  if (
+    featureFileMessage === DAEMON_SENT_FEATURE_FILES &&
+    parameterFileMessage === DAEMON_SENT_PARAMETER_FILES &&
+    featureProjects !== null &&
+    parameterProjects !== null
+  ) {
+    return "ready";
+  }
+
+  return "idle";
+}
+
 async function fetchLatestAgentChat(
   supabaseUrl: string,
   supabasePublishableKey: string,
@@ -2898,54 +2911,6 @@ function getAuthenticatedSupabaseHeaders(
     "Content-Type": "application/json",
     ...extraHeaders,
   };
-}
-
-function getStatusLabel(
-  featureFileMessage: string,
-  parameterFileMessage: string,
-  featureProjects: FeatureFileProjects | null,
-  parameterProjects: ParameterFileProjects | null,
-  isLoadingFeatureFiles: boolean,
-  isLoadingParameterFiles: boolean,
-) {
-  const isSubmittingRequest =
-    featureFileMessage === CLIENT_LOAD_FEATURE_FILES ||
-    parameterFileMessage === CLIENT_LOAD_PARAMETER_FILES;
-  const isDaemonLoading =
-    featureFileMessage === DAEMON_RECEIVED_MESSAGE ||
-    parameterFileMessage === DAEMON_RECEIVED_MESSAGE;
-  const isDevEnvironmentReady =
-    featureFileMessage === DAEMON_SENT_FEATURE_FILES &&
-    parameterFileMessage === DAEMON_SENT_PARAMETER_FILES &&
-    featureProjects !== null &&
-    parameterProjects !== null;
-
-  if (isDevEnvironmentReady) {
-    return "Dev environment ready";
-  }
-
-  if (isLoadingFeatureFiles || isLoadingParameterFiles || isDaemonLoading) {
-    return "Loading dev environment";
-  }
-
-  if (isSubmittingRequest) {
-    return "Request submitted";
-  }
-
-  return "Idle";
-}
-
-function formatDevEnvironmentMessage(
-  featureFileMessage: string,
-  parameterFileMessage: string,
-) {
-  const nextFeatureFileMessage = featureFileMessage || "(empty)";
-  const nextParameterFileMessage = parameterFileMessage || "(empty)";
-
-  return [
-    `Feature files: ${nextFeatureFileMessage}`,
-    `Parameter files: ${nextParameterFileMessage}`,
-  ].join("\n");
 }
 
 function formatAgentPromptMessage(message: string) {
