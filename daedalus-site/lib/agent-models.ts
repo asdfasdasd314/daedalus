@@ -15,7 +15,7 @@ export type AgentModelsConfig = {
 };
 
 export async function loadAgentModels(): Promise<AgentModelsConfig> {
-  const configPath = path.join(process.cwd(), "..", "shared", "agent_models.json");
+  const configPath = path.join(process.cwd(), "config", "agent_models.json");
   const configText = await readFile(configPath, "utf-8");
   return JSON.parse(configText) as AgentModelsConfig;
 }

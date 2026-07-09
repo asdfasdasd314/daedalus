@@ -1,9 +1,9 @@
 import FeatureFilesDashboard from "./feature-files-dashboard";
 import { loadAgentModels } from "@/lib/agent-models";
-import { loadSharedConfig } from "@/lib/shared-config";
+import { loadFrontendConfig } from "@/lib/frontend-config";
 
 export default async function Home() {
-  const config = await loadSharedConfig();
+  const config = await loadFrontendConfig();
   const agentModels = await loadAgentModels();
 
   return (

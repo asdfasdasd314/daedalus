@@ -41,7 +41,7 @@ if __package__ in {None, ""}:
         post_parameter_files,
         update_current_message,
     )
-    from daedalus_daemon.config import load_shared_config
+    from daedalus_daemon.config import load_daemon_config
     from daedalus_daemon.scanner import (
         scan_feature_file_projects,
         scan_parameter_file_projects,
@@ -64,7 +64,7 @@ else:
         post_parameter_files,
         update_current_message,
     )
-    from .config import load_shared_config
+    from .config import load_daemon_config
     from .scanner import scan_feature_file_projects, scan_parameter_file_projects
 
 
@@ -544,7 +544,7 @@ def run_codex_exec(
 
 
 def main() -> None:
-    config = load_shared_config()
+    config = load_daemon_config()
 
     while True:
         run_poll_cycle(config)

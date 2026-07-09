@@ -8,7 +8,7 @@ The agent prompt chat adds a simple prompt composer to the existing dashboard an
 - **Prompt Composer**: The MVP UI is one textarea and one send button on the existing dashboard.
 - **Purpose Split**: Feature-file loading uses `purpose = "feature_file_load"` and prompt submission uses `purpose = "agent_prompt"`.
 - **Prompt Payload**: The `agent_prompt` row stores the `message` as a JSON string with `directory` and `prompt` so the daemon can tell which repo should receive the request.
-- **Model Controls**: Codex model and reasoning options are hardcoded in shared JSON, then sent with each prompt payload.
+- **Model Controls**: Codex model and reasoning options are stored in frontend-local JSON, then sent with each prompt payload.
 - **Planning Mode**: Planning mode wraps the user prompt with a fixed instruction preamble before daemon execution.
 - **Targeted Feature Scope**: The chat panel keeps a separate `Targeted Features` chip row for the next outbound prompt only, and each prompt now carries a `targetedFeaturePaths` list of project-relative `feature_files/*.md` paths.
 - **Execution Loop**: The daemon now replaces the queued `agent_prompt` JSON with progress markers, runs `codex exec` inside the requested repo, and writes the latest prompt/reply pair into `daemon_payloads`.
@@ -20,8 +20,8 @@ The agent prompt chat adds a simple prompt composer to the existing dashboard an
 ## Relevant Files
 - `daedalus-site/app/feature-files-dashboard.tsx`: Existing dashboard that now includes the prompt composer and purpose-aware Supabase writes.
 - `shared/database/migrations/008_auth_scoped_daedalus.sql`: Adds the user-owned daemon payload row used for latest chat replies.
-- `daedalus-site/lib/agent-models.ts`: Server helper that loads the shared hardcoded model configuration for the dashboard.
-- `shared/agent_models.json`: Shared Codex provider model and reasoning options for the prompt composer and daemon payload.
+- `daedalus-site/lib/agent-models.ts`: Server helper that loads the frontend-owned model configuration for the dashboard.
+- `daedalus-site/config/agent_models.json`: Frontend-local Codex provider model and reasoning options for the prompt composer.
 - `shared/database/migrations/003_add_communication_purpose.sql`: Migration that adds the `purpose` column and backfills the feature-file row.
 - `shared/database/schema.sql`: Checked-in schema snapshot for the communications table.
 - `local-daemon/src/daedalus_daemon/communications.py`: Purpose-aware Supabase read and write helpers for the daemon.
@@ -50,3 +50,4 @@ HACKING
 - 2026-07-06: Hardened the daemon chat completion path so a newer queued prompt is preserved when an older codex run finishes instead of being overwritten by the completion marker.
 - 2026-07-06: Fixed the daemon chat handoff to send `promptId` and the rest of the reply payload in the correct order, and updated the daemon tests to cover the JSON state-marker flow used by queued prompt preservation.
 - 2026-07-08: Moved latest agent chat replies from the local Next cache route into user-owned Supabase daemon payloads.
+- 2026-07-08: Moved the model catalog into `daedalus-site/config/agent_models.json` so the prompt composer no longer treats frontend-only model choices as shared repo config.

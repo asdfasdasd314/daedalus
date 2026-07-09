@@ -1,27 +1,23 @@
-import json
 import os
+import tomllib
 from pathlib import Path
 
 
-def load_shared_config() -> dict:
+def load_daemon_config() -> dict:
     project_root = Path(__file__).resolve().parents[3]
-    config_path = project_root / "shared" / "supabase_config.json"
-    shared_config = json.loads(config_path.read_text(encoding="utf-8"))
     env_config = load_env_files([
         project_root / ".env",
         project_root / "local-daemon" / ".env",
     ])
+    parameter_config = load_parameter_file(
+        project_root / "parameter_files" / "feature-file-communications-system.toml",
+    )
 
     config = {
-        "daemonUserId": get_config_value(env_config, "DAEDALUS_USER_ID", shared_config, "daemonUserId"),
-        "pollIntervalMs": shared_config.get("pollIntervalMs", 5000),
-        "supabasePublishableKey": get_config_value(
-            env_config,
-            "SUPABASE_PUBLISHABLE_KEY",
-            shared_config,
-            "supabasePublishableKey",
-        ),
-        "supabaseUrl": get_config_value(env_config, "SUPABASE_URL", shared_config, "supabaseUrl"),
+        "daemonUserId": get_env_config_value(env_config, "DAEDALUS_USER_ID"),
+        "pollIntervalMs": get_poll_interval_ms(parameter_config),
+        "supabasePublishableKey": get_env_config_value(env_config, "SUPABASE_PUBLISHABLE_KEY"),
+        "supabaseUrl": get_env_config_value(env_config, "SUPABASE_URL"),
     }
     missing_keys = [
         key
@@ -34,6 +30,14 @@ def load_shared_config() -> dict:
         raise RuntimeError(f"Missing required daemon configuration: {missing_names}")
 
     return config
+
+
+def load_parameter_file(path: Path) -> dict:
+    if not path.exists():
+        raise RuntimeError(f"Missing required daemon parameter file: {path}")
+
+    with path.open("rb") as parameter_file:
+        return tomllib.load(parameter_file)
 
 
 def load_env_files(paths: list[Path]) -> dict[str, str]:
@@ -71,14 +75,17 @@ def parse_env_line(line: str) -> tuple[str, str] | None:
     return key, value
 
 
-def get_config_value(
-    env_config: dict[str, str],
-    env_key: str,
-    shared_config: dict,
-    shared_key: str,
-):
-    return (
-        os.environ.get(env_key)
-        or env_config.get(env_key)
-        or shared_config.get(shared_key)
-    )
+def get_env_config_value(env_config: dict[str, str], env_key: str):
+    return os.environ.get(env_key) or env_config.get(env_key)
+
+
+def get_poll_interval_ms(parameter_config: dict) -> int:
+    poll_interval_ms = parameter_config.get("poll_interval_ms")
+
+    if not isinstance(poll_interval_ms, int) or poll_interval_ms <= 0:
+        raise RuntimeError(
+            "Missing required daemon parameter: poll_interval_ms in "
+            "parameter_files/feature-file-communications-system.toml",
+        )
+
+    return poll_interval_ms

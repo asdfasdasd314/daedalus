@@ -10,7 +10,7 @@ from .communications import (
     PARAMETER_FILE_LOAD_PURPOSE,
     PARAMETER_FILE_UPDATE_PURPOSE,
 )
-from .config import load_shared_config
+from .config import load_daemon_config
 from .main import (
     run_agent_prompt_cycle,
     run_codex_exec,
@@ -31,7 +31,7 @@ __all__ = [
     "FEATURE_FILE_LOAD_PURPOSE",
     "PARAMETER_FILE_LOAD_PURPOSE",
     "PARAMETER_FILE_UPDATE_PURPOSE",
-    "load_shared_config",
+    "load_daemon_config",
     "run_agent_prompt_cycle",
     "run_codex_exec",
     "run_parameter_file_poll_cycle",
