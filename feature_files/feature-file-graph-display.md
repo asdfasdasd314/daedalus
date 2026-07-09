@@ -55,3 +55,4 @@ HACKING
 - 2026-07-09: Kept touch drags on the graph surface even when they begin over nodes, preserved zoom state across pinch updates, moved the ventures trigger up and out of the main drag lane, and tightened the zoom slider styling so mobile graph control feels smoother and more centered.
 - 2026-07-09: Replaced the mobile node tap path with graph-surface touch sessions, anchored pinch math to a stable viewport, sampled pan momentum from recent gesture history, and swapped the native vertical range input for a centered custom zoom rail.
 - 2026-07-09: Stopped tying graph readability to one shared zoom envelope by keeping node size absolute and letting the shell feed device-specific zoom bounds from the graph parameter file.
+- 2026-07-09: Increased `mobile_default_zoom` in the graph parameter file so phone layouts open closer into the same graph world by default.
