@@ -34,3 +34,4 @@ HACKING
 - 2026-07-05: Let the daemon reuse the `agent_prompt` row for lightweight progress markers so the UI can show prompt pickup and completion before the REST reply finishes rendering.
 - 2026-07-08: Reworked communications around authenticated user-owned rows and daemon payload storage so the hosted frontend and trusted daemon no longer use service-role access or local cache routes.
 - 2026-07-08: Split polling ownership so the daemon now reads `poll_interval_ms` from its own parameter file instead of inheriting cadence from frontend-owned shared config.
+- 2026-07-08: Replaced dashboard Supabase request call sites with a derived `currentUserId` value so hosted Next.js builds stop failing on nullable auth user narrowing inside async handlers.

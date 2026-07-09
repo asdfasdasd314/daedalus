@@ -188,6 +188,7 @@ export default function FeatureFilesDashboard({
   const agentPromptQueueRef = useRef<AgentPromptQueueEntry[]>([]);
   const latestChatRef = useRef<AgentChatExchange | null>(null);
   const currentUser = session?.user ?? null;
+  const currentUserId = currentUser?.id ?? "";
   const accessToken = session?.access_token ?? "";
 
   useEffect(() => {
@@ -287,7 +288,7 @@ export default function FeatureFilesDashboard({
           supabaseUrl,
           supabasePublishableKey,
           accessToken,
-          currentUser.id,
+          currentUserId,
           FEATURE_FILE_LOAD_PURPOSE,
         );
 
@@ -334,7 +335,7 @@ export default function FeatureFilesDashboard({
         supabaseUrl,
         supabasePublishableKey,
         accessToken,
-        currentUser.id,
+        currentUserId,
         FEATURE_FILES_PAYLOAD_KIND,
       );
       setProjects(body.projects ?? {});
@@ -362,7 +363,7 @@ export default function FeatureFilesDashboard({
         supabaseUrl,
         supabasePublishableKey,
         accessToken,
-        currentUser.id,
+        currentUserId,
         PARAMETER_FILES_PAYLOAD_KIND,
       );
       setParameterProjects(body.projects ?? {});
@@ -430,7 +431,7 @@ export default function FeatureFilesDashboard({
           supabaseUrl,
           supabasePublishableKey,
           accessToken,
-          currentUser.id,
+          currentUserId,
         );
 
         if (!isMounted) {
@@ -472,7 +473,7 @@ export default function FeatureFilesDashboard({
           supabaseUrl,
           supabasePublishableKey,
           accessToken,
-          currentUser.id,
+          currentUserId,
           AGENT_PROMPT_PURPOSE,
         );
 
@@ -511,7 +512,7 @@ export default function FeatureFilesDashboard({
           supabaseUrl,
           supabasePublishableKey,
           accessToken,
-          currentUser.id,
+          currentUserId,
           PARAMETER_FILE_LOAD_PURPOSE,
         );
 
@@ -558,7 +559,7 @@ export default function FeatureFilesDashboard({
           supabaseUrl,
           supabasePublishableKey,
           accessToken,
-          currentUser.id,
+          currentUserId,
           PARAMETER_FILE_UPDATE_PURPOSE,
         );
 
@@ -601,7 +602,7 @@ export default function FeatureFilesDashboard({
         supabaseUrl,
         supabasePublishableKey,
         accessToken,
-        currentUser.id,
+        currentUserId,
         PARAMETER_FILES_PAYLOAD_KIND,
       );
       setParameterProjects(body.projects ?? {});
@@ -651,7 +652,7 @@ export default function FeatureFilesDashboard({
           supabaseUrl,
           supabasePublishableKey,
           accessToken,
-          currentUser.id,
+          currentUserId,
         );
 
         if (!isMounted || !nextChat) {
@@ -780,7 +781,7 @@ export default function FeatureFilesDashboard({
       supabaseUrl,
       supabasePublishableKey,
       accessToken,
-      currentUser.id,
+      currentUserId,
       PARAMETER_FILE_UPDATE_PURPOSE,
       JSON.stringify({
         command: PARAMETER_FILE_UPDATE_COMMAND,
@@ -812,7 +813,7 @@ export default function FeatureFilesDashboard({
           supabaseUrl,
           supabasePublishableKey,
           accessToken,
-          currentUser.id,
+          currentUserId,
           FEATURE_FILE_LOAD_PURPOSE,
           CLIENT_LOAD_FEATURE_FILES,
         ),
@@ -820,7 +821,7 @@ export default function FeatureFilesDashboard({
           supabaseUrl,
           supabasePublishableKey,
           accessToken,
-          currentUser.id,
+          currentUserId,
           PARAMETER_FILE_LOAD_PURPOSE,
           CLIENT_LOAD_PARAMETER_FILES,
         ),
@@ -964,7 +965,7 @@ export default function FeatureFilesDashboard({
         supabaseUrl,
         supabasePublishableKey,
         accessToken,
-        currentUser.id,
+        currentUserId,
         AGENT_PROMPT_PURPOSE,
         JSON.stringify({
           promptId: queueEntry.promptId,
@@ -1192,7 +1193,7 @@ export default function FeatureFilesDashboard({
         supabaseUrl,
         supabasePublishableKey,
         accessToken,
-        currentUser.id,
+        currentUserId,
         ventureName,
         details || null,
         projectDirectory || null,
@@ -1247,7 +1248,7 @@ export default function FeatureFilesDashboard({
         supabaseUrl,
         supabasePublishableKey,
         accessToken,
-        currentUser.id,
+        currentUserId,
         editingVentureId,
         {
           details: details || null,
@@ -1285,7 +1286,7 @@ export default function FeatureFilesDashboard({
         supabaseUrl,
         supabasePublishableKey,
         accessToken,
-        currentUser.id,
+        currentUserId,
         ventureId,
         { progress_state: progressState },
       );
@@ -1314,7 +1315,7 @@ export default function FeatureFilesDashboard({
         supabaseUrl,
         supabasePublishableKey,
         accessToken,
-        currentUser.id,
+        currentUserId,
         ventureId,
       );
       setVentures((currentVentures) =>
@@ -1716,7 +1717,7 @@ export default function FeatureFilesDashboard({
                         Settings
                       </p>
                       <p className="mt-2 break-all text-sm leading-6 text-slate-200">
-                        Signed in as {currentUser.email ?? currentUser.id}
+                        Signed in as {currentUser.email ?? currentUserId}
                       </p>
                     </div>
                     <div className="grid gap-3 rounded-[1.5rem] border border-white/10 bg-black/25 p-4">
@@ -1724,14 +1725,14 @@ export default function FeatureFilesDashboard({
                         User id
                       </p>
                       <code className="break-all rounded-[1.25rem] border border-white/10 bg-slate-950 px-4 py-3 text-sm text-cyan-100">
-                        {currentUser.id}
+                        {currentUserId}
                       </code>
                       <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">
                         Daemon .env
                       </p>
                       <pre className="whitespace-pre-wrap break-all rounded-[1.25rem] border border-white/10 bg-slate-950 px-4 py-3 text-sm leading-6 text-slate-100">
                         {[
-                          `DAEDALUS_USER_ID=${currentUser.id}`,
+                          `DAEDALUS_USER_ID=${currentUserId}`,
                           `SUPABASE_URL=${supabaseUrl}`,
                           `SUPABASE_PUBLISHABLE_KEY=${supabasePublishableKey}`,
                         ].join("\n")}
