@@ -1,7 +1,7 @@
 # Feature-File Graph Display
 
 ## Summary
-The feature-file graph display turns loaded feature files into a full-screen 2D SVG node map inside the Next.js frontend. Each feature file now carries both its own path and markdown content, becomes a circular node labeled from its first H1, can draw project-scoped connections to other feature files referenced by path, and reports node selection plus shared zoom changes back to the workspace shell instead of owning the feature-detail overlay itself. The shell can also suspend or resume the graph's spring motion through an external physics flag while keeping hover and click inspection available and blocking direct node repositioning when physics is off.
+The feature-file graph display turns loaded feature files into a full-screen 2D SVG node map inside the Next.js frontend. Each feature file now carries both its own path and markdown content, becomes a circular node labeled from its first H1, can draw project-scoped connections to other feature files referenced by path, and reports node selection plus shared zoom changes back to the workspace shell instead of owning the feature-detail overlay itself. The shell can also suspend or resume the graph's spring motion through an external physics flag, and it can hide the graph's right-edge zoom rail without affecting wheel, pinch, or keyboard zoom paths.
 
 ## Key Points
 - **Node Labels**: The display reads the first markdown line that starts with `# ` and uses the remaining text as the node name.
@@ -18,6 +18,7 @@ The feature-file graph display turns loaded feature files into a full-screen 2D 
 - **Node Dragging**: Desktop pointer users can still drag nodes directly in world space, while coarse-pointer mobile sessions prioritize tap, pan, and pinch instead of node repositioning.
 - **Physics Gate**: The graph's spring layout loop now respects a shell-owned enable flag so the top-right menu can freeze or resume node motion, and physics-off mode also blocks direct node repositioning without affecting hover or click selection.
 - **Shell Controls**: The graph now surfaces a compact upper-left ventures trigger on mobile, a circular bottom new-feature trigger, and a custom right-edge zoom slider while keeping overlay state in the workspace shell.
+- **Zoom Rail Visibility**: The shell can slide the right-edge zoom slider offscreen for a cleaner workspace view while leaving the underlying zoom mechanics intact.
 - **Zoom Contract**: The graph no longer hardcodes one global zoom range and instead renders against shell-provided min/max bounds so mobile and desktop can share the same world with different readable framing.
 - **Touch Sessions**: Mobile one-finger gestures always start as graph-surface pans, only resolve into node opens on clean tap release, and derive inertia from recent gesture samples instead of noisy last-frame deltas.
 - **Node Selection Callback**: Clicking or tapping a node now hands feature identity back to the workspace shell through a dedicated selection path so touch sessions do not rely on inconsistent browser click timing.
@@ -63,3 +64,4 @@ HACKING
 - 2026-07-09: Restored mobile inline node labels once zoom reaches `mobile_label_min_zoom` so feature names stay readable when zoomed into dense clusters without paying label cost at overview zoom levels.
 - 2026-07-09: Added a shell-controlled physics enable flag so the graph can freeze or resume spring motion from the workspace menu while leaving drag and zoom handling intact.
 - 2026-07-09: Hardened the physics-off path so nodes can no longer be repositioned by pointer drag while hover and click-to-open selection remain available.
+- 2026-07-09: Added shell-driven zoom-rail visibility so the graph's right-side slider can move offscreen without changing pinch, wheel, or keyboard zoom.

@@ -204,6 +204,8 @@ export default function FeatureFilesDashboard({
   const [venturesDrawerOpen, setVenturesDrawerOpen] = useState(false);
   const [isWorkspaceMenuOpen, setIsWorkspaceMenuOpen] = useState(false);
   const [isGraphPhysicsEnabled, setIsGraphPhysicsEnabled] = useState(true);
+  const [isGraphZoomSliderVisible, setIsGraphZoomSliderVisible] =
+    useState(true);
   const [isLoadingVentures, setIsLoadingVentures] = useState(false);
   const [isCreatingVenture, setIsCreatingVenture] = useState(false);
   const [ventures, setVentures] = useState<VentureItem[]>([]);
@@ -1447,6 +1449,11 @@ export default function FeatureFilesDashboard({
     setIsGraphPhysicsEnabled((currentValue) => !currentValue);
   }
 
+  function handleToggleGraphZoomSlider() {
+    closeWorkspaceMenu();
+    setIsGraphZoomSliderVisible((currentValue) => !currentValue);
+  }
+
   function handleSignOutRequest() {
     closeWorkspaceMenu();
     void signOut();
@@ -1761,10 +1768,10 @@ export default function FeatureFilesDashboard({
   }
 
   const venturesDrawerClassName = isMobileLayout
-    ? "pointer-events-auto absolute inset-3 flex min-w-0 flex-col overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/94 shadow-[0_28px_100px_rgba(2,6,23,0.72)] backdrop-blur"
+    ? "pointer-events-auto absolute inset-3 z-30 flex min-w-0 flex-col overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/94 shadow-[0_28px_100px_rgba(2,6,23,0.72)] backdrop-blur"
     : "pointer-events-auto absolute left-4 top-28 bottom-6 flex w-[min(28rem,calc(100vw-8rem))] flex-col overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/90 shadow-[0_28px_100px_rgba(2,6,23,0.72)] backdrop-blur";
   const primaryOverlayClassName = isMobileLayout
-    ? "pointer-events-auto absolute inset-3 flex min-w-0 flex-col overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/94 shadow-[0_28px_100px_rgba(2,6,23,0.72)] backdrop-blur"
+    ? "pointer-events-auto absolute inset-3 z-30 flex min-w-0 flex-col overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/94 shadow-[0_28px_100px_rgba(2,6,23,0.72)] backdrop-blur"
     : "pointer-events-auto absolute right-4 top-28 bottom-6 flex min-w-0 w-[min(44rem,calc(100vw-10rem))] flex-col overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/90 shadow-[0_28px_100px_rgba(2,6,23,0.72)] backdrop-blur";
 
   if (authStatus === "checking") {
@@ -1867,6 +1874,7 @@ export default function FeatureFilesDashboard({
         onZoomChange={setGraphZoom}
         projects={projects ?? {}}
         selectedFeatureFilePath={selectedFeatureSession?.filePath ?? ""}
+        showZoomSlider={isGraphZoomSliderVisible}
         zoom={graphZoom}
       />
 
@@ -1930,6 +1938,22 @@ export default function FeatureFilesDashboard({
                   <span>{isGraphPhysicsEnabled ? "Physics on" : "Physics off"}</span>
                   <span className="text-[11px] uppercase tracking-[0.2em] text-slate-400">
                     Toggle
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  role="menuitemcheckbox"
+                  aria-checked={isGraphZoomSliderVisible}
+                  onClick={handleToggleGraphZoomSlider}
+                  className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-semibold text-slate-100 transition hover:bg-white/6"
+                >
+                  <span>
+                    {isGraphZoomSliderVisible
+                      ? "Zoom slider on"
+                      : "Zoom slider off"}
+                  </span>
+                  <span className="text-[11px] uppercase tracking-[0.2em] text-slate-400">
+                    {isGraphZoomSliderVisible ? "Visible" : "Hidden"}
                   </span>
                 </button>
                 <button

@@ -1,7 +1,7 @@
 # Feature-First Graph Workspace Shell
 
 ## Summary
-The feature-first graph workspace shell owns the responsive workspace framing around the feature graph in the Next.js frontend. It keeps the graph mounted as the background canvas, routes the ventures drawer and primary overlays, surfaces a compact hamburger menu for refresh, physics, and sign-out controls, reuses the shared agent session UI for both new-feature creation and node-focused feature editing, and depends on true SVG-space coordinate mapping so mobile taps stay aligned when the graph is letterboxed inside the fullscreen shell.
+The feature-first graph workspace shell owns the responsive workspace framing around the feature graph in the Next.js frontend. It keeps the graph mounted as the background canvas, routes the ventures drawer and primary overlays, surfaces a compact hamburger menu for refresh, physics, zoom-rail visibility, and sign-out controls, reuses the shared agent session UI for both new-feature creation and node-focused feature editing, and depends on true SVG-space coordinate mapping so mobile taps stay aligned when the graph is letterboxed inside the fullscreen shell.
 
 ## Key Points
 - **Graph-First Default**: The feature graph remains visible as the base workspace on desktop and mobile instead of living under a persistent left control panel.
@@ -10,6 +10,7 @@ The feature-first graph workspace shell owns the responsive workspace framing ar
 - **Device Zoom Profiles**: The shell chooses separate mobile and desktop zoom defaults and bounds so smaller screens stay closer to the same graph world instead of zooming the node system itself.
 - **Shared Chat Session UI**: The shell mounts the same agent session panel in both the new-feature overlay and the feature-detail chat tab so prompt transport stays unchanged.
 - **Workspace Utilities**: A compact hamburger menu now owns refresh, physics, and sign-out actions while the inline load-error state stays in the same utility area instead of a persistent message HUD or settings panel.
+- **Zoom Visibility Toggle**: The same hamburger menu can hide or restore the graph's right-edge zoom slider while leaving wheel, pinch, and keyboard zoom paths active.
 - **Physics Toggle Ownership**: The shell owns the current graph-physics enablement flag and passes it into the graph so the menu can freeze or resume node motion without changing the graph's drag and zoom affordances.
 - **Mobile Fit Policy**: The shell keeps mobile overlays viewport-safe by relying on compact project labels in the shared chat panel and by leaving the graph mounted behind full-screen-ish sheets instead of shifting the whole workspace layout sideways.
 - **Mobile Hit Alignment**: The shell's fullscreen mobile mount depends on the graph converting touch and wheel coordinates through the SVG's actual transformed space instead of proportional element-rect math, because the preserved `viewBox` can letterbox on tall screens.
@@ -17,7 +18,7 @@ The feature-first graph workspace shell owns the responsive workspace framing ar
 
 ## Relevant Files
 - `daedalus-site/app/feature-files-dashboard.tsx`: Main workspace shell that owns overlay routing, responsive layout rules, venture drawer presentation, and feature-detail tabs.
-- `daedalus-site/app/feature-file-graph.tsx`: Graph canvas that the shell mounts full-screen and whose SVG coordinate conversion must stay aligned on mobile.
+- `daedalus-site/app/feature-file-graph.tsx`: Graph canvas that the shell mounts full-screen, including the zoom rail that the shell can hide or restore.
 - `daedalus-site/app/agent-session-panel.tsx`: Shared chat session UI reused by the new-feature and feature-detail overlays.
 - `daedalus-site/app/feature-workspace-utils.ts`: Shared feature-path and feature-label helpers used across the shell overlays.
 - `parameter_files/feature-first-graph-workspace-shell.toml`: Sibling parameter file placeholder for the workspace shell feature.
@@ -36,3 +37,5 @@ HACKING
 - 2026-07-09: Tightened the ventures sheet to hide horizontal overflow and reused the shared root-relative project labels there so mobile drawer content stays inside the viewport without showing absolute paths.
 - 2026-07-09: Fixed the mobile graph tap dead-zone by routing pointer and wheel coordinates through the SVG's transformed screen matrix so fullscreen letterboxing no longer shifts node hit testing or zoom anchoring.
 - 2026-07-09: Replaced the top-right refresh and sign-out pair with a single hamburger menu that now also toggles shell-owned graph physics and keeps the shell error pill stacked underneath it.
+- 2026-07-09: Added a hamburger-menu zoom visibility toggle that can slide the graph's right-edge zoom rail offscreen without affecting pinch or wheel zoom.
+- 2026-07-09: Raised mobile ventures and primary overlay sheets to `z-30` so their close controls sit above the `z-20` workspace hamburger instead of overlapping underneath it.

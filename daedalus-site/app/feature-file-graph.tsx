@@ -88,6 +88,7 @@ type FeatureFileGraphProps = {
   projects: FeatureFileProjects;
   selectedFeatureFilePath: string;
   physicsEnabled: boolean;
+  showZoomSlider: boolean;
   zoom: number;
 };
 
@@ -424,6 +425,7 @@ export default function FeatureFileGraph({
   projects,
   selectedFeatureFilePath,
   physicsEnabled,
+  showZoomSlider,
   zoom,
 }: FeatureFileGraphProps) {
   const graphData = useMemo(() => buildGraphData(projects), [projects]);
@@ -1430,7 +1432,14 @@ export default function FeatureFileGraph({
         +
       </button>
 
-      <div className="pointer-events-auto absolute right-3 top-1/2 flex -translate-y-1/2 flex-col items-center gap-3 rounded-[1.5rem] border border-white/10 bg-slate-950/82 px-3 py-4 shadow-[0_20px_60px_rgba(2,6,23,0.45)] backdrop-blur">
+      <div
+        aria-hidden={!showZoomSlider}
+        className={`pointer-events-auto absolute right-3 top-1/2 flex -translate-y-1/2 flex-col items-center gap-3 rounded-[1.5rem] border border-white/10 bg-slate-950/82 px-3 py-4 shadow-[0_20px_60px_rgba(2,6,23,0.45)] backdrop-blur transition-all duration-200 ${
+          showZoomSlider
+            ? "translate-x-0 opacity-100"
+            : "translate-x-[calc(100%+0.75rem)] opacity-0 pointer-events-none"
+        }`}
+      >
         <span className="text-sm font-semibold text-white">+</span>
         <div
           role="slider"
@@ -1438,7 +1447,7 @@ export default function FeatureFileGraph({
           aria-valuemin={minZoom}
           aria-valuemax={maxZoom}
           aria-valuenow={zoom}
-          tabIndex={0}
+          tabIndex={showZoomSlider ? 0 : -1}
           onPointerCancel={handleZoomSliderPointerEnd}
           onPointerDown={handleZoomSliderPointerDown}
           onPointerMove={handleZoomSliderPointerMove}
