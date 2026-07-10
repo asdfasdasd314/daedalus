@@ -5,3 +5,4 @@ desktop_default_zoom = 1.0
 mobile_min_zoom = 0.60
 mobile_max_zoom = 7.0
 mobile_default_zoom = 1.0
+mobile_label_min_zoom = 2.2

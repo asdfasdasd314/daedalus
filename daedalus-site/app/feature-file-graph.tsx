@@ -80,6 +80,7 @@ export type FeatureGraphSelection = {
 type FeatureFileGraphProps = {
   maxZoom: number;
   minZoom: number;
+  mobileLabelMinZoom: number;
   onNodeSelect: (selection: FeatureGraphSelection) => void;
   onOpenNewFeature: () => void;
   onOpenVentures: () => void;
@@ -403,9 +404,18 @@ function getNodeGlowRadius(node: FeatureNode, isCoarsePointer: boolean) {
     : baseRadius;
 }
 
+function shouldShowInlineNodeLabels(
+  isCoarsePointer: boolean,
+  zoom: number,
+  mobileLabelMinZoom: number,
+) {
+  return !isCoarsePointer || zoom >= mobileLabelMinZoom;
+}
+
 export default function FeatureFileGraph({
   maxZoom,
   minZoom,
+  mobileLabelMinZoom,
   onNodeSelect,
   onOpenNewFeature,
   onOpenVentures,
@@ -1231,6 +1241,11 @@ export default function FeatureFileGraph({
             const fillOpacity = 0.56 + node.connectionIntensity * 0.36;
             const strokeOpacity = 0.72 + node.connectionIntensity * 0.28;
             const showGlowFilter = !isCoarsePointer;
+            const showInlineLabels = shouldShowInlineNodeLabels(
+              isCoarsePointer,
+              viewport.zoom,
+              mobileLabelMinZoom,
+            );
 
             return (
               <g
@@ -1303,7 +1318,7 @@ export default function FeatureFileGraph({
                     </g>
                   </g>
                 ) : null}
-                {!isCoarsePointer ? (
+                {showInlineLabels ? (
                   <>
                     <text
                       x="0"

@@ -59,6 +59,7 @@ const DEFAULT_DESKTOP_ZOOM = 1;
 const DEFAULT_MOBILE_MIN_ZOOM = 0.78;
 const DEFAULT_MOBILE_MAX_ZOOM = 4.1;
 const DEFAULT_MOBILE_ZOOM = 1.45;
+const DEFAULT_MOBILE_LABEL_MIN_ZOOM = 2.2;
 const GRAPH_PARAMETER_FILE_PATH = "parameter_files/feature-file-graph-display.toml";
 
 type AuthMode = "sign-in" | "sign-up";
@@ -1742,6 +1743,7 @@ export default function FeatureFilesDashboard({
       <FeatureFileGraph
         maxZoom={graphZoomSettings.maxZoom}
         minZoom={graphZoomSettings.minZoom}
+        mobileLabelMinZoom={graphZoomSettings.mobileLabelMinZoom}
         onNodeSelect={handleFeatureNodeSelect}
         onOpenNewFeature={openNewFeatureOverlay}
         onOpenVentures={toggleVenturesDrawer}
@@ -2944,11 +2946,21 @@ function getGraphZoomSettings(
     isMobileLayout ? "mobile_default_zoom" : "desktop_default_zoom",
     isMobileLayout ? DEFAULT_MOBILE_ZOOM : DEFAULT_DESKTOP_ZOOM,
   );
+  const mobileLabelMinZoom = getNumericParameterValue(
+    parsedVariables,
+    "mobile_label_min_zoom",
+    DEFAULT_MOBILE_LABEL_MIN_ZOOM,
+  );
 
   return {
     defaultZoom: clampNumber(defaultZoom, safeMinZoom, safeMaxZoom),
     maxZoom: safeMaxZoom,
     minZoom: safeMinZoom,
+    mobileLabelMinZoom: clampNumber(
+      mobileLabelMinZoom,
+      safeMinZoom,
+      safeMaxZoom,
+    ),
   };
 }
 
