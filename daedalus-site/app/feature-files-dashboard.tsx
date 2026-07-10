@@ -202,6 +202,8 @@ export default function FeatureFilesDashboard({
   const [selectedFeatureSession, setSelectedFeatureSession] =
     useState<SelectedFeatureSession | null>(null);
   const [venturesDrawerOpen, setVenturesDrawerOpen] = useState(false);
+  const [isWorkspaceMenuOpen, setIsWorkspaceMenuOpen] = useState(false);
+  const [isGraphPhysicsEnabled, setIsGraphPhysicsEnabled] = useState(true);
   const [isLoadingVentures, setIsLoadingVentures] = useState(false);
   const [isCreatingVenture, setIsCreatingVenture] = useState(false);
   const [ventures, setVentures] = useState<VentureItem[]>([]);
@@ -224,6 +226,10 @@ export default function FeatureFilesDashboard({
     useState("");
   const [editingVentureSelectedFeaturePath, setEditingVentureSelectedFeaturePath] =
     useState("");
+  const [isConfirmingClearCompletedVentures, setIsConfirmingClearCompletedVentures] =
+    useState(false);
+  const [isClearingCompletedVentures, setIsClearingCompletedVentures] =
+    useState(false);
   const [savingVentureId, setSavingVentureId] = useState("");
   const [updatingProgressVentureId, setUpdatingProgressVentureId] =
     useState("");
@@ -236,6 +242,7 @@ export default function FeatureFilesDashboard({
   const clearedAgentChatPrompt = useRef("");
   const agentPromptQueueRef = useRef<AgentPromptQueueEntry[]>([]);
   const graphZoomProfileRef = useRef("");
+  const workspaceMenuRef = useRef<HTMLDivElement | null>(null);
   const latestChatRef = useRef<AgentChatExchange | null>(null);
   const currentUser = session?.user ?? null;
   const currentUserId = currentUser?.id ?? "";
@@ -352,6 +359,40 @@ export default function FeatureFilesDashboard({
       mediaQuery.removeEventListener("change", syncLayoutMode);
     };
   }, []);
+
+  useEffect(() => {
+    if (!isWorkspaceMenuOpen) {
+      return;
+    }
+
+    function handlePointerDown(event: PointerEvent) {
+      const target = event.target;
+
+      if (!(target instanceof Node)) {
+        return;
+      }
+
+      if (workspaceMenuRef.current?.contains(target)) {
+        return;
+      }
+
+      setIsWorkspaceMenuOpen(false);
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setIsWorkspaceMenuOpen(false);
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isWorkspaceMenuOpen]);
 
   const graphZoomSettings = useMemo(
     () => getGraphZoomSettings(parameterProjects, isMobileLayout),
@@ -961,6 +1002,7 @@ export default function FeatureFilesDashboard({
 
   async function signOut() {
     setAuthError("");
+    setIsWorkspaceMenuOpen(false);
     await supabase.auth.signOut();
     setSession(null);
     setProjects(null);
@@ -1292,6 +1334,10 @@ export default function FeatureFilesDashboard({
     projects ?? {},
     selectedVenture?.featureFilePaths ?? [],
   );
+  const completedVentures = ventures.filter(
+    (venture) => venture.progressState === "completed",
+  );
+  const completedVenturesCount = completedVentures.length;
   const parameterFilesByProject = useMemo(() => {
     const nextMap = new Map<string, Map<string, ParameterFileRecord>>();
 
@@ -1369,6 +1415,7 @@ export default function FeatureFilesDashboard({
 
   function closeVenturesDrawer() {
     setVenturesDrawerOpen(false);
+    setIsConfirmingClearCompletedVentures(false);
   }
 
   function toggleVenturesDrawer() {
@@ -1380,6 +1427,29 @@ export default function FeatureFilesDashboard({
     }
 
     setVenturesDrawerOpen((currentValue) => !currentValue);
+  }
+
+  function toggleWorkspaceMenu() {
+    setIsWorkspaceMenuOpen((currentValue) => !currentValue);
+  }
+
+  function closeWorkspaceMenu() {
+    setIsWorkspaceMenuOpen(false);
+  }
+
+  function handleRefreshDevEnvironment() {
+    closeWorkspaceMenu();
+    void requestDevEnvironment();
+  }
+
+  function handleToggleGraphPhysics() {
+    closeWorkspaceMenu();
+    setIsGraphPhysicsEnabled((currentValue) => !currentValue);
+  }
+
+  function handleSignOutRequest() {
+    closeWorkspaceMenu();
+    void signOut();
   }
 
   function handleFeatureNodeSelect(selection: FeatureGraphSelection) {
@@ -1615,7 +1685,12 @@ export default function FeatureFilesDashboard({
   }
 
   async function deleteVenture(ventureId: string) {
-    if (deletingVentureId || !currentUser || !accessToken) {
+    if (
+      deletingVentureId ||
+      isClearingCompletedVentures ||
+      !currentUser ||
+      !accessToken
+    ) {
       return;
     }
 
@@ -1641,6 +1716,47 @@ export default function FeatureFilesDashboard({
       setVentureError("Unable to delete the venture right now.");
     } finally {
       setDeletingVentureId("");
+    }
+  }
+
+  async function clearCompletedVentures() {
+    if (
+      isClearingCompletedVentures ||
+      completedVenturesCount === 0 ||
+      !currentUser ||
+      !accessToken
+    ) {
+      return;
+    }
+
+    setIsClearingCompletedVentures(true);
+    setVentureError("");
+
+    try {
+      await deleteCompletedVenturesRows(
+        supabaseUrl,
+        supabasePublishableKey,
+        accessToken,
+        currentUserId,
+      );
+      setVentures((currentVentures) =>
+        currentVentures.filter(
+          (venture) => venture.progressState !== "completed",
+        ),
+      );
+
+      if (
+        editingVentureId &&
+        completedVentures.some((venture) => venture.id === editingVentureId)
+      ) {
+        cancelEditingVenture();
+      }
+
+      setIsConfirmingClearCompletedVentures(false);
+    } catch {
+      setVentureError("Unable to clear completed ventures right now.");
+    } finally {
+      setIsClearingCompletedVentures(false);
     }
   }
 
@@ -1744,6 +1860,7 @@ export default function FeatureFilesDashboard({
         maxZoom={graphZoomSettings.maxZoom}
         minZoom={graphZoomSettings.minZoom}
         mobileLabelMinZoom={graphZoomSettings.mobileLabelMinZoom}
+        physicsEnabled={isGraphPhysicsEnabled}
         onNodeSelect={handleFeatureNodeSelect}
         onOpenNewFeature={openNewFeatureOverlay}
         onOpenVentures={toggleVenturesDrawer}
@@ -1754,65 +1871,88 @@ export default function FeatureFilesDashboard({
       />
 
       <div className="pointer-events-none absolute inset-0">
-        <div className="pointer-events-auto absolute right-4 top-4 flex items-center gap-2 sm:gap-3">
-          <button
-            type="button"
-            onClick={requestDevEnvironment}
-            aria-label="Refresh dev environment"
-            title="Refresh dev environment"
-            className={`inline-flex h-11 w-11 items-center justify-center rounded-full border shadow-[0_20px_60px_rgba(2,6,23,0.32)] transition sm:h-12 sm:w-12 ${
-              devEnvironmentState === "error"
-                ? "border-rose-300/30 bg-rose-200 text-rose-950 hover:bg-rose-100"
-                : "border-white/10 bg-white text-slate-950 hover:bg-slate-200"
-            }`}
-          >
-            <svg
-              aria-hidden="true"
-              className={`h-5 w-5 ${devEnvironmentState === "loading" ? "animate-spin" : ""}`}
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+        <div className="pointer-events-auto absolute right-4 top-4 z-20 flex flex-col items-end gap-2">
+          <div ref={workspaceMenuRef} className="relative">
+            <button
+              type="button"
+              onClick={toggleWorkspaceMenu}
+              aria-expanded={isWorkspaceMenuOpen}
+              aria-haspopup="menu"
+              aria-label="Workspace menu"
+              title="Workspace menu"
+              className={`inline-flex h-11 w-11 items-center justify-center rounded-full border shadow-[0_20px_60px_rgba(2,6,23,0.32)] transition sm:h-12 sm:w-12 ${
+                isWorkspaceMenuOpen
+                  ? "border-cyan-300/30 bg-cyan-200 text-slate-950 hover:bg-cyan-100"
+                  : "border-white/10 bg-white text-slate-950 hover:bg-slate-200"
+              }`}
             >
-              <path d="M20 11a8 8 0 0 0-13.66-5.66L4 7.72" />
-              <path d="M4 4v3.72h3.72" />
-              <path d="M4 13a8 8 0 0 0 13.66 5.66L20 16.28" />
-              <path d="M20 20v-3.72h-3.72" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              void signOut();
-            }}
-            aria-label="Sign out"
-            title="Sign out"
-            className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-slate-950/82 text-slate-200 shadow-[0_20px_60px_rgba(2,6,23,0.32)] transition hover:bg-slate-900 sm:h-12 sm:w-12"
-          >
-            <svg
-              aria-hidden="true"
-              className="h-5 w-5"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-              <path d="M16 17l5-5-5-5" />
-              <path d="M21 12H9" />
-            </svg>
-          </button>
-        </div>
+              <svg
+                aria-hidden="true"
+                className="h-5 w-5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+              >
+                <path d="M5 7h14" />
+                <path d="M5 12h14" />
+                <path d="M5 17h14" />
+              </svg>
+            </button>
 
-        {error ? (
-          <div className="pointer-events-auto absolute right-4 top-18 max-w-[min(22rem,calc(100vw-2rem))] rounded-[1.25rem] border border-rose-400/20 bg-rose-500/14 px-4 py-3 text-sm text-rose-100 shadow-[0_24px_80px_rgba(127,29,29,0.35)] backdrop-blur">
-            {error}
+            {isWorkspaceMenuOpen ? (
+              <div
+                role="menu"
+                aria-label="Workspace controls"
+                className="absolute right-0 top-full mt-2 w-[min(16rem,calc(100vw-2rem))] overflow-hidden rounded-[1.35rem] border border-white/10 bg-slate-950/96 shadow-[0_24px_80px_rgba(2,6,23,0.55)] backdrop-blur"
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={handleRefreshDevEnvironment}
+                  disabled={isLoadingFeatureFiles || isLoadingParameterFiles}
+                  className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-semibold text-slate-100 transition hover:bg-white/6 disabled:cursor-not-allowed disabled:text-slate-500"
+                >
+                  <span>Refresh dev environment</span>
+                  {isLoadingFeatureFiles || isLoadingParameterFiles ? (
+                    <span className="text-[11px] uppercase tracking-[0.2em] text-cyan-200">
+                      Loading
+                    </span>
+                  ) : null}
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={handleToggleGraphPhysics}
+                  className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-semibold text-slate-100 transition hover:bg-white/6"
+                >
+                  <span>{isGraphPhysicsEnabled ? "Physics on" : "Physics off"}</span>
+                  <span className="text-[11px] uppercase tracking-[0.2em] text-slate-400">
+                    Toggle
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={handleSignOutRequest}
+                  className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-semibold text-slate-100 transition hover:bg-white/6"
+                >
+                  <span>Sign out</span>
+                  <span className="text-[11px] uppercase tracking-[0.2em] text-slate-400">
+                    Session
+                  </span>
+                </button>
+              </div>
+            ) : null}
           </div>
-        ) : null}
+
+          {error ? (
+            <div className="max-w-[min(22rem,calc(100vw-2rem))] rounded-[1.25rem] border border-rose-400/20 bg-rose-500/14 px-4 py-3 text-sm text-rose-100 shadow-[0_24px_80px_rgba(127,29,29,0.35)] backdrop-blur">
+              {error}
+            </div>
+          ) : null}
+        </div>
 
         {venturesDrawerOpen ? (
           <aside className={`${venturesDrawerClassName} overflow-x-hidden`}>
@@ -2004,6 +2144,60 @@ export default function FeatureFilesDashboard({
                   </div>
                 ) : (
                   <div className="grid min-w-0 max-w-full gap-4 overflow-x-hidden">
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-[1.25rem] border border-white/10 bg-slate-950/45 px-4 py-3">
+                      <p className="text-sm text-slate-300">
+                        {completedVenturesCount === 0
+                          ? "No completed ventures to clear yet."
+                          : isConfirmingClearCompletedVentures
+                            ? `Confirm clearing ${completedVenturesCount} completed ${
+                                completedVenturesCount === 1
+                                  ? "venture"
+                                  : "ventures"
+                              }.`
+                          : `${completedVenturesCount} completed ${
+                              completedVenturesCount === 1
+                                ? "venture is"
+                                : "ventures are"
+                            } ready to clear.`}
+                      </p>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (isConfirmingClearCompletedVentures) {
+                              void clearCompletedVentures();
+                              return;
+                            }
+
+                            setIsConfirmingClearCompletedVentures(true);
+                          }}
+                          disabled={
+                            completedVenturesCount === 0 ||
+                            isClearingCompletedVentures
+                          }
+                          className="rounded-full border border-rose-400/20 bg-rose-500/10 px-4 py-2 text-sm font-semibold text-rose-100 transition hover:bg-rose-500/15 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
+                        >
+                          {isClearingCompletedVentures
+                            ? "Clearing..."
+                            : isConfirmingClearCompletedVentures
+                              ? "Confirm"
+                              : "Clear completed"}
+                        </button>
+                        {isConfirmingClearCompletedVentures ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setIsConfirmingClearCompletedVentures(false)
+                            }
+                            disabled={isClearingCompletedVentures}
+                            className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
+                          >
+                            Undo
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+
                     <div className="grid min-w-0 gap-2">
                       <label
                         htmlFor="selected-venture"
@@ -2803,6 +2997,29 @@ async function deleteVentureRow(
 
   if (!response.ok) {
     throw new Error("supabase venture delete failed");
+  }
+}
+
+async function deleteCompletedVenturesRows(
+  supabaseUrl: string,
+  supabasePublishableKey: string,
+  accessToken: string,
+  userId: string,
+) {
+  const url = new URL("/rest/v1/ventures", supabaseUrl);
+  url.searchParams.set("progress_state", "eq.completed");
+  url.searchParams.set("user_id", `eq.${userId}`);
+
+  const response = await fetch(url, {
+    method: "DELETE",
+    headers: getAuthenticatedSupabaseHeaders(
+      supabasePublishableKey,
+      accessToken,
+    ),
+  });
+
+  if (!response.ok) {
+    throw new Error("supabase completed venture delete failed");
   }
 }
 

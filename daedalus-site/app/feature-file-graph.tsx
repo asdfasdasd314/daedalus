@@ -87,6 +87,7 @@ type FeatureFileGraphProps = {
   onZoomChange: (zoom: number) => void;
   projects: FeatureFileProjects;
   selectedFeatureFilePath: string;
+  physicsEnabled: boolean;
   zoom: number;
 };
 
@@ -422,6 +423,7 @@ export default function FeatureFileGraph({
   onZoomChange,
   projects,
   selectedFeatureFilePath,
+  physicsEnabled,
   zoom,
 }: FeatureFileGraphProps) {
   const graphData = useMemo(() => buildGraphData(projects), [projects]);
@@ -443,6 +445,7 @@ export default function FeatureFileGraph({
   const pinchSessionRef = useRef<PinchSession | null>(null);
   const sliderDragRef = useRef<SliderDragState | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const canDragNodes = physicsEnabled && !isCoarsePointer;
 
   useEffect(() => {
     const nextZoom = viewportRef.current.zoom;
@@ -501,6 +504,29 @@ export default function FeatureFileGraph({
   }, [maxZoom, minZoom, zoom]);
 
   useEffect(() => {
+    if (physicsEnabled) {
+      return;
+    }
+
+    const nextNodes = nodesRef.current.map((node) => {
+      if (node.vx === 0 && node.vy === 0) {
+        return node;
+      }
+
+      return {
+        ...node,
+        vx: 0,
+        vy: 0,
+      };
+    });
+
+    nodesRef.current = nextNodes;
+    setNodes(nextNodes);
+    setDraggedNodeId("");
+    nodeDragRef.current = null;
+  }, [physicsEnabled]);
+
+  useEffect(() => {
     if (graphData.nodes.length === 0) {
       return;
     }
@@ -508,14 +534,17 @@ export default function FeatureFileGraph({
     let frameId = 0;
 
     function animate() {
-      nodesRef.current = tickNodes(
-        nodesRef.current,
-        graphData.clusters,
-        graphData.edges,
-        draggedNodeId,
-      );
+      if (physicsEnabled) {
+        nodesRef.current = tickNodes(
+          nodesRef.current,
+          graphData.clusters,
+          graphData.edges,
+          draggedNodeId,
+        );
+        setNodes(nodesRef.current);
+      }
+
       viewportRef.current = tickViewport(viewportRef.current);
-      setNodes(nodesRef.current);
       setViewport(viewportRef.current);
       frameId = window.requestAnimationFrame(animate);
     }
@@ -525,7 +554,7 @@ export default function FeatureFileGraph({
     return () => {
       window.cancelAnimationFrame(frameId);
     };
-  }, [draggedNodeId, graphData]);
+  }, [draggedNodeId, graphData, physicsEnabled]);
 
   function updateViewport(nextViewport: GraphViewport) {
     viewportRef.current = nextViewport;
@@ -723,6 +752,12 @@ export default function FeatureFileGraph({
     }
 
     if (nodeDragRef.current) {
+      if (!canDragNodes) {
+        nodeDragRef.current = null;
+        setDraggedNodeId("");
+        return;
+      }
+
       const worldPoint = getWorldPoint(point, viewportRef.current);
       const movedFarEnough =
         nodeDragRef.current.moved ||
@@ -840,6 +875,23 @@ export default function FeatureFileGraph({
           emitNodeSelection(selectedNode);
         }
       }
+
+      if (!physicsEnabled) {
+        const nextNodes = nodesRef.current.map((node) => {
+          if (node.id !== draggedNode.nodeId) {
+            return node;
+          }
+
+          return {
+            ...node,
+            vx: 0,
+            vy: 0,
+          };
+        });
+
+        nodesRef.current = nextNodes;
+        setNodes(nextNodes);
+      }
     }
 
     const touchSession = touchPanRef.current;
@@ -952,13 +1004,17 @@ export default function FeatureFileGraph({
       return;
     }
 
+    event.stopPropagation();
+
+    if (!canDragNodes) {
+      return;
+    }
+
     const point = getViewPoint(event, svgRef.current);
 
     if (!point) {
       return;
     }
-
-    event.stopPropagation();
 
     const worldPoint = getWorldPoint(point, viewportRef.current);
     const node = nodesRef.current.find((currentNode) => currentNode.id === nodeId);
@@ -1260,7 +1316,11 @@ export default function FeatureFileGraph({
                 onPointerDown={(event) => handleNodePointerDown(event, node.id)}
                 onPointerEnter={() => handleNodeEnter(node.id)}
                 onPointerLeave={handleNodeLeave}
-                className={draggedNodeId === node.id ? "cursor-grabbing" : "cursor-pointer"}
+                className={
+                  canDragNodes && draggedNodeId === node.id
+                    ? "cursor-grabbing"
+                    : "cursor-pointer"
+                }
               >
                 <circle
                   r={glowRadius}

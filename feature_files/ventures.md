@@ -14,6 +14,7 @@ The Ventures feature adds a Supabase-backed tracking surface to the graph worksp
 - **Feature Tagging**: Each venture can store multiple tagged feature-file paths from its selected project, using the same loaded Daedalus feature inventory that powers chat targeting.
 - **Details Field**: Ventures can include a lightweight freeform details section that is created, edited, and loaded from Supabase.
 - **Picker-Based Viewing**: The Ventures tab uses project dropdowns and a single selected-venture detail panel so the user can inspect one venture at a time instead of scrolling a full list.
+- **Inline Confirmation Bulk Clear**: The Ventures drawer can bulk-delete all completed ventures, but the clear button first flips into inline `Confirm` and `Undo` actions to avoid accidental clears without leaving the current view.
 
 ## Relevant Files
 - `daedalus-site/app/feature-files-dashboard.tsx`: Workspace shell that hosts the ventures drawer UI, venture CRUD flows, and project-scoped feature tagging controls.
@@ -39,3 +40,4 @@ HACKING
 - 2026-07-08: Scoped Ventures to authenticated user-owned rows so each signed-in user only sees and mutates their own venture data.
 - 2026-07-09: Moved Ventures out of the old left-side tab strip and into a graph-triggered drawer that expands to near-full-screen on mobile while keeping the same Supabase-backed CRUD and tagging flows.
 - 2026-07-09: Clamped the ventures drawer inputs and tag rows to the drawer width and switched venture project labels back to the same root-relative naming used by the shared feature tagger.
+- 2026-07-09: Simplified the ventures bulk-clear flow so `Clear completed` flips inline into `Confirm` and `Undo` actions instead of opening a separate confirmation panel.

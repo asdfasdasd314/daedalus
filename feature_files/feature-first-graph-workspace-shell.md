@@ -1,7 +1,7 @@
 # Feature-First Graph Workspace Shell
 
 ## Summary
-The feature-first graph workspace shell owns the responsive workspace framing around the feature graph in the Next.js frontend. It keeps the graph mounted as the background canvas, routes the ventures drawer and primary overlays, surfaces compact utility controls, reuses the shared agent session UI for both new-feature creation and node-focused feature editing, and depends on true SVG-space coordinate mapping so mobile taps stay aligned when the graph is letterboxed inside the fullscreen shell.
+The feature-first graph workspace shell owns the responsive workspace framing around the feature graph in the Next.js frontend. It keeps the graph mounted as the background canvas, routes the ventures drawer and primary overlays, surfaces a compact hamburger menu for refresh, physics, and sign-out controls, reuses the shared agent session UI for both new-feature creation and node-focused feature editing, and depends on true SVG-space coordinate mapping so mobile taps stay aligned when the graph is letterboxed inside the fullscreen shell.
 
 ## Key Points
 - **Graph-First Default**: The feature graph remains visible as the base workspace on desktop and mobile instead of living under a persistent left control panel.
@@ -9,7 +9,8 @@ The feature-first graph workspace shell owns the responsive workspace framing ar
 - **Responsive Rules**: On mobile, only one overlay can stay open at a time, while desktop can keep the ventures drawer open beside the graph.
 - **Device Zoom Profiles**: The shell chooses separate mobile and desktop zoom defaults and bounds so smaller screens stay closer to the same graph world instead of zooming the node system itself.
 - **Shared Chat Session UI**: The shell mounts the same agent session panel in both the new-feature overlay and the feature-detail chat tab so prompt transport stays unchanged.
-- **Workspace Utilities**: A compact refresh control, inline load-error state, and sign-out live in a utility area instead of a persistent message HUD or settings panel.
+- **Workspace Utilities**: A compact hamburger menu now owns refresh, physics, and sign-out actions while the inline load-error state stays in the same utility area instead of a persistent message HUD or settings panel.
+- **Physics Toggle Ownership**: The shell owns the current graph-physics enablement flag and passes it into the graph so the menu can freeze or resume node motion without changing the graph's drag and zoom affordances.
 - **Mobile Fit Policy**: The shell keeps mobile overlays viewport-safe by relying on compact project labels in the shared chat panel and by leaving the graph mounted behind full-screen-ish sheets instead of shifting the whole workspace layout sideways.
 - **Mobile Hit Alignment**: The shell's fullscreen mobile mount depends on the graph converting touch and wheel coordinates through the SVG's actual transformed space instead of proportional element-rect math, because the preserved `viewBox` can letterbox on tall screens.
 - **Drawer Label Consistency**: The shell reuses the shared root-relative project label helpers inside the ventures drawer so project tags match the chat panel instead of exposing absolute daemon paths.
@@ -34,3 +35,4 @@ HACKING
 - 2026-07-09: Moved mobile-vs-desktop graph framing into explicit zoom profiles so the shell can keep the same absolute node world while defaulting phones closer in and allowing deeper zoom for small nodes.
 - 2026-07-09: Tightened the ventures sheet to hide horizontal overflow and reused the shared root-relative project labels there so mobile drawer content stays inside the viewport without showing absolute paths.
 - 2026-07-09: Fixed the mobile graph tap dead-zone by routing pointer and wheel coordinates through the SVG's transformed screen matrix so fullscreen letterboxing no longer shifts node hit testing or zoom anchoring.
+- 2026-07-09: Replaced the top-right refresh and sign-out pair with a single hamburger menu that now also toggles shell-owned graph physics and keeps the shell error pill stacked underneath it.
