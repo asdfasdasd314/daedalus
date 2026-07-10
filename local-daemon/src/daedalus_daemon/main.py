@@ -35,6 +35,7 @@ if __package__ in {None, ""}:
         FEATURE_FILE_LOAD_PURPOSE,
         PARAMETER_FILE_LOAD_PURPOSE,
         PARAMETER_FILE_UPDATE_PURPOSE,
+        SupabaseUnavailableError,
         fetch_current_message,
         post_agent_chat,
         post_feature_files,
@@ -58,6 +59,7 @@ else:
         FEATURE_FILE_LOAD_PURPOSE,
         PARAMETER_FILE_LOAD_PURPOSE,
         PARAMETER_FILE_UPDATE_PURPOSE,
+        SupabaseUnavailableError,
         fetch_current_message,
         post_agent_chat,
         post_feature_files,
@@ -547,11 +549,48 @@ def main() -> None:
     config = load_daemon_config()
 
     while True:
-        run_poll_cycle(config)
-        run_parameter_file_poll_cycle(config)
-        run_parameter_file_update_cycle(config)
-        run_agent_prompt_cycle(config)
+        if not run_cycle_safely("feature_file_load", run_poll_cycle, config):
+            time.sleep(config["pollIntervalMs"] / 1000)
+            continue
+
+        if not run_cycle_safely(
+            "parameter_file_load",
+            run_parameter_file_poll_cycle,
+            config,
+        ):
+            time.sleep(config["pollIntervalMs"] / 1000)
+            continue
+
+        if not run_cycle_safely(
+            "parameter_file_update",
+            run_parameter_file_update_cycle,
+            config,
+        ):
+            time.sleep(config["pollIntervalMs"] / 1000)
+            continue
+
+        if not run_cycle_safely("agent_prompt", run_agent_prompt_cycle, config):
+            time.sleep(config["pollIntervalMs"] / 1000)
+            continue
+
         time.sleep(config["pollIntervalMs"] / 1000)
+
+
+def run_cycle_safely(cycle_name: str, cycle_runner, config: dict) -> bool:
+    try:
+        cycle_runner(config)
+        return True
+    except SupabaseUnavailableError as error:
+        cooldown_ms = config.get("networkOutageCooldownMs", 15000)
+        print(
+            f"Daemon cycle paused for {cycle_name}: Supabase unavailable: {error}. "
+            f"Waiting {cooldown_ms}ms before retrying.",
+        )
+        time.sleep(cooldown_ms / 1000)
+        return False
+    except Exception as error:
+        print(f"Daemon cycle failed for {cycle_name}: {error}")
+        return True
 
 
 if __name__ == "__main__":

@@ -1,1 +1,5 @@
 poll_interval_ms = 5000
+network_outage_cooldown_ms = 15000
+http_request_retry_limit = 3
+http_request_retry_delay_ms = 750
+http_request_timeout_seconds = 20

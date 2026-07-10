@@ -1,5 +1,8 @@
 import json
+import socket
+import time
 from urllib import request
+from urllib.error import URLError
 
 
 AGENT_CHAT_PAYLOAD_KIND = "agent_chat"
@@ -15,6 +18,10 @@ FEATURE_FILE_LOAD_PURPOSE = "feature_file_load"
 PARAMETER_FILES_PAYLOAD_KIND = "parameter_files"
 PARAMETER_FILE_LOAD_PURPOSE = "parameter_file_load"
 PARAMETER_FILE_UPDATE_PURPOSE = "parameter_file_update"
+
+
+class SupabaseUnavailableError(Exception):
+    pass
 
 
 def fetch_current_message(config: dict, purpose: str) -> str:
@@ -38,7 +45,7 @@ def fetch_communication_rows(config: dict, purpose: str) -> list[dict]:
         method="POST",
     )
 
-    with request.urlopen(http_request) as response:
+    with open_supabase_request(config, http_request) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
@@ -55,7 +62,7 @@ def update_current_message(config: dict, purpose: str, message: str) -> None:
         method="POST",
     )
 
-    with request.urlopen(http_request):
+    with open_supabase_request(config, http_request):
         return
 
 
@@ -72,7 +79,7 @@ def upsert_daemon_payload(config: dict, kind: str, payload: dict) -> None:
         method="POST",
     )
 
-    with request.urlopen(http_request):
+    with open_supabase_request(config, http_request):
         return
 
 
@@ -117,3 +124,27 @@ def get_supabase_headers(config: dict) -> dict[str, str]:
         "Authorization": f"Bearer {publishable_key}",
         "Content-Type": "application/json",
     }
+
+
+def open_supabase_request(config: dict, http_request: request.Request):
+    retry_limit = config.get("httpRequestRetryLimit", 3)
+    retry_delay_ms = config.get("httpRequestRetryDelayMs", 750)
+    timeout_seconds = config.get("httpRequestTimeoutSeconds", 20)
+    last_error = None
+
+    for attempt in range(1, retry_limit + 1):
+        try:
+            return request.urlopen(http_request, timeout=timeout_seconds)
+        except (ConnectionResetError, TimeoutError, socket.timeout, URLError) as error:
+            last_error = error
+            print(
+                "Supabase request failed "
+                f"(attempt {attempt}/{retry_limit}): {error}",
+            )
+
+            if attempt == retry_limit:
+                break
+
+            time.sleep(retry_delay_ms / 1000)
+
+    raise SupabaseUnavailableError(str(last_error)) from last_error

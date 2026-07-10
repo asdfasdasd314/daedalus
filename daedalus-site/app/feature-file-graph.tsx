@@ -162,9 +162,23 @@ type WorldPoint = {
   y: number;
 };
 
+type ClientPoint = {
+  clientX: number;
+  clientY: number;
+};
+
 const TOUCH_VELOCITY_WINDOW_MS = 140;
 const TOUCH_VELOCITY_FRAME_MS = 16;
 const TOUCH_VELOCITY_MAX_SAMPLES = 8;
+const MOBILE_GLOW_RADIUS_CAP = 42;
+const VIEWPORT_CULL_PADDING = 80;
+
+type WorldBounds = {
+  bottom: number;
+  left: number;
+  right: number;
+  top: number;
+};
 
 function getZoomRatio(zoom: number, minZoom: number, maxZoom: number) {
   return (clamp(zoom, minZoom, maxZoom) - minZoom) / (maxZoom - minZoom);
@@ -328,6 +342,67 @@ function getRemainingPointer(
   };
 }
 
+function getVisibleWorldBounds(
+  viewport: GraphViewport,
+  padding = VIEWPORT_CULL_PADDING,
+): WorldBounds {
+  return {
+    left: -viewport.offsetX / viewport.zoom - padding,
+    top: -viewport.offsetY / viewport.zoom - padding,
+    right: (VIEWPORT_WIDTH - viewport.offsetX) / viewport.zoom + padding,
+    bottom: (VIEWPORT_HEIGHT - viewport.offsetY) / viewport.zoom + padding,
+  };
+}
+
+function isCircleInBounds(
+  x: number,
+  y: number,
+  radius: number,
+  bounds: WorldBounds,
+) {
+  return (
+    x + radius >= bounds.left &&
+    x - radius <= bounds.right &&
+    y + radius >= bounds.top &&
+    y - radius <= bounds.bottom
+  );
+}
+
+function isEdgeInBounds(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  bounds: WorldBounds,
+) {
+  if (
+    isCircleInBounds(x1, y1, 0, bounds) ||
+    isCircleInBounds(x2, y2, 0, bounds)
+  ) {
+    return true;
+  }
+
+  const segmentLeft = Math.min(x1, x2);
+  const segmentRight = Math.max(x1, x2);
+  const segmentTop = Math.min(y1, y2);
+  const segmentBottom = Math.max(y1, y2);
+
+  return (
+    segmentRight >= bounds.left &&
+    segmentLeft <= bounds.right &&
+    segmentBottom >= bounds.top &&
+    segmentTop <= bounds.bottom
+  );
+}
+
+function getNodeGlowRadius(node: FeatureNode, isCoarsePointer: boolean) {
+  const baseRadius = node.radius + 7 + node.connectionIntensity * 12;
+
+  return isCoarsePointer
+    ? Math.min(baseRadius, MOBILE_GLOW_RADIUS_CAP)
+    : baseRadius;
+}
+
 export default function FeatureFileGraph({
   maxZoom,
   minZoom,
@@ -475,19 +550,21 @@ export default function FeatureFileGraph({
   function handleWheel(event: ReactWheelEvent<SVGSVGElement>) {
     event.preventDefault();
 
-    const svg = svgRef.current;
+    const point = getClientViewPoint(
+      {
+        clientX: event.clientX,
+        clientY: event.clientY,
+      },
+      svgRef.current,
+    );
 
-    if (!svg) {
+    if (!point) {
       return;
     }
 
-    const rect = svg.getBoundingClientRect();
-    const viewX = ((event.clientX - rect.left) / rect.width) * VIEWPORT_WIDTH;
-    const viewY = ((event.clientY - rect.top) / rect.height) * VIEWPORT_HEIGHT;
-
     if (event.ctrlKey || event.metaKey) {
       const zoomFactor = Math.exp(-event.deltaY * 0.0015);
-      updateZoom(viewportRef.current.zoom * zoomFactor, viewX, viewY);
+      updateZoom(viewportRef.current.zoom * zoomFactor, point.x, point.y);
       return;
     }
 
@@ -1009,39 +1086,78 @@ export default function FeatureFileGraph({
   const clusterByProjectIndex = new Map(
     graphData.clusters.map((cluster) => [cluster.projectIndex, cluster]),
   );
-  const nodeById = new Map(nodes.map((node) => [node.id, node]));
-  const renderedEdges = graphData.edges.flatMap((edge) => {
-    const sourceNode = nodeById.get(edge.sourceNodeId);
-    const targetNode = nodeById.get(edge.targetNodeId);
-    const cluster = sourceNode
-      ? clusterByProjectIndex.get(sourceNode.projectIndex)
-      : null;
+  const visibleBounds = useMemo(
+    () => getVisibleWorldBounds(viewport),
+    [viewport],
+  );
+  const nodeById = useMemo(
+    () => new Map(nodes.map((node) => [node.id, node])),
+    [nodes],
+  );
+  const renderedEdges = useMemo(
+    () =>
+      graphData.edges.flatMap((edge) => {
+        const sourceNode = nodeById.get(edge.sourceNodeId);
+        const targetNode = nodeById.get(edge.targetNodeId);
+        const cluster = sourceNode
+          ? clusterByProjectIndex.get(sourceNode.projectIndex)
+          : null;
 
-    if (!sourceNode || !targetNode || !cluster) {
-      return [];
-    }
+        if (!sourceNode || !targetNode || !cluster) {
+          return [];
+        }
 
-    return [
-      {
-        edge,
-        cluster,
-        sourceNode,
-        targetNode,
-      },
-    ];
-  });
-  const renderedNodes = nodes
-    .filter((node) => clusterByProjectIndex.has(node.projectIndex))
-    .sort((leftNode, rightNode) => {
-      const leftPriority = Number(
-        leftNode.isHovered || leftNode.filePath === selectedFeatureFilePath,
-      );
-      const rightPriority = Number(
-        rightNode.isHovered || rightNode.filePath === selectedFeatureFilePath,
-      );
+        if (
+          !isEdgeInBounds(
+            sourceNode.x,
+            sourceNode.y,
+            targetNode.x,
+            targetNode.y,
+            visibleBounds,
+          )
+        ) {
+          return [];
+        }
 
-      return leftPriority - rightPriority;
-    });
+        return [
+          {
+            edge,
+            cluster,
+            sourceNode,
+            targetNode,
+          },
+        ];
+      }),
+    [graphData.edges, nodeById, visibleBounds],
+  );
+  const renderedNodes = useMemo(
+    () =>
+      nodes
+        .filter((node) => clusterByProjectIndex.has(node.projectIndex))
+        .filter((node) => {
+          if (node.filePath === selectedFeatureFilePath) {
+            return true;
+          }
+
+          return isCircleInBounds(
+            node.x,
+            node.y,
+            node.radius + getNodeGlowRadius(node, isCoarsePointer),
+            visibleBounds,
+          );
+        })
+        .sort((leftNode, rightNode) => {
+          const leftPriority = Number(
+            leftNode.isHovered || leftNode.filePath === selectedFeatureFilePath,
+          );
+          const rightPriority = Number(
+            rightNode.isHovered || rightNode.filePath === selectedFeatureFilePath,
+          );
+
+          return leftPriority - rightPriority;
+        }),
+    [isCoarsePointer, nodes, selectedFeatureFilePath, visibleBounds],
+  );
   const zoomRatio = getZoomRatio(zoom, minZoom, maxZoom);
 
   return (
@@ -1110,10 +1226,11 @@ export default function FeatureFileGraph({
               (node.radius + 24) / (viewport.zoom * scale);
             const labelFontSize = clamp(node.radius * 0.3, 5.6, 10.4);
             const lineGap = labelFontSize * 1.55;
-            const glowRadius = node.radius + 7 + node.connectionIntensity * 12;
+            const glowRadius = getNodeGlowRadius(node, isCoarsePointer);
             const glowOpacity = 0.18 + node.connectionIntensity * 0.68;
             const fillOpacity = 0.56 + node.connectionIntensity * 0.36;
             const strokeOpacity = 0.72 + node.connectionIntensity * 0.28;
+            const showGlowFilter = !isCoarsePointer;
 
             return (
               <g
@@ -1138,7 +1255,7 @@ export default function FeatureFileGraph({
                       ? "0.98"
                       : glowOpacity
                   }
-                  filter="url(#node-glow)"
+                  filter={showGlowFilter ? "url(#node-glow)" : undefined}
                 />
                 <circle
                   r={node.radius}
@@ -1186,26 +1303,30 @@ export default function FeatureFileGraph({
                     </g>
                   </g>
                 ) : null}
-                <text
-                  x="0"
-                  y={-labelFontSize * 0.45}
-                  textAnchor="middle"
-                  fill={cluster.color.text}
-                  fontSize={labelFontSize}
-                  fontWeight="700"
-                >
-                  {labelLines[0]}
-                </text>
-                <text
-                  x="0"
-                  y={lineGap * 0.55}
-                  textAnchor="middle"
-                  fill={cluster.color.text}
-                  fontSize={labelFontSize}
-                  fontWeight="700"
-                >
-                  {labelLines[1]}
-                </text>
+                {!isCoarsePointer ? (
+                  <>
+                    <text
+                      x="0"
+                      y={-labelFontSize * 0.45}
+                      textAnchor="middle"
+                      fill={cluster.color.text}
+                      fontSize={labelFontSize}
+                      fontWeight="700"
+                    >
+                      {labelLines[0]}
+                    </text>
+                    <text
+                      x="0"
+                      y={lineGap * 0.55}
+                      textAnchor="middle"
+                      fill={cluster.color.text}
+                      fontSize={labelFontSize}
+                      fontWeight="700"
+                    >
+                      {labelLines[1]}
+                    </text>
+                  </>
+                ) : null}
                 <title>{node.featureName}</title>
               </g>
             );
@@ -1543,6 +1664,13 @@ function tickNodes(
     clusters.map((cluster) => [cluster.projectIndex, cluster]),
   );
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const nodesByProjectIndex = new Map<number, FeatureNode[]>();
+
+  for (const node of nodes) {
+    const projectNodes = nodesByProjectIndex.get(node.projectIndex) ?? [];
+    projectNodes.push(node);
+    nodesByProjectIndex.set(node.projectIndex, projectNodes);
+  }
 
   return nodes.map((node) => {
     if (node.id === draggedNodeId) {
@@ -1571,7 +1699,7 @@ function tickNodes(
     let nextVx = node.vx + (target.x - node.x) * 0.012;
     let nextVy = node.vy + (target.y - node.y) * 0.012;
 
-    for (const sibling of nodes) {
+    for (const sibling of nodesByProjectIndex.get(node.projectIndex) ?? []) {
       if (sibling.id === node.id) {
         continue;
       }
@@ -1658,20 +1786,42 @@ function applyZoomAtPoint(
   };
 }
 
-function getViewPoint(
-  event: ReactPointerEvent<Element>,
+function getClientViewPoint(
+  point: ClientPoint,
   svg: SVGSVGElement | null,
 ) {
   if (!svg) {
     return null;
   }
 
-  const rect = svg.getBoundingClientRect();
+  const screenMatrix = svg.getScreenCTM();
+
+  if (!screenMatrix) {
+    return null;
+  }
+
+  // Use the SVG's real transform so touch targets stay aligned inside aspect-ratio letterboxing.
+  const viewPoint = new DOMPoint(point.clientX, point.clientY).matrixTransform(
+    screenMatrix.inverse(),
+  );
 
   return {
-    x: ((event.clientX - rect.left) / rect.width) * VIEWPORT_WIDTH,
-    y: ((event.clientY - rect.top) / rect.height) * VIEWPORT_HEIGHT,
+    x: viewPoint.x,
+    y: viewPoint.y,
   };
+}
+
+function getViewPoint(
+  event: ReactPointerEvent<Element>,
+  svg: SVGSVGElement | null,
+) {
+  return getClientViewPoint(
+    {
+      clientX: event.clientX,
+      clientY: event.clientY,
+    },
+    svg,
+  );
 }
 
 function getWorldPoint(

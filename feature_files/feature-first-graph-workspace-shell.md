@@ -1,7 +1,7 @@
 # Feature-First Graph Workspace Shell
 
 ## Summary
-The feature-first graph workspace shell owns the responsive workspace framing around the feature graph in the Next.js frontend. It keeps the graph mounted as the background canvas, routes the ventures drawer and primary overlays, surfaces compact utility controls, and reuses the shared agent session UI for both new-feature creation and node-focused feature editing.
+The feature-first graph workspace shell owns the responsive workspace framing around the feature graph in the Next.js frontend. It keeps the graph mounted as the background canvas, routes the ventures drawer and primary overlays, surfaces compact utility controls, reuses the shared agent session UI for both new-feature creation and node-focused feature editing, and depends on true SVG-space coordinate mapping so mobile taps stay aligned when the graph is letterboxed inside the fullscreen shell.
 
 ## Key Points
 - **Graph-First Default**: The feature graph remains visible as the base workspace on desktop and mobile instead of living under a persistent left control panel.
@@ -11,10 +11,12 @@ The feature-first graph workspace shell owns the responsive workspace framing ar
 - **Shared Chat Session UI**: The shell mounts the same agent session panel in both the new-feature overlay and the feature-detail chat tab so prompt transport stays unchanged.
 - **Workspace Utilities**: A compact refresh control, inline load-error state, and sign-out live in a utility area instead of a persistent message HUD or settings panel.
 - **Mobile Fit Policy**: The shell keeps mobile overlays viewport-safe by relying on compact project labels in the shared chat panel and by leaving the graph mounted behind full-screen-ish sheets instead of shifting the whole workspace layout sideways.
+- **Mobile Hit Alignment**: The shell's fullscreen mobile mount depends on the graph converting touch and wheel coordinates through the SVG's actual transformed space instead of proportional element-rect math, because the preserved `viewBox` can letterbox on tall screens.
 - **Drawer Label Consistency**: The shell reuses the shared root-relative project label helpers inside the ventures drawer so project tags match the chat panel instead of exposing absolute daemon paths.
 
 ## Relevant Files
 - `daedalus-site/app/feature-files-dashboard.tsx`: Main workspace shell that owns overlay routing, responsive layout rules, venture drawer presentation, and feature-detail tabs.
+- `daedalus-site/app/feature-file-graph.tsx`: Graph canvas that the shell mounts full-screen and whose SVG coordinate conversion must stay aligned on mobile.
 - `daedalus-site/app/agent-session-panel.tsx`: Shared chat session UI reused by the new-feature and feature-detail overlays.
 - `daedalus-site/app/feature-workspace-utils.ts`: Shared feature-path and feature-label helpers used across the shell overlays.
 - `parameter_files/feature-first-graph-workspace-shell.toml`: Sibling parameter file placeholder for the workspace shell feature.
@@ -31,3 +33,4 @@ HACKING
 - 2026-07-09: Kept the shell's mobile overlays graph-first while the shared chat panel now clips long project labels and the graph owns a custom centered zoom rail plus pan-first touch behavior underneath.
 - 2026-07-09: Moved mobile-vs-desktop graph framing into explicit zoom profiles so the shell can keep the same absolute node world while defaulting phones closer in and allowing deeper zoom for small nodes.
 - 2026-07-09: Tightened the ventures sheet to hide horizontal overflow and reused the shared root-relative project labels there so mobile drawer content stays inside the viewport without showing absolute paths.
+- 2026-07-09: Fixed the mobile graph tap dead-zone by routing pointer and wheel coordinates through the SVG's transformed screen matrix so fullscreen letterboxing no longer shifts node hit testing or zoom anchoring.

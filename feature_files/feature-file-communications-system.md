@@ -6,6 +6,8 @@ The feature file communications system uses Supabase as a user-scoped message bu
 ## Key Points
 - **Message Bus**: Supabase stores communication messages in a `communications` table with separate rows keyed by `user_id` and `purpose`.
 - **Split Polling Ownership**: The frontend keeps its own committed poll interval, while the daemon reads `poll_interval_ms` from `parameter_files/feature-file-communications-system.toml`.
+- **Transient Network Tolerance**: The daemon communications client retries short-lived Supabase HTTPS failures with a small timeout and backoff budget before giving up on that poll cycle.
+- **Outage Cooldown**: When Supabase stays unreachable after the retry budget is exhausted, the daemon pauses the current poll pass and waits on a longer cooldown before trying again.
 - **Daemon Delivery**: The daemon writes feature-file payloads, parameter-file payloads, and latest agent chat replies into the user-owned `daemon_payloads` table.
 - **Schema Tracking**: Every database change must add a numbered migration and update the checked-in schema snapshot.
 - **Protocol Messages**: The feature-file load flow uses `purpose = "feature_file_load"` with `client_load_feature_files`, `daemon_received_message`, and `daemon_sent_feature_files`.
@@ -35,3 +37,5 @@ HACKING
 - 2026-07-08: Reworked communications around authenticated user-owned rows and daemon payload storage so the hosted frontend and trusted daemon no longer use service-role access or local cache routes.
 - 2026-07-08: Split polling ownership so the daemon now reads `poll_interval_ms` from its own parameter file instead of inheriting cadence from frontend-owned shared config.
 - 2026-07-08: Replaced dashboard Supabase request call sites with a derived `currentUserId` value so hosted Next.js builds stop failing on nullable auth user narrowing inside async handlers.
+- 2026-07-09: Added daemon-side Supabase request retries and per-cycle crash guards so transient HTTPS connection resets no longer stop the background polling loop.
+- 2026-07-09: Added an explicit network-outage cooldown so exhausted Supabase retries now pause the daemon briefly instead of immediately hammering the remaining poll cycles.

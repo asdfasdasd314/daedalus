@@ -15,6 +15,26 @@ def load_daemon_config() -> dict:
 
     config = {
         "daemonUserId": get_env_config_value(env_config, "DAEDALUS_USER_ID"),
+        "networkOutageCooldownMs": get_optional_positive_int(
+            parameter_config,
+            "network_outage_cooldown_ms",
+            15000,
+        ),
+        "httpRequestRetryDelayMs": get_optional_positive_int(
+            parameter_config,
+            "http_request_retry_delay_ms",
+            750,
+        ),
+        "httpRequestRetryLimit": get_optional_positive_int(
+            parameter_config,
+            "http_request_retry_limit",
+            3,
+        ),
+        "httpRequestTimeoutSeconds": get_optional_positive_int(
+            parameter_config,
+            "http_request_timeout_seconds",
+            20,
+        ),
         "pollIntervalMs": get_poll_interval_ms(parameter_config),
         "supabasePublishableKey": get_env_config_value(env_config, "SUPABASE_PUBLISHABLE_KEY"),
         "supabaseUrl": get_env_config_value(env_config, "SUPABASE_URL"),
@@ -89,3 +109,15 @@ def get_poll_interval_ms(parameter_config: dict) -> int:
         )
 
     return poll_interval_ms
+
+
+def get_optional_positive_int(parameter_config: dict, key: str, default: int) -> int:
+    value = parameter_config.get(key, default)
+
+    if not isinstance(value, int) or value <= 0:
+        raise RuntimeError(
+            f"Invalid daemon parameter: {key} in "
+            "parameter_files/feature-file-communications-system.toml",
+        )
+
+    return value

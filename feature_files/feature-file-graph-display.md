@@ -20,6 +20,7 @@ The feature-file graph display turns loaded feature files into a full-screen 2D 
 - **Zoom Contract**: The graph no longer hardcodes one global zoom range and instead renders against shell-provided min/max bounds so mobile and desktop can share the same world with different readable framing.
 - **Touch Sessions**: Mobile one-finger gestures always start as graph-surface pans, only resolve into node opens on clean tap release, and derive inertia from recent gesture samples instead of noisy last-frame deltas.
 - **Node Selection Callback**: Clicking or tapping a node now hands feature identity back to the workspace shell through a dedicated selection path so touch sessions do not rely on inconsistent browser click timing.
+- **Render Performance**: The graph culls off-screen nodes and edges, scopes collision checks per project, and uses simplified mobile node rendering without SVG blur filters or inline labels.
 
 ## Relevant Files
 - `daedalus-site/app/feature-files-dashboard.tsx`: Workspace shell that loads the feature-file payload and responds to graph callbacks with overlays and drawers.
@@ -56,3 +57,5 @@ HACKING
 - 2026-07-09: Replaced the mobile node tap path with graph-surface touch sessions, anchored pinch math to a stable viewport, sampled pan momentum from recent gesture history, and swapped the native vertical range input for a centered custom zoom rail.
 - 2026-07-09: Stopped tying graph readability to one shared zoom envelope by keeping node size absolute and letting the shell feed device-specific zoom bounds from the graph parameter file.
 - 2026-07-09: Increased `mobile_default_zoom` in the graph parameter file so phone layouts open closer into the same graph world by default.
+- 2026-07-09: Optimized mobile graph rendering by pausing physics during gestures, using ref-driven viewport transforms, viewport culling, project-scoped collision checks, and simplified coarse-pointer node visuals without SVG blur filters.
+- 2026-07-09: Reverted physics pausing and adaptive animation-loop gating after it degraded pan feel, while keeping viewport culling, project-scoped collision checks, and simplified coarse-pointer node visuals.
