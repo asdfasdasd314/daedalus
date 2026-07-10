@@ -57,3 +57,5 @@ HACKING
 - 2026-07-09: Reflowed the shared chat session panel for phone-width overlays by stacking feature-tag controls and forcing both prompt and reply bubbles to wrap instead of pushing the overlay wider than the viewport.
 - 2026-07-09: Clipped the selected project display to a mobile-safe tail label and tightened transcript/status widths so the shared chat panel stops drifting off the phone viewport while keeping the full project path in the picker itself.
 - 2026-07-09: Switched the shared project picker over to daemon-root-relative labels so the chat overlays never need to show absolute paths while still clipping long names safely on phones.
+- 2026-07-10: Added GPT-5.6 Sol/Terra/Luna to the Codex model catalog with light/medium/high/extra-high/ultra reasoning (default medium) and mapped the new labels through the daemon for `codex exec`.
+

@@ -503,10 +503,15 @@ def build_codex_prompt(
 
 
 def map_reasoning_for_codex(reasoning: str) -> str:
+    if reasoning == "light":
+        return "low"
     if reasoning == "extra-high":
         return "xhigh"
+    if reasoning == "ultra":
+        return "max"
 
     return reasoning
+
 
 
 def run_codex_exec(
