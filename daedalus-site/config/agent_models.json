@@ -71,5 +71,15 @@
         "default_reasoning": "medium"
       }
     ]
+  },
+  "cursor": {
+    "models": [
+      {
+        "id": "cursor",
+        "name": "Cursor CLI",
+        "reasoning": [],
+        "default_reasoning": ""
+      }
+    ]
   }
 }

@@ -39,3 +39,4 @@ HACKING
 - 2026-07-09: Replaced the top-right refresh and sign-out pair with a single hamburger menu that now also toggles shell-owned graph physics and keeps the shell error pill stacked underneath it.
 - 2026-07-09: Added a hamburger-menu zoom visibility toggle that can slide the graph's right-edge zoom rail offscreen without affecting pinch or wheel zoom.
 - 2026-07-09: Raised mobile ventures and primary overlay sheets to `z-30` so their close controls sit above the `z-20` workspace hamburger instead of overlapping underneath it.
+- 2026-07-10: Removed the fullscreen graph viewport dead zone by measuring the SVG, sizing its viewBox and culling bounds responsively, and preserving the centered world point across browser resizes.

@@ -184,6 +184,7 @@ export default function FeatureFilesDashboard({
   const [parameterProjects, setParameterProjects] =
     useState<ParameterFileProjects | null>(null);
   const [selectedModelId, setSelectedModelId] = useState(defaultModel.id);
+  const [selectedProvider, setSelectedProvider] = useState("codex");
   const [selectedReasoning, setSelectedReasoning] = useState(
     defaultModel.default_reasoning,
   );
@@ -1098,7 +1099,7 @@ export default function FeatureFilesDashboard({
       promptId,
       directory: selectedProjectDirectory,
       prompt: nextPrompt,
-      provider: "codex",
+      provider: selectedProvider,
       model: selectedModelId,
       reasoning: selectedReasoning,
       planningMode: isPlanningMode,
@@ -1375,8 +1376,15 @@ export default function FeatureFilesDashboard({
 
   function selectModel(modelId: string) {
     const nextModel =
-      agentModels.codex.models.find((model) => model.id === modelId) ??
+      agentModels[selectedProvider]?.models.find((model) => model.id === modelId) ??
       defaultModel;
+    setSelectedModelId(nextModel.id);
+    setSelectedReasoning(nextModel.default_reasoning);
+  }
+
+  function selectProvider(provider: string) {
+    const nextModel = agentModels[provider]?.models[0] ?? defaultModel;
+    setSelectedProvider(provider);
     setSelectedModelId(nextModel.id);
     setSelectedReasoning(nextModel.default_reasoning);
   }
@@ -2600,6 +2608,7 @@ export default function FeatureFilesDashboard({
                 onAbandonQueuedAgentPrompt={abandonQueuedAgentPrompt}
                 onClearAgentChat={clearAgentChat}
                 onPlanningModeChange={setIsPlanningMode}
+                onProviderChange={selectProvider}
                 onPromptTextChange={setPromptText}
                 onRemoveTargetedFeature={removeTargetedFeature}
                 onRetryQueuedAgentPrompt={retryQueuedAgentPrompt}
@@ -2612,6 +2621,7 @@ export default function FeatureFilesDashboard({
                 promptQueueStatusText={promptQueueStatusText}
                 promptText={promptText}
                 selectedModelId={selectedModelId}
+                selectedProvider={selectedProvider}
                 selectedProjectDirectory={selectedProjectDirectory}
                 selectedReasoning={selectedReasoning}
                 targetedFeatures={targetedFeatures}
@@ -2694,6 +2704,7 @@ export default function FeatureFilesDashboard({
                   onAbandonQueuedAgentPrompt={abandonQueuedAgentPrompt}
                   onClearAgentChat={clearAgentChat}
                   onPlanningModeChange={setIsPlanningMode}
+                  onProviderChange={selectProvider}
                   onPromptTextChange={setPromptText}
                   onRemoveTargetedFeature={removeTargetedFeature}
                   onRetryQueuedAgentPrompt={retryQueuedAgentPrompt}
@@ -2706,6 +2717,7 @@ export default function FeatureFilesDashboard({
                   promptQueueStatusText={promptQueueStatusText}
                   promptText={promptText}
                   selectedModelId={selectedModelId}
+                  selectedProvider={selectedProvider}
                   selectedProjectDirectory={selectedProjectDirectory}
                   selectedReasoning={selectedReasoning}
                   targetedFeatures={targetedFeatures}

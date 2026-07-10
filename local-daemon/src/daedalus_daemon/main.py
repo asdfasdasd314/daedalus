@@ -1,12 +1,15 @@
 import json
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import time
 
 DEFAULT_CODEX_MODEL = "gpt-5.5"
 DEFAULT_CODEX_REASONING = "medium"
+CODEX_PROVIDER = "codex"
+CURSOR_PROVIDER = "cursor"
 DAEMON_ERROR = "daemon_error"
 PARAMETER_FILE_UPDATE_COMMAND = "parameter_file_update"
 PLANNING_PROMPT_PREFIX = """You are in planning mode.
@@ -184,6 +187,7 @@ def run_agent_prompt_cycle(
     write_message=update_current_message,
     deliver_chat=post_agent_chat,
     run_codex_prompt=None,
+    run_cursor_prompt=None,
 ) -> None:
     message = read_message(config, AGENT_PROMPT_PURPOSE)
 
@@ -205,7 +209,7 @@ def run_agent_prompt_cycle(
 
     directory = prompt_request["directory"]
     prompt = prompt_request["prompt"]
-    provider = prompt_request.get("provider", "codex")
+    provider = prompt_request.get("provider", CODEX_PROVIDER)
     model = prompt_request.get("model", DEFAULT_CODEX_MODEL)
     reasoning = prompt_request.get("reasoning", DEFAULT_CODEX_REASONING)
     planning_mode = prompt_request.get("planningMode", False)
@@ -219,10 +223,20 @@ def run_agent_prompt_cycle(
         build_agent_prompt_state_message(prompt_id, DAEMON_RECEIVED_MESSAGE),
     )
 
-    if run_codex_prompt is None:
-        reply = run_codex_exec(directory, final_prompt, model, reasoning)
+    if provider == CURSOR_PROVIDER:
+        reply = (
+            run_cursor_exec(directory, final_prompt)
+            if run_cursor_prompt is None
+            else run_cursor_prompt(directory, final_prompt)
+        )
+    elif provider == CODEX_PROVIDER:
+        reply = (
+            run_codex_exec(directory, final_prompt, model, reasoning)
+            if run_codex_prompt is None
+            else run_codex_prompt(directory, final_prompt, model, reasoning)
+        )
     else:
-        reply = run_codex_prompt(directory, final_prompt, model, reasoning)
+        reply = f"Unsupported agent provider: {provider}"
 
     deliver_chat(
         config,
@@ -545,6 +559,40 @@ def run_codex_exec(
 
     return (
         f"Codex failed with exit code {process.returncode}\n\n"
+        f"STDOUT:\n{process.stdout}\n\n"
+        f"STDERR:\n{process.stderr}"
+    )
+
+
+def run_cursor_exec(directory: str, prompt: str) -> str:
+    if shutil.which("agent") is None:
+        return (
+            "Cursor CLI is unavailable. Install Cursor CLI so the `agent` "
+            "executable is available on the daemon PATH."
+        )
+
+    try:
+        process = subprocess.run(
+            ["agent", "-p", "--force", prompt],
+            cwd=directory,
+            capture_output=True,
+            text=True,
+        )
+    except Exception as error:
+        return f"Cursor failed before execution completed.\n\n{error}"
+
+    if process.returncode == 0:
+        return process.stdout
+
+    if process.returncode < 0:
+        return (
+            "Cursor was cancelled before execution completed.\n\n"
+            f"STDOUT:\n{process.stdout}\n\n"
+            f"STDERR:\n{process.stderr}"
+        )
+
+    return (
+        f"Cursor failed with exit code {process.returncode}\n\n"
         f"STDOUT:\n{process.stdout}\n\n"
         f"STDERR:\n{process.stderr}"
     )

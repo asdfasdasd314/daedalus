@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type {
   AgentChatExchange,
   TargetedFeature,
@@ -37,6 +39,7 @@ type AgentSessionPanelProps = {
   onAbandonQueuedAgentPrompt: (promptId: string) => void;
   onClearAgentChat: () => void;
   onPlanningModeChange: (checked: boolean) => void;
+  onProviderChange: (provider: string) => void;
   onPromptTextChange: (text: string) => void;
   onRemoveTargetedFeature: (filePath: string) => void;
   onRetryQueuedAgentPrompt: (promptId: string) => void;
@@ -49,6 +52,7 @@ type AgentSessionPanelProps = {
   promptQueueStatusText: string;
   promptText: string;
   selectedModelId: string;
+  selectedProvider: string;
   selectedProjectDirectory: string;
   selectedReasoning: string;
   targetedFeatures: TargetedFeature[];
@@ -67,6 +71,7 @@ export default function AgentSessionPanel({
   onAbandonQueuedAgentPrompt,
   onClearAgentChat,
   onPlanningModeChange,
+  onProviderChange,
   onPromptTextChange,
   onRemoveTargetedFeature,
   onRetryQueuedAgentPrompt,
@@ -79,13 +84,15 @@ export default function AgentSessionPanel({
   promptQueueStatusText,
   promptText,
   selectedModelId,
+  selectedProvider,
   selectedProjectDirectory,
   selectedReasoning,
   targetedFeatures,
 }: AgentSessionPanelProps) {
-  const defaultModel = agentModels.codex.models[0];
+  const providerModels = agentModels[selectedProvider]?.models ?? agentModels.codex.models;
+  const defaultModel = providerModels[0];
   const selectedModel =
-    agentModels.codex.models.find((model) => model.id === selectedModelId) ??
+    providerModels.find((model) => model.id === selectedModelId) ??
     defaultModel;
   const reasoningOptions = selectedModel.reasoning;
   const availableFeatures = getFeatureOptionsForProject(
@@ -107,11 +114,16 @@ export default function AgentSessionPanel({
       ),
   );
   const [selectedFeaturePath, setSelectedFeaturePath] = useState("");
+  const [isMarkdownReplyView, setIsMarkdownReplyView] = useState(true);
   const effectiveSelectedFeaturePath = selectableFeatures.some(
     (feature) => feature.filePath === selectedFeaturePath,
   )
     ? selectedFeaturePath
     : "";
+
+  useEffect(() => {
+    setIsMarkdownReplyView(true);
+  }, [latestChat?.prompt, latestChat?.reply, isAgentChatCleared]);
 
   function addFeatureTag() {
     if (!selectedFeaturePath) {
@@ -177,6 +189,21 @@ export default function AgentSessionPanel({
 
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="grid min-w-0 gap-2">
+          <label htmlFor="agent-provider" className="text-[11px] uppercase tracking-[0.28em] text-slate-400">
+            Provider
+          </label>
+          <select
+            id="agent-provider"
+            value={selectedProvider}
+            onChange={(event) => onProviderChange(event.target.value)}
+            className="agent-chat-scrollbar min-w-0 rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm capitalize text-slate-100 outline-none"
+          >
+            {Object.keys(agentModels).map((provider) => (
+              <option key={provider} value={provider}>{provider}</option>
+            ))}
+          </select>
+        </div>
+        <div className="grid min-w-0 gap-2">
           <label
             htmlFor="agent-model"
             className="text-[11px] uppercase tracking-[0.28em] text-slate-400"
@@ -189,7 +216,7 @@ export default function AgentSessionPanel({
             onChange={(event) => onSelectModel(event.target.value)}
             className="agent-chat-scrollbar min-w-0 rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
           >
-            {agentModels.codex.models.map((model) => (
+            {providerModels.map((model) => (
               <option key={model.id} value={model.id}>
                 {model.name}
               </option>
@@ -197,7 +224,7 @@ export default function AgentSessionPanel({
           </select>
         </div>
 
-        <div className="grid min-w-0 gap-2">
+        {reasoningOptions.length > 0 ? <div className="grid min-w-0 gap-2">
           <label
             htmlFor="agent-reasoning"
             className="text-[11px] uppercase tracking-[0.28em] text-slate-400"
@@ -216,7 +243,7 @@ export default function AgentSessionPanel({
               </option>
             ))}
           </select>
-        </div>
+        </div> : null}
       </div>
 
       <label className="flex items-center gap-3 rounded-[1.25rem] border border-white/10 bg-slate-900/50 px-4 py-3 text-sm text-slate-200">
@@ -315,7 +342,9 @@ export default function AgentSessionPanel({
         {!isAgentChatCleared ? (
           <p className="min-w-0 break-words text-sm text-slate-300">
             {promptQueueStatusText ||
-              `The daemon will use ${selectedModelId} with ${selectedReasoning} reasoning.`}
+              selectedProvider === "cursor"
+                ? "The daemon will use Cursor CLI with file-edit permissions."
+                : `The daemon will use ${selectedModelId} with ${selectedReasoning} reasoning.`}
           </p>
         ) : null}
       </div>
@@ -368,9 +397,102 @@ export default function AgentSessionPanel({
               ) : null}
             </div>
           </div>
-          <div className="flex min-w-0 justify-start">
-            <div className="w-full max-w-[19rem] min-w-0 whitespace-pre-wrap break-words rounded-[1.5rem] rounded-bl-md border border-white/10 bg-slate-900/90 px-4 py-3 text-sm text-slate-100 sm:max-w-[85%]">
-              {latestChat.reply || "Waiting for daemon reply..."}
+          <div className="grid min-w-0 justify-items-start gap-2">
+            {latestChat.reply ? (
+              <div
+                className="flex max-w-[19rem] flex-wrap items-center gap-1 self-stretch rounded-full border border-white/10 bg-slate-900/60 p-1 sm:max-w-[85%]"
+                aria-label="Reply view"
+              >
+                <button
+                  type="button"
+                  onClick={() => setIsMarkdownReplyView(true)}
+                  aria-pressed={isMarkdownReplyView}
+                  className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                    isMarkdownReplyView
+                      ? "bg-cyan-300 text-slate-950"
+                      : "text-slate-300 hover:bg-white/10"
+                  }`}
+                >
+                  Formatted
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsMarkdownReplyView(false)}
+                  aria-pressed={!isMarkdownReplyView}
+                  className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                    !isMarkdownReplyView
+                      ? "bg-cyan-300 text-slate-950"
+                      : "text-slate-300 hover:bg-white/10"
+                  }`}
+                >
+                  Raw
+                </button>
+              </div>
+            ) : null}
+            <div className="w-full max-w-[19rem] min-w-0 overflow-hidden rounded-[1.5rem] rounded-bl-md border border-white/10 bg-slate-900/90 px-4 py-3 text-sm text-slate-100 sm:max-w-[85%]">
+              {latestChat.reply ? (
+                isMarkdownReplyView ? (
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      a: ({ children, href }) => (
+                        <a
+                          href={href}
+                          target="_blank"
+                          rel="noreferrer noopener"
+                          className="break-words text-cyan-300 underline underline-offset-2 hover:text-cyan-200"
+                        >
+                          {children}
+                        </a>
+                      ),
+                      blockquote: ({ children }) => (
+                        <blockquote className="my-3 border-l-2 border-cyan-300/60 pl-3 text-slate-300">
+                          {children}
+                        </blockquote>
+                      ),
+                      code: ({ children, className, node, ...props }) => {
+                        const isBlock =
+                          node?.position?.start.line !==
+                          node?.position?.end.line;
+
+                        return isBlock ? (
+                          <code
+                            {...props}
+                            className={`${className ?? ""} block whitespace-pre-wrap break-words p-3 text-slate-100`}
+                          >
+                            {children}
+                          </code>
+                        ) : (
+                          <code
+                            {...props}
+                            className="rounded bg-black/40 px-1.5 py-0.5 font-mono text-[0.85em] text-cyan-100"
+                          >
+                            {children}
+                          </code>
+                        );
+                      },
+                      h1: ({ children }) => <h1 className="mt-4 text-xl font-bold text-white first:mt-0">{children}</h1>,
+                      h2: ({ children }) => <h2 className="mt-4 text-lg font-semibold text-white">{children}</h2>,
+                      h3: ({ children }) => <h3 className="mt-3 text-base font-semibold text-white">{children}</h3>,
+                      ol: ({ children }) => <ol className="my-3 list-decimal space-y-1 pl-5">{children}</ol>,
+                      p: ({ children }) => <p className="my-3 leading-6 first:mt-0 last:mb-0">{children}</p>,
+                      pre: ({ children }) => <pre className="my-3 max-w-full overflow-x-auto rounded-lg bg-black/45 text-xs leading-5 last:mb-0">{children}</pre>,
+                      table: ({ children }) => <div className="my-3 max-w-full overflow-x-auto"><table className="w-full min-w-max border-collapse text-left text-xs">{children}</table></div>,
+                      td: ({ children }) => <td className="border border-white/15 px-2 py-1.5 align-top">{children}</td>,
+                      th: ({ children }) => <th className="border border-white/15 bg-white/5 px-2 py-1.5 font-semibold text-white">{children}</th>,
+                      ul: ({ children }) => <ul className="my-3 list-disc space-y-1 pl-5">{children}</ul>,
+                    }}
+                  >
+                    {latestChat.reply}
+                  </ReactMarkdown>
+                ) : (
+                  <div className="whitespace-pre-wrap break-words">
+                    {latestChat.reply}
+                  </div>
+                )
+              ) : (
+                "Waiting for daemon reply..."
+              )}
             </div>
           </div>
         </div>

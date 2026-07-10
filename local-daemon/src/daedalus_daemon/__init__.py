@@ -14,6 +14,7 @@ from .config import load_daemon_config
 from .main import (
     run_agent_prompt_cycle,
     run_codex_exec,
+    run_cursor_exec,
     run_parameter_file_poll_cycle,
     run_parameter_file_update_cycle,
     run_poll_cycle,
@@ -34,6 +35,7 @@ __all__ = [
     "load_daemon_config",
     "run_agent_prompt_cycle",
     "run_codex_exec",
+    "run_cursor_exec",
     "run_parameter_file_poll_cycle",
     "run_parameter_file_update_cycle",
     "run_poll_cycle",

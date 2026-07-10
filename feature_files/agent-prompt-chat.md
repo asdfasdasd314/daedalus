@@ -17,10 +17,14 @@ The agent prompt chat adds a reusable prompt composer to the existing dashboard 
 - **Latest Pair Only**: The UI keeps only the newest submitted prompt and daemon reply instead of a full transcript.
 - **Clear Control**: The chat panel now includes a local clear action that hides the current prompt/reply block and suppresses the cached exchange until a new prompt is sent.
 - **Mobile Fitting**: The shared chat panel now stacks its feature-tag controls cleanly on narrow screens, shows daemon-root-relative project labels with optional clipping, and wraps transcript content instead of forcing horizontal overlay scroll.
+- **Markdown Reply Visualizer**: A completed latest reply defaults to a safe formatted Markdown view with GitHub-flavored tables and task lists, while an adjacent Raw control preserves the whitespace-pre-wrapped, copy-friendly transcript.
+- **Predictable Reply View State**: The shared panel resets the reply visualizer to Formatted whenever the latest exchange changes or chat is cleared, so a new daemon response never inherits a stale Raw selection.
+- **Reply Content Fitting**: The compact segmented control wraps at phone widths, and code blocks and tables scroll within the reply bubble so they cannot widen the overlay or page.
 
 ## Relevant Files
 - `daedalus-site/app/feature-files-dashboard.tsx`: Workspace shell that mounts the shared chat session inside the new-feature and feature-detail overlays.
 - `daedalus-site/app/agent-session-panel.tsx`: Shared prompt composer UI with project/model/planning controls, feature tagging, retry actions, and the latest chat transcript.
+- `daedalus-site/package.json`: Declares the safe Markdown renderer and GitHub-flavored Markdown plugin used by the shared reply visualizer.
 - `shared/database/migrations/008_auth_scoped_daedalus.sql`: Adds the user-owned daemon payload row used for latest chat replies.
 - `daedalus-site/lib/agent-models.ts`: Server helper that loads the frontend-owned model configuration for the dashboard.
 - `daedalus-site/config/agent_models.json`: Frontend-local Codex provider model and reasoning options for the prompt composer.
@@ -28,6 +32,7 @@ The agent prompt chat adds a reusable prompt composer to the existing dashboard 
 - `shared/database/schema.sql`: Checked-in schema snapshot for the communications table.
 - `local-daemon/src/daedalus_daemon/communications.py`: Purpose-aware Supabase read and write helpers for the daemon.
 - `local-daemon/src/daedalus_daemon/main.py`: Feature-file polling plus agent prompt execution and reply delivery.
+- `feature_files/cursor-agent.md`: Cursor execution provider used by the shared prompt transport.
 
 ## Dev Mode
 HACKING
@@ -58,4 +63,5 @@ HACKING
 - 2026-07-09: Clipped the selected project display to a mobile-safe tail label and tightened transcript/status widths so the shared chat panel stops drifting off the phone viewport while keeping the full project path in the picker itself.
 - 2026-07-09: Switched the shared project picker over to daemon-root-relative labels so the chat overlays never need to show absolute paths while still clipping long names safely on phones.
 - 2026-07-10: Added GPT-5.6 Sol/Terra/Luna to the Codex model catalog with light/medium/high/extra-high/ultra reasoning (default medium) and mapped the new labels through the daemon for `codex exec`.
-
+- 2026-07-10: Connected the shared agent chat provider selector to the Cursor daemon adapter while preserving the Codex prompt path.
+- 2026-07-10: Added a shared safe Markdown/raw reply visualizer with GFM tables and task lists, local reset behavior, and mobile-contained long content.

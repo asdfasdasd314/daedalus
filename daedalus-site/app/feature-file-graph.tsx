@@ -14,8 +14,6 @@ import type {
 } from "@/lib/feature-file-cache";
 import { normalizeFeatureFilePath } from "./feature-workspace-utils";
 
-const VIEWPORT_WIDTH = 1600;
-const VIEWPORT_HEIGHT = 980;
 const NODE_RADIUS = 24;
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
 const SPIRAL_STEP = 92;
@@ -113,6 +111,8 @@ type GraphData = {
   defaultViewport: GraphViewport;
   edges: FeatureEdge[];
   nodes: FeatureNode[];
+  worldHeight: number;
+  worldWidth: number;
 };
 
 type NodeDragState = {
@@ -181,6 +181,11 @@ type WorldBounds = {
   left: number;
   right: number;
   top: number;
+};
+
+type ViewportSize = {
+  width: number;
+  height: number;
 };
 
 function getZoomRatio(zoom: number, minZoom: number, maxZoom: number) {
@@ -347,13 +352,14 @@ function getRemainingPointer(
 
 function getVisibleWorldBounds(
   viewport: GraphViewport,
+  viewportSize: ViewportSize,
   padding = VIEWPORT_CULL_PADDING,
 ): WorldBounds {
   return {
     left: -viewport.offsetX / viewport.zoom - padding,
     top: -viewport.offsetY / viewport.zoom - padding,
-    right: (VIEWPORT_WIDTH - viewport.offsetX) / viewport.zoom + padding,
-    bottom: (VIEWPORT_HEIGHT - viewport.offsetY) / viewport.zoom + padding,
+    right: (viewportSize.width - viewport.offsetX) / viewport.zoom + padding,
+    bottom: (viewportSize.height - viewport.offsetY) / viewport.zoom + padding,
   };
 }
 
@@ -430,6 +436,10 @@ export default function FeatureFileGraph({
 }: FeatureFileGraphProps) {
   const graphData = useMemo(() => buildGraphData(projects), [projects]);
   const [nodes, setNodes] = useState(graphData.nodes);
+  const [viewportSize, setViewportSize] = useState<ViewportSize>({
+    width: 1,
+    height: 1,
+  });
   const [viewport, setViewport] = useState({
     ...graphData.defaultViewport,
     zoom,
@@ -447,6 +457,8 @@ export default function FeatureFileGraph({
   const pinchSessionRef = useRef<PinchSession | null>(null);
   const sliderDragRef = useRef<SliderDragState | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const viewportSizeRef = useRef<ViewportSize>(viewportSize);
+  const hasMeasuredViewportRef = useRef(false);
   const canDragNodes = physicsEnabled && !isCoarsePointer;
 
   useEffect(() => {
@@ -456,19 +468,66 @@ export default function FeatureFileGraph({
     setNodes(graphData.nodes);
     setDraggedNodeId("");
     nodesRef.current = graphData.nodes;
-    viewportRef.current = {
+    const nextViewport = centerGraphViewport({
       ...graphData.defaultViewport,
       zoom: nextZoom,
-    };
+    }, viewportSizeRef.current, graphData.worldWidth, graphData.worldHeight);
+    viewportRef.current = nextViewport;
     nodeDragRef.current = null;
     touchPanRef.current = null;
     activePointersRef.current.clear();
     pinchSessionRef.current = null;
     sliderDragRef.current = null;
-    setViewport({
-      ...graphData.defaultViewport,
-      zoom: nextZoom,
-    });
+    setViewport(nextViewport);
+  }, [graphData]);
+
+  useEffect(() => {
+    const svg = svgRef.current;
+
+    if (!svg || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const observedSvg = svg;
+
+    function syncViewportSize() {
+      const rect = observedSvg.getBoundingClientRect();
+      const nextSize = {
+        width: Math.max(1, rect.width),
+        height: Math.max(1, rect.height),
+      };
+      const previousSize = viewportSizeRef.current;
+
+      if (
+        Math.abs(nextSize.width - previousSize.width) < 0.5 &&
+        Math.abs(nextSize.height - previousSize.height) < 0.5
+      ) {
+        return;
+      }
+
+      viewportSizeRef.current = nextSize;
+      setViewportSize(nextSize);
+
+      const currentViewport = viewportRef.current;
+      const nextViewport = hasMeasuredViewportRef.current
+        ? preserveViewportCenter(currentViewport, previousSize, nextSize)
+        : centerGraphViewport(
+            currentViewport,
+            nextSize,
+            graphData.worldWidth,
+            graphData.worldHeight,
+          );
+
+      hasMeasuredViewportRef.current = true;
+      viewportRef.current = nextViewport;
+      setViewport(nextViewport);
+    }
+
+    const observer = new ResizeObserver(syncViewportSize);
+    observer.observe(observedSvg);
+    syncViewportSize();
+
+    return () => observer.disconnect();
   }, [graphData]);
 
   useEffect(() => {
@@ -498,12 +557,12 @@ export default function FeatureFileGraph({
     const nextViewport = applyZoomAtPoint(
       viewportRef.current,
       clamp(zoom, minZoom, maxZoom),
-      VIEWPORT_WIDTH / 2,
-      VIEWPORT_HEIGHT / 2,
+      viewportSize.width / 2,
+      viewportSize.height / 2,
     );
     viewportRef.current = nextViewport;
     setViewport(nextViewport);
-  }, [maxZoom, minZoom, zoom]);
+  }, [maxZoom, minZoom, viewportSize, zoom]);
 
   useEffect(() => {
     if (physicsEnabled) {
@@ -1096,8 +1155,8 @@ export default function FeatureFileGraph({
         minZoom,
         maxZoom,
       ),
-      VIEWPORT_WIDTH / 2,
-      VIEWPORT_HEIGHT / 2,
+      viewportSize.width / 2,
+      viewportSize.height / 2,
     );
   }
 
@@ -1116,8 +1175,8 @@ export default function FeatureFileGraph({
         minZoom,
         maxZoom,
       ),
-      VIEWPORT_WIDTH / 2,
-      VIEWPORT_HEIGHT / 2,
+      viewportSize.width / 2,
+      viewportSize.height / 2,
     );
   }
 
@@ -1155,8 +1214,8 @@ export default function FeatureFileGraph({
     graphData.clusters.map((cluster) => [cluster.projectIndex, cluster]),
   );
   const visibleBounds = useMemo(
-    () => getVisibleWorldBounds(viewport),
-    [viewport],
+    () => getVisibleWorldBounds(viewport, viewportSize),
+    [viewport, viewportSize],
   );
   const nodeById = useMemo(
     () => new Map(nodes.map((node) => [node.id, node])),
@@ -1232,7 +1291,7 @@ export default function FeatureFileGraph({
     <div className="absolute inset-0 bg-[#05070c]">
       <svg
         ref={svgRef}
-        viewBox={`0 0 ${VIEWPORT_WIDTH} ${VIEWPORT_HEIGHT}`}
+        viewBox={`0 0 ${viewportSize.width} ${viewportSize.height}`}
         className={`h-full w-full select-none touch-none ${
           viewport.isDragging || draggedNodeId ? "cursor-grabbing" : "cursor-grab"
         }`}
@@ -1257,8 +1316,8 @@ export default function FeatureFileGraph({
         <rect
           x="0"
           y="0"
-          width={VIEWPORT_WIDTH}
-          height={VIEWPORT_HEIGHT}
+          width={viewportSize.width}
+          height={viewportSize.height}
           fill="#05070c"
         />
 
@@ -1511,8 +1570,8 @@ function buildGraphData(projects: FeatureFileProjects): GraphData {
   return {
     clusters,
     defaultViewport: {
-      offsetX: VIEWPORT_WIDTH / 2 - worldWidth / 2,
-      offsetY: VIEWPORT_HEIGHT / 2 - worldHeight / 2,
+      offsetX: 0,
+      offsetY: 0,
       velocityX: 0,
       velocityY: 0,
       zoom: 1,
@@ -1525,6 +1584,8 @@ function buildGraphData(projects: FeatureFileProjects): GraphData {
     },
     edges,
     nodes: nodesWithVisualMetrics,
+    worldHeight,
+    worldWidth,
   };
 }
 
@@ -1867,6 +1928,35 @@ function applyZoomAtPoint(
     offsetX: viewX - worldX * nextZoom,
     offsetY: viewY - worldY * nextZoom,
     zoom: nextZoom,
+  };
+}
+
+function centerGraphViewport(
+  viewport: GraphViewport,
+  viewportSize: ViewportSize,
+  worldWidth: number,
+  worldHeight: number,
+): GraphViewport {
+  return {
+    ...viewport,
+    offsetX: viewportSize.width / 2 - worldWidth / 2,
+    offsetY: viewportSize.height / 2 - worldHeight / 2,
+  };
+}
+
+function preserveViewportCenter(
+  viewport: GraphViewport,
+  previousSize: ViewportSize,
+  nextSize: ViewportSize,
+): GraphViewport {
+  const worldCenterX = (previousSize.width / 2 - viewport.offsetX) / viewport.zoom;
+  const worldCenterY =
+    (previousSize.height / 2 - viewport.offsetY) / viewport.zoom;
+
+  return {
+    ...viewport,
+    offsetX: nextSize.width / 2 - worldCenterX * viewport.zoom,
+    offsetY: nextSize.height / 2 - worldCenterY * viewport.zoom,
   };
 }
 

@@ -19,6 +19,7 @@ from daedalus_daemon import (
     PARAMETER_FILE_LOAD_PURPOSE,
     run_agent_prompt_cycle,
     run_codex_exec,
+    run_cursor_exec,
     run_parameter_file_poll_cycle,
     run_parameter_file_update_cycle,
     run_poll_cycle,
@@ -762,6 +763,46 @@ class RunAgentPromptCycleTests(unittest.TestCase):
         )
 
 
+class CursorProviderRoutingTests(unittest.TestCase):
+    def test_routes_cursor_prompt_to_cursor_runner_and_preserves_provider(self):
+        writes: list[tuple[str, str]] = []
+        deliveries: list[tuple[str, str, str]] = []
+        message_reads = [
+            json.dumps({
+                "promptId": "cursor-1",
+                "directory": "/workspace/project",
+                "prompt": "Build the feature",
+                "provider": "cursor",
+            }),
+            build_agent_prompt_state_message("cursor-1", DAEMON_RECEIVED_MESSAGE),
+        ]
+
+        def fake_read_message(_config, _purpose):
+            return message_reads.pop(0)
+
+        def fake_write_message(_config, purpose, message):
+            writes.append((purpose, message))
+
+        def fake_deliver_chat(_config, prompt_id, _directory, _prompt, reply, provider, *_args):
+            deliveries.append((prompt_id, reply, provider))
+
+        def fake_run_cursor_prompt(directory, prompt):
+            self.assertEqual(directory, "/workspace/project")
+            self.assertEqual(prompt, "Build the feature")
+            return "Cursor completed"
+
+        run_agent_prompt_cycle(
+            {"pollIntervalMs": 5000},
+            read_message=fake_read_message,
+            write_message=fake_write_message,
+            deliver_chat=fake_deliver_chat,
+            run_cursor_prompt=fake_run_cursor_prompt,
+        )
+
+        self.assertEqual(deliveries, [("cursor-1", "Cursor completed", "cursor")])
+        self.assertEqual(len(writes), 2)
+
+
 class RunCodexExecTests(unittest.TestCase):
     def test_returns_stdout_for_success(self):
         class FakeProcess:
@@ -815,6 +856,51 @@ class RunCodexExecTests(unittest.TestCase):
             reply,
             "Codex failed with exit code 1\n\nSTDOUT:\npartial\n\nSTDERR:\nboom",
         )
+
+
+class RunCursorExecTests(unittest.TestCase):
+    def test_returns_actionable_message_when_cursor_is_unavailable(self):
+        with patch("daedalus_daemon.main.shutil.which", return_value=None):
+            reply = run_cursor_exec("/workspace/project", "Build the feature")
+
+        self.assertIn("Cursor CLI is unavailable", reply)
+        self.assertIn("agent", reply)
+
+    def test_runs_cursor_with_prompt_as_a_single_argument(self):
+        class FakeProcess:
+            returncode = 0
+            stdout = "done"
+            stderr = ""
+
+        prompt = 'Build "the feature"; do not use a shell'
+        with (
+            patch("daedalus_daemon.main.shutil.which", return_value="/usr/local/bin/agent"),
+            patch("daedalus_daemon.main.subprocess.run", return_value=FakeProcess()) as mocked_run,
+        ):
+            reply = run_cursor_exec("/workspace/project", prompt)
+
+        mocked_run.assert_called_once_with(
+            ["agent", "-p", "--force", prompt],
+            cwd="/workspace/project",
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(reply, "done")
+
+    def test_maps_cancelled_and_failed_processes_to_daemon_replies(self):
+        class CancelledProcess:
+            returncode = -15
+            stdout = "partial"
+            stderr = "terminated"
+
+        with (
+            patch("daedalus_daemon.main.shutil.which", return_value="/usr/local/bin/agent"),
+            patch("daedalus_daemon.main.subprocess.run", return_value=CancelledProcess()),
+        ):
+            reply = run_cursor_exec("/workspace/project", "Build the feature")
+
+        self.assertIn("Cursor was cancelled", reply)
+        self.assertIn("partial", reply)
 
 
 if __name__ == "__main__":

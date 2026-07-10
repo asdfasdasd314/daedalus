@@ -9,7 +9,7 @@ export type AgentModel = {
 };
 
 export type AgentModelsConfig = {
-  codex: {
+  [provider: string]: {
     models: AgentModel[];
   };
 };
