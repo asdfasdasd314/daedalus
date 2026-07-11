@@ -786,9 +786,10 @@ class CursorProviderRoutingTests(unittest.TestCase):
         def fake_deliver_chat(_config, prompt_id, _directory, _prompt, reply, provider, *_args):
             deliveries.append((prompt_id, reply, provider))
 
-        def fake_run_cursor_prompt(directory, prompt):
+        def fake_run_cursor_prompt(directory, prompt, planning_mode):
             self.assertEqual(directory, "/workspace/project")
             self.assertEqual(prompt, "Build the feature")
+            self.assertFalse(planning_mode)
             return "Cursor completed"
 
         run_agent_prompt_cycle(
@@ -869,7 +870,7 @@ class RunCursorExecTests(unittest.TestCase):
     def test_runs_cursor_with_prompt_as_a_single_argument(self):
         class FakeProcess:
             returncode = 0
-            stdout = "done"
+            stdout = json.dumps({"type": "result", "result": "done"})
             stderr = ""
 
         prompt = 'Build "the feature"; do not use a shell'
@@ -881,12 +882,89 @@ class RunCursorExecTests(unittest.TestCase):
 
         mocked_run.assert_called_once()
         call_args = mocked_run.call_args
-        self.assertEqual(call_args.args[0], ["agent", "-p", "--force", prompt])
+        self.assertEqual(
+            call_args.args[0],
+            ["agent", "-p", "--output-format", "json", "--force", prompt],
+        )
         self.assertEqual(call_args.kwargs["cwd"], "/workspace/project")
         self.assertTrue(call_args.kwargs["capture_output"])
         self.assertTrue(call_args.kwargs["text"])
         self.assertIn("env", call_args.kwargs)
         self.assertEqual(reply, "done")
+
+    def test_runs_cursor_plan_without_force_and_returns_result(self):
+        class FakeProcess:
+            returncode = 0
+            stdout = json.dumps({"type": "result", "result": "# Plan\n\nDo the work."})
+            stderr = ""
+
+        with (
+            patch("daedalus_daemon.main.shutil.which", return_value="/usr/local/bin/agent"),
+            patch("daedalus_daemon.main.subprocess.run", return_value=FakeProcess()) as mocked_run,
+        ):
+            reply = run_cursor_exec("/workspace/project", "Build the feature", True)
+
+        self.assertEqual(
+            mocked_run.call_args.args[0],
+            ["agent", "-p", "--output-format", "json", "--mode=plan", "Build the feature"],
+        )
+        self.assertEqual(reply, "# Plan\n\nDo the work.")
+
+    def test_falls_back_when_cursor_rejects_plan_mode(self):
+        class UnsupportedPlanModeProcess:
+            returncode = 1
+            stdout = ""
+            stderr = "unknown option --mode=plan"
+
+        class FallbackProcess:
+            returncode = 0
+            stdout = json.dumps({"type": "result", "result": "# Fallback plan"})
+            stderr = ""
+
+        with (
+            patch("daedalus_daemon.main.shutil.which", return_value="/usr/local/bin/agent"),
+            patch(
+                "daedalus_daemon.main.subprocess.run",
+                side_effect=[UnsupportedPlanModeProcess(), FallbackProcess()],
+            ) as mocked_run,
+        ):
+            reply = run_cursor_exec("/workspace/project", "Build the feature", True)
+
+        self.assertEqual(mocked_run.call_count, 2)
+        self.assertEqual(
+            mocked_run.call_args_list[1].args[0],
+            ["agent", "-p", "--output-format", "json", "Build the feature"],
+        )
+        self.assertEqual(reply, "# Fallback plan")
+
+    def test_returns_actionable_response_for_invalid_cursor_json(self):
+        class FakeProcess:
+            returncode = 0
+            stdout = "not json"
+            stderr = ""
+
+        with (
+            patch("daedalus_daemon.main.shutil.which", return_value="/usr/local/bin/agent"),
+            patch("daedalus_daemon.main.subprocess.run", return_value=FakeProcess()),
+        ):
+            reply = run_cursor_exec("/workspace/project", "Build the feature")
+
+        self.assertIn("malformed JSON", reply)
+        self.assertIn("not json", reply)
+
+    def test_returns_actionable_response_when_cursor_json_has_no_result(self):
+        class FakeProcess:
+            returncode = 0
+            stdout = json.dumps({"type": "result"})
+            stderr = ""
+
+        with (
+            patch("daedalus_daemon.main.shutil.which", return_value="/usr/local/bin/agent"),
+            patch("daedalus_daemon.main.subprocess.run", return_value=FakeProcess()),
+        ):
+            reply = run_cursor_exec("/workspace/project", "Build the feature")
+
+        self.assertIn("without a result", reply)
 
     def test_maps_cancelled_and_failed_processes_to_daemon_replies(self):
         class CancelledProcess:
@@ -902,6 +980,22 @@ class RunCursorExecTests(unittest.TestCase):
 
         self.assertIn("Cursor was cancelled", reply)
         self.assertIn("partial", reply)
+
+    def test_maps_nonzero_cursor_exit_to_actionable_reply(self):
+        class FailedProcess:
+            returncode = 1
+            stdout = "partial"
+            stderr = "boom"
+
+        with (
+            patch("daedalus_daemon.main.shutil.which", return_value="/usr/local/bin/agent"),
+            patch("daedalus_daemon.main.subprocess.run", return_value=FailedProcess()),
+        ):
+            reply = run_cursor_exec("/workspace/project", "Build the feature")
+
+        self.assertIn("exit code 1", reply)
+        self.assertIn("partial", reply)
+        self.assertIn("boom", reply)
 
 
 if __name__ == "__main__":

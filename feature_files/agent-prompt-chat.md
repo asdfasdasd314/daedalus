@@ -11,7 +11,7 @@ The agent prompt chat adds a reusable prompt composer to the existing dashboard 
 - **Model Controls**: Codex model and reasoning options are stored in frontend-local JSON, then sent with each prompt payload.
 - **Planning Mode**: Planning mode wraps the user prompt with a fixed instruction preamble before daemon execution.
 - **Targeted Feature Scope**: The chat panel keeps a separate `Targeted Features` chip row for the next outbound prompt only, and each prompt now carries a `targetedFeaturePaths` list of project-relative `feature_files/*.md` paths.
-- **Execution Loop**: The daemon now replaces the queued `agent_prompt` JSON with progress markers, runs `codex exec` inside the requested repo, and writes the latest prompt/reply pair into `daemon_payloads`.
+- **Execution Loop**: Planning prompts keep the direct `agent_prompt` message path, while agent-mode prompts become durable `agent_tasks` consumed by the Git worktree orchestrator; both return the latest prompt/reply pair through `daemon_payloads`.
 - **Chat Progress**: The dashboard watches the `agent_prompt` row so it can show daemon pickup and completion updates while the reply is still being generated.
 - **Queued Prompt Safety**: If a newer prompt arrives while an older one is still running, the daemon leaves the newer row in place instead of overwriting it with `daemon_sent_response`.
 - **Latest Pair Only**: The UI keeps only the newest submitted prompt and daemon reply instead of a full transcript.
@@ -34,6 +34,7 @@ The agent prompt chat adds a reusable prompt composer to the existing dashboard 
 - `local-daemon/src/daedalus_daemon/communications.py`: Purpose-aware Supabase read and write helpers for the daemon.
 - `local-daemon/src/daedalus_daemon/main.py`: Feature-file polling plus agent prompt execution and reply delivery.
 - `feature_files/cursor-agent.md`: Cursor execution provider used by the shared prompt transport.
+- `feature_files/daedalus-git-worktrees.md`: Durable agent-mode queue, isolation, verification, and integration lifecycle.
 
 ## Dev Mode
 HACKING
@@ -67,3 +68,4 @@ HACKING
 - 2026-07-10: Connected the shared agent chat provider selector to the Cursor daemon adapter while preserving the Codex prompt path.
 - 2026-07-10: Added a shared safe Markdown/raw reply visualizer with GFM tables and task lists, local reset behavior, and mobile-contained long content.
 - 2026-07-10: Added a bottom-right Copy button on the agent reply bubble that copies the raw daemon response to the clipboard.
+- 2026-07-11: Routed agent-mode submissions through durable orchestrator tasks while retaining the existing direct Planning Mode transport.

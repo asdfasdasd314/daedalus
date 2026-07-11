@@ -1,0 +1,11 @@
+max_agents_per_repository = 4
+cohort_idle_window_seconds = 30
+resolver_attempt_limit = 3
+primary_branch = "main"
+
+# Commands run directly without a shell in each task and integration worktree.
+verification_commands = [
+  ["npm", "--prefix", "daedalus-site", "test"],
+  ["python", "-m", "pytest", "local-daemon/tests"],
+]
+

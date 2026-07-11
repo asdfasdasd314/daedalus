@@ -15,12 +15,15 @@ The feature-first graph workspace shell owns the responsive workspace framing ar
 - **Mobile Fit Policy**: The shell keeps mobile overlays viewport-safe by relying on compact project labels in the shared chat panel and by leaving the graph mounted behind full-screen-ish sheets instead of shifting the whole workspace layout sideways.
 - **Mobile Hit Alignment**: The shell's fullscreen mobile mount depends on the graph converting touch and wheel coordinates through the SVG's actual transformed space instead of proportional element-rect math, because the preserved `viewBox` can letterbox on tall screens.
 - **Drawer Label Consistency**: The shell reuses the shared root-relative project label helpers inside the ventures drawer so project tags match the chat panel instead of exposing absolute daemon paths.
+- **Feature Search Overlay**: The shell mounts the feature-search fuzzy finder as a workspace overlay/control, opens it from the hamburger menu or `⌘K` / `Ctrl+K`, and routes result selection through the same feature-node selection flow as the graph.
 
 ## Relevant Files
 - `daedalus-site/app/feature-files-dashboard.tsx`: Main workspace shell that owns overlay routing, responsive layout rules, venture drawer presentation, and feature-detail tabs.
 - `daedalus-site/app/feature-file-graph.tsx`: Graph canvas that the shell mounts full-screen, including the zoom rail that the shell can hide or restore.
 - `daedalus-site/app/agent-session-panel.tsx`: Shared chat session UI reused by the new-feature and feature-detail overlays.
 - `daedalus-site/app/feature-workspace-utils.ts`: Shared feature-path and feature-label helpers used across the shell overlays.
+- `daedalus-site/app/feature-search-dialog.tsx`: Feature-search fuzzy finder overlay mounted by the shell for keyboard and menu-driven feature discovery.
+- `feature_files/feature-search-fuzzy-finder.md`: Finder-owned search behavior and index ownership boundary.
 - `parameter_files/feature-first-graph-workspace-shell.toml`: Sibling parameter file placeholder for the workspace shell feature.
 - `parameter_files/feature-file-graph-display.toml`: Graph-owned zoom profile values that the shell reads to choose mobile and desktop framing.
 
@@ -40,3 +43,4 @@ HACKING
 - 2026-07-09: Added a hamburger-menu zoom visibility toggle that can slide the graph's right-edge zoom rail offscreen without affecting pinch or wheel zoom.
 - 2026-07-09: Raised mobile ventures and primary overlay sheets to `z-30` so their close controls sit above the `z-20` workspace hamburger instead of overlapping underneath it.
 - 2026-07-10: Removed the fullscreen graph viewport dead zone by measuring the SVG, sizing its viewBox and culling bounds responsively, and preserving the centered world point across browser resizes.
+- 2026-07-11: Wired the feature-search fuzzy finder as a shell overlay opened from the workspace menu and ⌘/Ctrl+K, reusing graph feature-node selection for result opens.

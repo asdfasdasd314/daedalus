@@ -55,6 +55,7 @@ if __package__ in {None, ""}:
         scan_feature_file_projects,
         scan_parameter_file_projects,
     )
+    from daedalus_daemon.orchestrator import GitWorktreeOrchestrator
 else:
     from .communications import (
         AGENT_PROMPT_PURPOSE,
@@ -76,6 +77,7 @@ else:
     )
     from .config import get_env_config_value, load_daemon_config, load_env_files
     from .scanner import scan_feature_file_projects, scan_parameter_file_projects
+    from .orchestrator import GitWorktreeOrchestrator
 
 
 def run_poll_cycle(
@@ -230,9 +232,9 @@ def run_agent_prompt_cycle(
 
     if provider == CURSOR_PROVIDER:
         reply = (
-            run_cursor_exec(directory, final_prompt)
+            run_cursor_exec(directory, final_prompt, planning_mode)
             if run_cursor_prompt is None
-            else run_cursor_prompt(directory, final_prompt)
+            else run_cursor_prompt(directory, final_prompt, planning_mode)
         )
     elif provider == CODEX_PROVIDER:
         reply = (
@@ -578,7 +580,32 @@ def resolve_cursor_api_key() -> str | None:
     return get_env_config_value(env_config, "CURSOR_API_KEY")
 
 
-def run_cursor_exec(directory: str, prompt: str) -> str:
+def is_cursor_plan_mode_unsupported(stderr: str) -> bool:
+    return "--mode" in stderr and (
+        "unknown option" in stderr.lower() or "unknown argument" in stderr.lower()
+    )
+
+
+def parse_cursor_result(stdout: str, stderr: str) -> str:
+    try:
+        payload = json.loads(stdout)
+    except json.JSONDecodeError:
+        return (
+            "Cursor returned malformed JSON.\n\n"
+            f"STDOUT:\n{stdout}\n\nSTDERR:\n{stderr}"
+        )
+
+    result = payload.get("result") if isinstance(payload, dict) else None
+    if not isinstance(result, str):
+        return (
+            "Cursor returned JSON without a result.\n\n"
+            f"STDOUT:\n{stdout}\n\nSTDERR:\n{stderr}"
+        )
+
+    return result
+
+
+def run_cursor_exec(directory: str, prompt: str, planning_mode: bool = False) -> str:
     if shutil.which("agent") is None:
         return (
             "Cursor CLI is unavailable. Install Cursor CLI so the `agent` "
@@ -590,9 +617,16 @@ def run_cursor_exec(directory: str, prompt: str) -> str:
     if cursor_api_key:
         env["CURSOR_API_KEY"] = cursor_api_key
 
+    command = ["agent", "-p", "--output-format", "json"]
+    if planning_mode:
+        command.append("--mode=plan")
+    else:
+        command.append("--force")
+    command.append(prompt)
+
     try:
         process = subprocess.run(
-            ["agent", "-p", "--force", prompt],
+            command,
             cwd=directory,
             capture_output=True,
             text=True,
@@ -602,7 +636,23 @@ def run_cursor_exec(directory: str, prompt: str) -> str:
         return f"Cursor failed before execution completed.\n\n{error}"
 
     if process.returncode == 0:
-        return process.stdout
+        return parse_cursor_result(process.stdout, process.stderr)
+
+    if planning_mode and is_cursor_plan_mode_unsupported(process.stderr):
+        fallback_command = ["agent", "-p", "--output-format", "json", prompt]
+        try:
+            process = subprocess.run(
+                fallback_command,
+                cwd=directory,
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+        except Exception as error:
+            return f"Cursor failed before execution completed.\n\n{error}"
+
+        if process.returncode == 0:
+            return parse_cursor_result(process.stdout, process.stderr)
 
     if process.returncode < 0:
         return (
@@ -620,6 +670,7 @@ def run_cursor_exec(directory: str, prompt: str) -> str:
 
 def main() -> None:
     config = load_daemon_config()
+    orchestrator = GitWorktreeOrchestrator(config, run_codex_exec, run_cursor_exec)
 
     while True:
         if not run_cycle_safely("feature_file_load", run_poll_cycle, config):
@@ -643,6 +694,10 @@ def main() -> None:
             continue
 
         if not run_cycle_safely("agent_prompt", run_agent_prompt_cycle, config):
+            time.sleep(config["pollIntervalMs"] / 1000)
+            continue
+
+        if not run_cycle_safely("agent_orchestrator", orchestrator.run_cycle, config):
             time.sleep(config["pollIntervalMs"] / 1000)
             continue
 

@@ -19,6 +19,11 @@ type AgentPromptQueueStatus =
   | "queued"
   | "sending"
   | "running"
+  | "verifying"
+  | "ready"
+  | "integrating"
+  | "resolving"
+  | "blocked"
   | "completed"
   | "failed"
   | "stalled";
@@ -29,6 +34,7 @@ type AgentSessionPanelProps = {
   availableProjectDirectories: string[];
   currentPromptQueueItem: {
     promptId: string;
+    planningMode: boolean;
     status: AgentPromptQueueStatus;
   } | null;
   defaultProjectDirectory: string;
@@ -364,6 +370,7 @@ export default function AgentSessionPanel({
 
       {!isAgentChatCleared &&
       currentPromptQueueItem &&
+      currentPromptQueueItem.planningMode &&
       (currentPromptQueueItem.status === "failed" ||
         currentPromptQueueItem.status === "stalled") ? (
         <div className="flex flex-wrap gap-3">

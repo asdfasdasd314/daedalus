@@ -5,6 +5,14 @@ export type WorkspaceFeatureOption = {
   filePath: string;
 };
 
+export type FeatureSearchRecord = {
+  featureName: string;
+  filePath: string;
+  markdown: string;
+  projectLabel: string;
+  projectPath: string;
+};
+
 export function normalizeFeatureFilePath(path: string) {
   return path.replace(/\\/g, "/").replace(/^\.\//, "");
 }
@@ -129,4 +137,30 @@ export function getCompactProjectLabel(
   const trailingSegments = segments.slice(-2).join("/");
 
   return `.../${trailingSegments}`;
+}
+
+export function buildFeatureSearchRecords(
+  projects: FeatureFileProjects,
+): FeatureSearchRecord[] {
+  const projectDirectories = Object.keys(projects);
+  const records: FeatureSearchRecord[] = [];
+
+  for (const projectPath of projectDirectories) {
+    const projectLabel = getProjectLabel(projectPath, projectDirectories);
+    const projectFeatures = projects[projectPath] ?? [];
+
+    for (const feature of projectFeatures) {
+      const filePath = normalizeFeatureFilePath(feature.path);
+
+      records.push({
+        featureName: getFeatureNameFromMarkdown(feature.markdown, filePath),
+        filePath,
+        markdown: feature.markdown,
+        projectLabel,
+        projectPath,
+      });
+    }
+  }
+
+  return records;
 }

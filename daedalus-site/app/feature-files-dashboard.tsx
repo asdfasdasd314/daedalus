@@ -6,6 +6,7 @@ import AgentSessionPanel from "./agent-session-panel";
 import FeatureFileGraph, {
   type FeatureGraphSelection,
 } from "./feature-file-graph";
+import FeatureSearchDialog from "./feature-search-dialog";
 import ParameterVariableSelector from "./parameter-variable-selector";
 import type {
   AgentChatExchange,
@@ -103,6 +104,11 @@ type AgentPromptQueueStatus =
   | "queued"
   | "sending"
   | "running"
+  | "verifying"
+  | "ready"
+  | "integrating"
+  | "resolving"
+  | "blocked"
   | "completed"
   | "failed"
   | "stalled";
@@ -124,6 +130,28 @@ type AgentPromptQueueEntry = AgentPromptPayload & {
   sentAt?: number;
   completedAt?: number;
   error?: string;
+};
+
+type AgentTaskRow = {
+  id: string;
+  repository: string;
+  prompt: string;
+  provider: string;
+  model: string;
+  reasoning: string;
+  planning_mode: boolean;
+  targeted_feature_paths: string[];
+  status: AgentPromptQueueStatus;
+  queue_sequence: number;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  error: string;
+};
+
+type DaemonEventRow = {
+  severity: "info" | "warning" | "error";
+  message: string;
 };
 
 type ParsedAgentPromptRow = {
@@ -206,6 +234,7 @@ export default function FeatureFilesDashboard({
     useState<SelectedFeatureSession | null>(null);
   const [venturesDrawerOpen, setVenturesDrawerOpen] = useState(false);
   const [isWorkspaceMenuOpen, setIsWorkspaceMenuOpen] = useState(false);
+  const [isFeatureSearchOpen, setIsFeatureSearchOpen] = useState(false);
   const [isGraphPhysicsEnabled, setIsGraphPhysicsEnabled] = useState(true);
   const [isGraphZoomSliderVisible, setIsGraphZoomSliderVisible] =
     useState(true);
@@ -399,6 +428,28 @@ export default function FeatureFilesDashboard({
     };
   }, [isWorkspaceMenuOpen]);
 
+  useEffect(() => {
+    if (!currentUser) {
+      return;
+    }
+
+    function handleFeatureSearchShortcut(event: KeyboardEvent) {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "k") {
+        return;
+      }
+
+      event.preventDefault();
+      setIsWorkspaceMenuOpen(false);
+      setIsFeatureSearchOpen(true);
+    }
+
+    document.addEventListener("keydown", handleFeatureSearchShortcut);
+
+    return () => {
+      document.removeEventListener("keydown", handleFeatureSearchShortcut);
+    };
+  }, [currentUser]);
+
   const graphZoomSettings = useMemo(
     () => getGraphZoomSettings(parameterProjects, isMobileLayout),
     [isMobileLayout, parameterProjects],
@@ -469,6 +520,66 @@ export default function FeatureFilesDashboard({
     void pollMessage();
     const intervalId = window.setInterval(pollMessage, pollIntervalMs);
 
+    return () => {
+      isMounted = false;
+      window.clearInterval(intervalId);
+    };
+  }, [
+    accessToken,
+    currentUser,
+    currentUserId,
+    pollIntervalMs,
+    supabasePublishableKey,
+    supabaseUrl,
+  ]);
+
+  useEffect(() => {
+    if (!currentUser || !accessToken) {
+      return;
+    }
+
+    let isMounted = true;
+    async function pollDurableAgentTasks() {
+      try {
+        const [rows, latestEvent] = await Promise.all([
+          fetchAgentTasks(
+            supabaseUrl,
+            supabasePublishableKey,
+            accessToken,
+            currentUserId,
+          ),
+          fetchLatestDaemonEvent(
+            supabaseUrl,
+            supabasePublishableKey,
+            accessToken,
+            currentUserId,
+          ),
+        ]);
+        if (!isMounted) {
+          return;
+        }
+
+        const durableQueue = rows
+          .filter((row) => row.status !== "completed")
+          .map(mapAgentTaskRowToQueueEntry);
+        setAgentPromptQueue((currentQueue) => [
+          ...currentQueue.filter((item) => item.planningMode),
+          ...durableQueue,
+        ]);
+        if (latestEvent?.severity === "warning") {
+          setPromptStatus(`Daemon warning: ${latestEvent.message}`);
+        } else if (latestEvent?.severity === "error") {
+          setPromptStatus(`Daemon error: ${latestEvent.message}`);
+        } else if (durableQueue[0]) {
+          setPromptStatus(formatDurableTaskStatus(durableQueue[0]));
+        }
+      } catch {
+        return;
+      }
+    }
+
+    void pollDurableAgentTasks();
+    const intervalId = window.setInterval(pollDurableAgentTasks, pollIntervalMs);
     return () => {
       isMounted = false;
       window.clearInterval(intervalId);
@@ -848,7 +959,9 @@ export default function FeatureFilesDashboard({
     }
 
     const activePrompt = agentPromptQueue.find(
-      (item) => item.status === "sending" || item.status === "running",
+      (item) =>
+        item.planningMode &&
+        (item.status === "sending" || item.status === "running"),
     );
 
     if (activePrompt) {
@@ -856,7 +969,7 @@ export default function FeatureFilesDashboard({
     }
 
     const nextQueuedPrompt = agentPromptQueue.find(
-      (item) => item.status === "queued",
+      (item) => item.status === "queued" && item.planningMode,
     );
 
     if (!nextQueuedPrompt) {
@@ -946,7 +1059,9 @@ export default function FeatureFilesDashboard({
 
     const intervalId = window.setInterval(() => {
       const activePrompt = agentPromptQueueRef.current.find(
-        (item) => item.status === "sending" || item.status === "running",
+        (item) =>
+          item.planningMode &&
+          (item.status === "sending" || item.status === "running"),
       );
 
       if (!activePrompt?.sentAt) {
@@ -1121,7 +1236,23 @@ export default function FeatureFilesDashboard({
     setAgentPromptMessage("");
     setIsAgentChatCleared(false);
     clearedAgentChatPrompt.current = "";
-    setAgentPromptQueue((currentQueue) => [...currentQueue, nextPromptPayload]);
+    if (isPlanningMode) {
+      setAgentPromptQueue((currentQueue) => [...currentQueue, nextPromptPayload]);
+      return;
+    }
+
+    try {
+      await insertAgentTask(
+        supabaseUrl,
+        supabasePublishableKey,
+        accessToken,
+        currentUserId,
+        nextPromptPayload,
+      );
+      setPromptStatus("Agent task durably queued.");
+    } catch {
+      setPromptStatus("Unable to queue the agent task right now.");
+    }
   }
 
   function clearAgentChat() {
@@ -1447,6 +1578,20 @@ export default function FeatureFilesDashboard({
 
   function closeWorkspaceMenu() {
     setIsWorkspaceMenuOpen(false);
+  }
+
+  function openFeatureSearch() {
+    closeWorkspaceMenu();
+    setIsFeatureSearchOpen(true);
+  }
+
+  function closeFeatureSearch() {
+    setIsFeatureSearchOpen(false);
+  }
+
+  function handleFeatureSearchSelect(selection: FeatureGraphSelection) {
+    closeFeatureSearch();
+    handleFeatureNodeSelect(selection);
   }
 
   function handleRefreshDevEnvironment() {
@@ -1926,6 +2071,17 @@ export default function FeatureFilesDashboard({
                 aria-label="Workspace controls"
                 className="absolute right-0 top-full mt-2 w-[min(16rem,calc(100vw-2rem))] overflow-hidden rounded-[1.35rem] border border-white/10 bg-slate-950/96 shadow-[0_24px_80px_rgba(2,6,23,0.55)] backdrop-blur"
               >
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={openFeatureSearch}
+                  className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-semibold text-slate-100 transition hover:bg-white/6"
+                >
+                  <span>Search features</span>
+                  <span className="text-[11px] uppercase tracking-[0.2em] text-slate-400">
+                    ⌘K
+                  </span>
+                </button>
                 <button
                   type="button"
                   role="menuitem"
@@ -2778,6 +2934,14 @@ export default function FeatureFilesDashboard({
           </div>
         ) : null}
       </div>
+
+      <FeatureSearchDialog
+        isMobile={isMobileLayout}
+        isOpen={isFeatureSearchOpen}
+        onClose={closeFeatureSearch}
+        onSelect={handleFeatureSearchSelect}
+        projects={projects ?? {}}
+      />
     </main>
   );
 }
@@ -3121,6 +3285,11 @@ function getAgentPromptQueueStatusText(queue: AgentPromptQueueEntry[]) {
     return "Daemon is running the current prompt.";
   }
 
+  const orchestratedPrompt = queue.find((item) => !item.planningMode);
+  if (orchestratedPrompt) {
+    return formatDurableTaskStatus(orchestratedPrompt);
+  }
+
   const stalledPrompt = queue[0];
 
   if (stalledPrompt?.status === "failed") {
@@ -3142,6 +3311,36 @@ function getAgentPromptQueueStatusText(queue: AgentPromptQueueEntry[]) {
   }
 
   return "";
+}
+
+function formatDurableTaskStatus(task: AgentPromptQueueEntry) {
+  if (task.status === "queued") return "Agent task is durably queued.";
+  if (task.status === "running") return "Agent is running in an isolated Git worktree.";
+  if (task.status === "verifying") return "Agent branch is being verified.";
+  if (task.status === "ready") return "Agent branch is waiting for its integration cohort.";
+  if (task.status === "integrating") return "Orchestrator is testing the combined integration branch.";
+  if (task.status === "resolving") return "Resolver agent is repairing the integration batch.";
+  if (task.status === "blocked") return `Repository blocked: ${task.error || "integration failed"}`;
+  if (task.status === "failed") return `Agent task failed: ${task.error || "unknown failure"}`;
+  return "Agent task completed.";
+}
+
+function mapAgentTaskRowToQueueEntry(row: AgentTaskRow): AgentPromptQueueEntry {
+  return {
+    promptId: row.id,
+    directory: row.repository,
+    prompt: row.prompt,
+    provider: row.provider,
+    model: row.model,
+    reasoning: row.reasoning,
+    planningMode: row.planning_mode,
+    targetedFeaturePaths: row.targeted_feature_paths ?? [],
+    status: row.status,
+    enqueuedAt: Date.parse(row.created_at),
+    sentAt: row.started_at ? Date.parse(row.started_at) : undefined,
+    completedAt: row.completed_at ? Date.parse(row.completed_at) : undefined,
+    error: row.error || undefined,
+  };
 }
 
 function getDevEnvironmentState(
@@ -3272,6 +3471,73 @@ function getNumericParameterValue(
 
 function clampNumber(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
+}
+
+async function insertAgentTask(
+  supabaseUrl: string,
+  supabasePublishableKey: string,
+  accessToken: string,
+  userId: string,
+  task: AgentPromptPayload,
+) {
+  const url = new URL("/rest/v1/agent_tasks", supabaseUrl);
+  const response = await fetch(url, {
+    method: "POST",
+    headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
+    body: JSON.stringify({
+      id: task.promptId,
+      user_id: userId,
+      repository: task.directory,
+      prompt: task.prompt,
+      provider: task.provider,
+      model: task.model,
+      reasoning: task.reasoning,
+      planning_mode: false,
+      targeted_feature_paths: task.targetedFeaturePaths,
+      status: "queued",
+    }),
+  });
+  if (!response.ok) {
+    throw new Error("agent task insert failed");
+  }
+}
+
+async function fetchAgentTasks(
+  supabaseUrl: string,
+  supabasePublishableKey: string,
+  accessToken: string,
+  userId: string,
+) {
+  const url = new URL("/rest/v1/agent_tasks", supabaseUrl);
+  url.searchParams.set("user_id", `eq.${userId}`);
+  url.searchParams.set("order", "queue_sequence.asc");
+  const response = await fetch(url, {
+    headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
+  });
+  if (!response.ok) {
+    throw new Error("agent task query failed");
+  }
+  return (await response.json()) as AgentTaskRow[];
+}
+
+async function fetchLatestDaemonEvent(
+  supabaseUrl: string,
+  supabasePublishableKey: string,
+  accessToken: string,
+  userId: string,
+) {
+  const url = new URL("/rest/v1/daemon_events", supabaseUrl);
+  url.searchParams.set("user_id", `eq.${userId}`);
+  url.searchParams.set("order", "created_at.desc");
+  url.searchParams.set("limit", "1");
+  const response = await fetch(url, {
+    headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
+  });
+  if (!response.ok) {
+    throw new Error("daemon event query failed");
+  }
+  const rows = (await response.json()) as DaemonEventRow[];
+  return rows[0] ?? null;
 }
 
 async function fetchLatestAgentChat(

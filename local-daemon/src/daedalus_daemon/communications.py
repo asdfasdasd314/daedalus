@@ -116,6 +116,72 @@ def post_agent_chat(
     })
 
 
+def list_agent_tasks(config: dict) -> list[dict]:
+    return call_daemon_rpc(config, "daemon_list_agent_tasks", {
+        "p_user_id": config["daemonUserId"],
+    })
+
+
+def update_agent_task(
+    config: dict,
+    task_id: str,
+    expected_status: str,
+    updates: dict,
+) -> bool:
+    result = call_daemon_rpc(config, "daemon_update_agent_task", {
+        "p_user_id": config["daemonUserId"],
+        "p_task_id": task_id,
+        "p_expected_status": expected_status,
+        "p_updates": updates,
+    })
+    return bool(result)
+
+
+def list_orchestration_batches(config: dict) -> list[dict]:
+    return call_daemon_rpc(config, "daemon_list_orchestration_batches", {
+        "p_user_id": config["daemonUserId"],
+    })
+
+
+def upsert_orchestration_batch(config: dict, batch: dict) -> None:
+    call_daemon_rpc(config, "daemon_upsert_orchestration_batch", {
+        "p_user_id": config["daemonUserId"],
+        "p_batch": batch,
+    })
+
+
+def record_daemon_event(
+    config: dict,
+    repository: str,
+    severity: str,
+    message: str,
+    task_id: str | None = None,
+    batch_id: str | None = None,
+) -> None:
+    call_daemon_rpc(config, "daemon_record_event", {
+        "p_user_id": config["daemonUserId"],
+        "p_repository": repository,
+        "p_task_id": task_id,
+        "p_batch_id": batch_id,
+        "p_severity": severity,
+        "p_message": message,
+    })
+
+
+def call_daemon_rpc(config: dict, function_name: str, payload: dict):
+    body = json.dumps(payload).encode("utf-8")
+    http_request = request.Request(
+        f"{config['supabaseUrl']}/rest/v1/rpc/{function_name}",
+        data=body,
+        headers=get_supabase_headers(config),
+        method="POST",
+    )
+
+    with open_supabase_request(config, http_request) as response:
+        response_body = response.read().decode("utf-8")
+        return json.loads(response_body) if response_body else None
+
+
 def get_supabase_headers(config: dict) -> dict[str, str]:
     publishable_key = config["supabasePublishableKey"]
 

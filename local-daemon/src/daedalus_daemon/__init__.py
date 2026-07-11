@@ -20,6 +20,7 @@ from .main import (
     run_poll_cycle,
 )
 from .scanner import scan_feature_file_projects, scan_parameter_file_projects
+from .orchestrator import GitWorktreeOrchestrator
 
 __all__ = [
     "AGENT_PROMPT_PURPOSE",
@@ -30,6 +31,7 @@ __all__ = [
     "DAEMON_SENT_PARAMETER_FILES",
     "DAEMON_SENT_RESPONSE",
     "FEATURE_FILE_LOAD_PURPOSE",
+    "GitWorktreeOrchestrator",
     "PARAMETER_FILE_LOAD_PURPOSE",
     "PARAMETER_FILE_UPDATE_PURPOSE",
     "load_daemon_config",

@@ -1,0 +1,26 @@
+# Daedalus Git Worktrees
+
+## Summary
+Daedalus Git Worktrees isolates agent-mode prompts on task branches and uses a durable daemon orchestrator to verify, batch, resolve, and fast-forward successful work into local `main`.
+
+## Key Points
+- **Per-Repository Capacity**: Each repository may run up to four isolated agent worktrees while later submissions remain durably queued.
+- **Base-State Cohorts**: Tasks admitted from the same `main` commit are verified independently and integrated in submission order after the cohort fills or its quiet window expires.
+- **Safe Promotion**: Combined work is tested on an integration branch and local `main` advances only by a verified fast-forward; no remote push occurs.
+- **Resolver Loop**: Merge conflicts and combined-test failures launch a resolver agent up to three times, with daemon warnings for attempts and a blocking error after exhaustion.
+- **Planning Bypass**: Planning-mode prompts retain the read-only direct execution path and consume no worktree capacity.
+- **Deferred Controls**: User cancellation, pruning, remote push, and post-integration revert controls are intentionally outside this first delivery.
+
+## Relevant Files
+- `local-daemon/src/daedalus_daemon/orchestrator.py`: Git worktree lifecycle, verification, batching, resolver attempts, and promotion.
+- `local-daemon/src/daedalus_daemon/communications.py`: Durable task, batch, and event transport used by the daemon.
+- `shared/database/migrations/009_git_worktree_orchestrator.sql`: Auth-scoped orchestration tables, policies, and daemon RPCs.
+- `daedalus-site/app/feature-files-dashboard.tsx`: Durable agent task submission and status polling.
+- `parameter_files/daedalus-git-worktrees.toml`: Scheduler, resolver, branch, and verification configuration.
+
+## Dev Mode
+HACKING
+
+## State Log
+- 2026-07-11: Initialized the Git worktree isolation and durable agent orchestration feature.
+- 2026-07-11: Implemented durable task and batch storage, per-repository worktree scheduling, independent and combined verification, resolver retries, local fast-forward promotion, restart-safe blocking, and dashboard status reporting.
