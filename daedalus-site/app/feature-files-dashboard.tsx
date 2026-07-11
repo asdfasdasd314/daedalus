@@ -61,7 +61,7 @@ const DEFAULT_MOBILE_MAX_ZOOM = 4.1;
 const DEFAULT_MOBILE_ZOOM = 1.45;
 const DEFAULT_DESKTOP_NODE_SCALE = 1;
 const DEFAULT_MOBILE_NODE_SCALE = 0.65;
-const DEFAULT_MOBILE_LABEL_MIN_ZOOM = 2.2;
+const DEFAULT_MOBILE_LABEL_MIN_ZOOM = 1.0;
 const GRAPH_PARAMETER_FILE_PATH = "parameter_files/feature-file-graph-display.toml";
 
 type AuthMode = "sign-in" | "sign-up";

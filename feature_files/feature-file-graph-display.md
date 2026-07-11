@@ -66,4 +66,4 @@ HACKING
 - 2026-07-09: Added a shell-controlled physics enable flag so the graph can freeze or resume spring motion from the workspace menu while leaving drag and zoom handling intact.
 - 2026-07-09: Hardened the physics-off path so nodes can no longer be repositioned by pointer drag while hover and click-to-open selection remain available.
 - 2026-07-09: Added shell-driven zoom-rail visibility so the graph's right-side slider can move offscreen without changing pinch, wheel, or keyboard zoom.
-- 2026-07-10: Added separate desktop and mobile node-size parameters so phone nodes start smaller while the zoom scale and label threshold remain unchanged.
+- 2026-07-10: Added separate desktop and mobile node-size parameters so phone nodes start smaller, and lowered the mobile inline-label threshold to 1.0x so labels remain visible at the default phone zoom.
