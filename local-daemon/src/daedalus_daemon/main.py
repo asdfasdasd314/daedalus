@@ -21,6 +21,13 @@ Just give me a markdown file that outlines your plan to implement my request.
 This is NOT the same as a feature file. Feature files may be updated/created as part of the plan, but are not the plan itself.
 
 """
+CURSOR_PLANNING_PROMPT_PREFIX = """You are in Cursor planning mode inside Daedalus.
+
+Explore and reason through the repository as needed, but do not create, edit, or save a planning document or any other workspace file. Use Cursor's native planning tool to produce the complete implementation plan; Daedalus will extract that plan and display it in chat.
+
+Do not end after an exploration update. Complete the native plan after your investigation.
+
+"""
 TARGETED_FEATURE_PATH_REGEX = re.compile(r"^feature_files/[A-Za-z0-9._/-]+\.md$")
 TARGETED_FEATURES_PROMPT_PREFIX = (
     "The following prompt reqeusts changes relevant to the following feature files: {paths}"
@@ -223,7 +230,11 @@ def run_agent_prompt_cycle(
     targeted_feature_paths = filter_targeted_feature_paths(
         prompt_request.get("targetedFeaturePaths", []),
     )
-    final_prompt = build_codex_prompt(prompt, planning_mode, targeted_feature_paths)
+    final_prompt = (
+        build_cursor_prompt(prompt, planning_mode, targeted_feature_paths)
+        if provider == CURSOR_PROVIDER
+        else build_codex_prompt(prompt, planning_mode, targeted_feature_paths)
+    )
     write_message(
         config,
         AGENT_PROMPT_PURPOSE,
@@ -523,6 +534,30 @@ def build_codex_prompt(
     return f"{prompt_prefix}\n\n{prompt}"
 
 
+def build_cursor_prompt(
+    prompt: str,
+    planning_mode: bool,
+    targeted_feature_paths: list[str] | None = None,
+) -> str:
+    prompt_sections: list[str] = []
+
+    if planning_mode:
+        prompt_sections.append(CURSOR_PLANNING_PROMPT_PREFIX.rstrip())
+
+    if targeted_feature_paths:
+        prompt_sections.append(
+            TARGETED_FEATURES_PROMPT_PREFIX.format(
+                paths=", ".join(targeted_feature_paths),
+            ),
+        )
+
+    if not prompt_sections:
+        return prompt
+
+    prompt_prefix = "\n\n".join(prompt_sections)
+    return f"{prompt_prefix}\n\n{prompt}"
+
+
 def map_reasoning_for_codex(reasoning: str) -> str:
     if reasoning == "light":
         return "low"
@@ -605,6 +640,44 @@ def parse_cursor_result(stdout: str, stderr: str) -> str:
     return result
 
 
+def parse_cursor_plan_stream(stdout: str, stderr: str) -> str:
+    plan = None
+    final_result = None
+
+    for line in stdout.splitlines():
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+
+        if not isinstance(event, dict):
+            continue
+
+        tool_call = event.get("tool_call")
+        if isinstance(tool_call, dict):
+            create_plan = tool_call.get("createPlanToolCall")
+            if isinstance(create_plan, dict):
+                args = create_plan.get("args")
+                candidate = args.get("plan") if isinstance(args, dict) else None
+                if isinstance(candidate, str) and candidate:
+                    plan = candidate
+
+        result = event.get("result")
+        if event.get("type") == "result" and isinstance(result, str):
+            final_result = result
+
+    if plan is not None:
+        return plan
+
+    if final_result is not None:
+        return final_result
+
+    return (
+        "Cursor planning completed without a native plan or final response.\n\n"
+        f"STDOUT:\n{stdout}\n\nSTDERR:\n{stderr}"
+    )
+
+
 def run_cursor_exec(directory: str, prompt: str, planning_mode: bool = False) -> str:
     if shutil.which("agent") is None:
         return (
@@ -617,9 +690,10 @@ def run_cursor_exec(directory: str, prompt: str, planning_mode: bool = False) ->
     if cursor_api_key:
         env["CURSOR_API_KEY"] = cursor_api_key
 
-    command = ["agent", "-p", "--output-format", "json"]
+    output_format = "stream-json" if planning_mode else "json"
+    command = ["agent", "-p", "--output-format", output_format]
     if planning_mode:
-        command.append("--mode=plan")
+        command.extend(["--trust", "--mode=plan"])
     else:
         command.append("--force")
     command.append(prompt)
@@ -636,10 +710,12 @@ def run_cursor_exec(directory: str, prompt: str, planning_mode: bool = False) ->
         return f"Cursor failed before execution completed.\n\n{error}"
 
     if process.returncode == 0:
+        if planning_mode:
+            return parse_cursor_plan_stream(process.stdout, process.stderr)
         return parse_cursor_result(process.stdout, process.stderr)
 
     if planning_mode and is_cursor_plan_mode_unsupported(process.stderr):
-        fallback_command = ["agent", "-p", "--output-format", "json", prompt]
+        fallback_command = ["agent", "-p", "--output-format", output_format, "--trust", prompt]
         try:
             process = subprocess.run(
                 fallback_command,
@@ -652,6 +728,8 @@ def run_cursor_exec(directory: str, prompt: str, planning_mode: bool = False) ->
             return f"Cursor failed before execution completed.\n\n{error}"
 
         if process.returncode == 0:
+            if planning_mode:
+                return parse_cursor_plan_stream(process.stdout, process.stderr)
             return parse_cursor_result(process.stdout, process.stderr)
 
     if process.returncode < 0:

@@ -11,12 +11,12 @@ from daedalus_daemon.orchestrator import (
     build_resolver_prompt,
     build_task_prompt,
     create_task_worktree,
-    load_repository_settings,
+    load_worktree_settings,
     run_verification,
 )
 
 
-class RepositorySettingsTests(unittest.TestCase):
+class WorktreeSettingsTests(unittest.TestCase):
     def test_loads_flat_shell_free_settings(self):
         with tempfile.TemporaryDirectory() as directory:
             parameter_directory = Path(directory) / "parameter_files"
@@ -30,7 +30,11 @@ class RepositorySettingsTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            settings = load_repository_settings(directory)
+            with patch(
+                "daedalus_daemon.orchestrator.WORKTREE_PARAMETER_FILE",
+                parameter_directory / "daedalus-git-worktrees.toml",
+            ):
+                settings = load_worktree_settings()
 
         self.assertEqual(settings["maxAgentsPerRepository"], 4)
         self.assertEqual(settings["verificationCommands"], [["python", "-m", "unittest"]])

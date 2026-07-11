@@ -25,12 +25,14 @@ from daedalus_daemon import (
     run_poll_cycle,
 )
 from daedalus_daemon.main import (
+    CURSOR_PLANNING_PROMPT_PREFIX,
     PLANNING_PROMPT_PREFIX,
     TARGETED_FEATURES_PROMPT_PREFIX,
     apply_parameter_file_update,
     build_agent_prompt_state_message,
     build_parameter_file_update_state_message,
     build_codex_prompt,
+    build_cursor_prompt,
     filter_targeted_feature_paths,
     update_parameter_variable_in_toml,
 )
@@ -892,10 +894,10 @@ class RunCursorExecTests(unittest.TestCase):
         self.assertIn("env", call_args.kwargs)
         self.assertEqual(reply, "done")
 
-    def test_runs_cursor_plan_without_force_and_returns_result(self):
+    def test_runs_cursor_plan_without_force_and_returns_native_plan(self):
         class FakeProcess:
             returncode = 0
-            stdout = json.dumps({"type": "result", "result": "# Plan\n\nDo the work."})
+            stdout = '{"type":"assistant","message":{"content":[{"text":"Exploring"}]}}\n{"type":"tool_call","tool_call":{"createPlanToolCall":{"args":{"plan":"# Plan\\n\\nDo the work."}}}}\n{"type":"result","result":"Progress update"}\n'
             stderr = ""
 
         with (
@@ -906,7 +908,7 @@ class RunCursorExecTests(unittest.TestCase):
 
         self.assertEqual(
             mocked_run.call_args.args[0],
-            ["agent", "-p", "--output-format", "json", "--mode=plan", "Build the feature"],
+            ["agent", "-p", "--output-format", "stream-json", "--trust", "--mode=plan", "Build the feature"],
         )
         self.assertEqual(reply, "# Plan\n\nDo the work.")
 
@@ -918,7 +920,7 @@ class RunCursorExecTests(unittest.TestCase):
 
         class FallbackProcess:
             returncode = 0
-            stdout = json.dumps({"type": "result", "result": "# Fallback plan"})
+            stdout = '{"type":"result","result":"# Fallback plan"}\n'
             stderr = ""
 
         with (
@@ -933,9 +935,17 @@ class RunCursorExecTests(unittest.TestCase):
         self.assertEqual(mocked_run.call_count, 2)
         self.assertEqual(
             mocked_run.call_args_list[1].args[0],
-            ["agent", "-p", "--output-format", "json", "Build the feature"],
+            ["agent", "-p", "--output-format", "stream-json", "--trust", "Build the feature"],
         )
         self.assertEqual(reply, "# Fallback plan")
+
+    def test_builds_cursor_only_plan_prompt_with_native_plan_instruction(self):
+        prompt = build_cursor_prompt("Build the feature", True)
+
+        self.assertTrue(prompt.startswith(CURSOR_PLANNING_PROMPT_PREFIX.rstrip()))
+        self.assertIn("do not create, edit, or save a planning document", prompt)
+        self.assertIn("native planning tool", prompt)
+        self.assertTrue(prompt.endswith("Build the feature"))
 
     def test_returns_actionable_response_for_invalid_cursor_json(self):
         class FakeProcess:

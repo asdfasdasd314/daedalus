@@ -1,13 +1,14 @@
 # Cursor Agent
 
 ## Summary
-The Cursor agent provider adapts daemon chat prompts to the locally installed Cursor CLI, returning its parsed JSON result through the shared agent chat payload and using native read-only planning mode when requested.
+The Cursor agent provider adapts daemon chat prompts to the locally installed Cursor CLI, returning parsed JSON for ordinary runs and extracting Cursor's native internal Markdown plan from planning event streams.
 
 ## Key Points
 - **Command Safety**: The prompt is passed as one subprocess argument, never interpolated into a shell command.
 - **Availability**: The daemon checks for the `agent` executable before launch and sends an actionable reply when Cursor CLI is unavailable.
-- **Result Handling**: Cursor's JSON response is parsed so the final assistant Markdown reaches agent chat; malformed payloads, cancellation, and non-zero exits become actionable replies.
-- **Planning**: Planning runs use `--mode=plan` without `--force`, with a prompt-only fallback for older CLIs that reject the mode flag.
+- **Result Handling**: Ordinary Cursor JSON replies are parsed so the final assistant Markdown reaches agent chat; planning replies extract `createPlanToolCall.args.plan`, falling back to the terminal result only when no native plan is present.
+- **Planning**: Planning runs use `--trust --mode=plan` without `--force`, with a prompt-only fallback for older CLIs that reject the mode flag.
+- **Inline Plan Contract**: Cursor planning must not create a workspace plan document; Daedalus sends the CLI's native internal Markdown plan to chat instead.
 - **Permissions**: Non-planning runs retain hardcoded `--force`; planning runs omit it.
 - **Auth**: Cursor CLI auth uses `CURSOR_API_KEY` from `local-daemon/.env` (or process env), injected into the `agent` subprocess environment; never stored in parameter files.
 
@@ -25,3 +26,8 @@ HACKING
 - 2026-07-10: Added the Cursor CLI daemon provider with safe argument passing, availability reporting, and normalized completion replies.
 - 2026-07-10: Stored `CURSOR_API_KEY` in `local-daemon/.env` and inject it into the Cursor `agent` subprocess env so headless runs authenticate without parameter-file secrets.
 - 2026-07-11: Parsed Cursor JSON replies and added native, non-force plan-mode execution with a safe legacy fallback.
+- 2026-07-11: Added Cursor workspace trust to planning commands so headless plans can run without restoring force permissions.
+- 2026-07-11: Entered DEBUGGING mode and added structured Cursor stdout logging for initial and fallback executions.
+- 2026-07-11: Switched Cursor-only planning to full stream-json delivery while preserving raw stdout in daemon diagnostics.
+- 2026-07-11: Extracted Cursor native plans from `createPlanToolCall` events so Daedalus chat receives the actual Markdown plan instead of progress narration.
+- 2026-07-11: Returned to HACKING mode and removed Cursor stdout logging after confirming native-plan extraction.

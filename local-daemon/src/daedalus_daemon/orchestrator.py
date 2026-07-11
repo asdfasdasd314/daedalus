@@ -16,6 +16,12 @@ from .communications import (
 )
 
 
+DAEDALUS_ROOT = Path(__file__).resolve().parents[3]
+WORKTREE_PARAMETER_FILE = (
+    DAEDALUS_ROOT / "parameter_files" / "daedalus-git-worktrees.toml"
+)
+
+
 TASK_TERMINAL_STATES = {"completed", "failed", "blocked"}
 BATCH_ACTIVE_STATES = {"collecting", "integrating", "resolving"}
 
@@ -119,7 +125,7 @@ class GitWorktreeOrchestrator:
                 )
 
     def _admit_tasks(self, repository: str, tasks: list[dict]) -> None:
-        settings = load_repository_settings(repository)
+        settings = load_worktree_settings()
         active = [task for task in tasks if task["status"] in {"running", "verifying"}]
         ready = [task for task in tasks if task["status"] == "ready"]
         capacity = settings["maxAgentsPerRepository"] - len(active) - len(ready)
@@ -261,7 +267,7 @@ class GitWorktreeOrchestrator:
     def _collect_and_maybe_integrate(
         self, repository: str, tasks: list[dict], batches: list[dict]
     ) -> None:
-        settings = load_repository_settings(repository)
+        settings = load_worktree_settings()
         collecting = next((batch for batch in batches if batch["status"] == "collecting"), None)
         ready = sorted(
             [task for task in tasks if task["status"] == "ready"],
@@ -457,10 +463,10 @@ class GitWorktreeOrchestrator:
             remove_worktree(str(batch["repository"]), outcome["worktree"])
 
 
-def load_repository_settings(repository: str) -> dict:
-    path = Path(repository) / "parameter_files" / "daedalus-git-worktrees.toml"
+def load_worktree_settings() -> dict:
+    path = WORKTREE_PARAMETER_FILE
     if not path.is_file():
-        raise RuntimeError(f"Missing required worktree parameter file: {path}")
+        raise RuntimeError(f"Missing Daedalus worktree parameter file: {path}")
     with path.open("rb") as parameter_file:
         values = tomllib.load(parameter_file)
     commands = values.get("verification_commands", [])

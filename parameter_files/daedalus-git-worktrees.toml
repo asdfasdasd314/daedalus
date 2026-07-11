@@ -8,4 +8,3 @@ verification_commands = [
   ["npm", "--prefix", "daedalus-site", "test"],
   ["python", "-m", "pytest", "local-daemon/tests"],
 ]
-
