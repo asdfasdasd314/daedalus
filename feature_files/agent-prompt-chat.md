@@ -20,6 +20,7 @@ The agent prompt chat adds a reusable prompt composer to the existing dashboard 
 - **Markdown Reply Visualizer**: A completed latest reply defaults to a safe formatted Markdown view with GitHub-flavored tables and task lists, while an adjacent Raw control preserves the whitespace-pre-wrapped, copy-friendly transcript.
 - **Predictable Reply View State**: The shared panel resets the reply visualizer to Formatted whenever the latest exchange changes or chat is cleared, so a new daemon response never inherits a stale Raw selection.
 - **Reply Content Fitting**: The compact segmented control wraps at phone widths, and code blocks and tables scroll within the reply bubble so they cannot widen the overlay or page.
+- **Reply Copy Control**: A bottom-right Copy button on the agent reply bubble writes the raw daemon response text to the clipboard, independent of Formatted vs Raw view.
 
 ## Relevant Files
 - `daedalus-site/app/feature-files-dashboard.tsx`: Workspace shell that mounts the shared chat session inside the new-feature and feature-detail overlays.
@@ -65,3 +66,4 @@ HACKING
 - 2026-07-10: Added GPT-5.6 Sol/Terra/Luna to the Codex model catalog with light/medium/high/extra-high/ultra reasoning (default medium) and mapped the new labels through the daemon for `codex exec`.
 - 2026-07-10: Connected the shared agent chat provider selector to the Cursor daemon adapter while preserving the Codex prompt path.
 - 2026-07-10: Added a shared safe Markdown/raw reply visualizer with GFM tables and task lists, local reset behavior, and mobile-contained long content.
+- 2026-07-10: Added a bottom-right Copy button on the agent reply bubble that copies the raw daemon response to the clipboard.

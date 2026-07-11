@@ -115,6 +115,7 @@ export default function AgentSessionPanel({
   );
   const [selectedFeaturePath, setSelectedFeaturePath] = useState("");
   const [isMarkdownReplyView, setIsMarkdownReplyView] = useState(true);
+  const [copyButtonLabel, setCopyButtonLabel] = useState("Copy");
   const effectiveSelectedFeaturePath = selectableFeatures.some(
     (feature) => feature.filePath === selectedFeaturePath,
   )
@@ -123,7 +124,19 @@ export default function AgentSessionPanel({
 
   useEffect(() => {
     setIsMarkdownReplyView(true);
+    setCopyButtonLabel("Copy");
   }, [latestChat?.prompt, latestChat?.reply, isAgentChatCleared]);
+
+  function copyAgentReply() {
+    if (!latestChat?.reply) {
+      return;
+    }
+
+    void navigator.clipboard.writeText(latestChat.reply).then(() => {
+      setCopyButtonLabel("Copied");
+      window.setTimeout(() => setCopyButtonLabel("Copy"), 1500);
+    });
+  }
 
   function addFeatureTag() {
     if (!selectedFeaturePath) {
@@ -429,7 +442,7 @@ export default function AgentSessionPanel({
                 </button>
               </div>
             ) : null}
-            <div className="w-full max-w-[19rem] min-w-0 overflow-hidden rounded-[1.5rem] rounded-bl-md border border-white/10 bg-slate-900/90 px-4 py-3 text-sm text-slate-100 sm:max-w-[85%]">
+            <div className="relative w-full max-w-[19rem] min-w-0 overflow-hidden rounded-[1.5rem] rounded-bl-md border border-white/10 bg-slate-900/90 px-4 py-3 pb-10 text-sm text-slate-100 sm:max-w-[85%]">
               {latestChat.reply ? (
                 isMarkdownReplyView ? (
                   <ReactMarkdown
@@ -493,6 +506,15 @@ export default function AgentSessionPanel({
               ) : (
                 "Waiting for daemon reply..."
               )}
+              {latestChat.reply ? (
+                <button
+                  type="button"
+                  onClick={copyAgentReply}
+                  className="absolute bottom-2 right-2 rounded-full border border-white/10 bg-slate-950/80 px-3 py-1 text-xs font-semibold text-slate-200 transition hover:bg-slate-800"
+                >
+                  {copyButtonLabel}
+                </button>
+              ) : null}
             </div>
           </div>
         </div>
