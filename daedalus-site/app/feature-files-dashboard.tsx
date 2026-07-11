@@ -570,6 +570,8 @@ export default function FeatureFilesDashboard({
           setPromptStatus(`Daemon warning: ${latestEvent.message}`);
         } else if (latestEvent?.severity === "error") {
           setPromptStatus(`Daemon error: ${latestEvent.message}`);
+        } else if (latestEvent?.severity === "info") {
+          setPromptStatus(`Daemon: ${latestEvent.message}`);
         } else if (durableQueue[0]) {
           setPromptStatus(formatDurableTaskStatus(durableQueue[0]));
         }
@@ -1249,6 +1251,18 @@ export default function FeatureFilesDashboard({
         currentUserId,
         nextPromptPayload,
       );
+      activePromptId.current = promptId;
+      setLatestChat({
+        promptId,
+        directory: nextPromptPayload.directory,
+        prompt: nextPromptPayload.prompt,
+        reply: "",
+        provider: nextPromptPayload.provider,
+        model: nextPromptPayload.model,
+        reasoning: nextPromptPayload.reasoning,
+        planningMode: false,
+        targetedFeaturePaths: nextPromptPayload.targetedFeaturePaths,
+      });
       setPromptStatus("Agent task durably queued.");
     } catch {
       setPromptStatus("Unable to queue the agent task right now.");
@@ -2776,6 +2790,9 @@ export default function FeatureFilesDashboard({
                 onSelectModel={selectModel}
                 onSendPrompt={sendAgentPrompt}
                 onTargetedFeatureAdd={addTargetedFeature}
+                orchestratedTasks={agentPromptQueue
+                  .filter((item) => !item.planningMode)
+                  .map(({ promptId, prompt, status }) => ({ promptId, prompt, status }))}
                 projects={projects ?? {}}
                 promptQueueStatusText={promptQueueStatusText}
                 promptText={promptText}
@@ -2872,6 +2889,9 @@ export default function FeatureFilesDashboard({
                   onSelectModel={selectModel}
                   onSendPrompt={sendAgentPrompt}
                   onTargetedFeatureAdd={addTargetedFeature}
+                  orchestratedTasks={agentPromptQueue
+                    .filter((item) => !item.planningMode)
+                    .map(({ promptId, prompt, status }) => ({ promptId, prompt, status }))}
                   projects={projects ?? {}}
                   promptQueueStatusText={promptQueueStatusText}
                   promptText={promptText}

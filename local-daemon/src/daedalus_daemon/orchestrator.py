@@ -170,6 +170,13 @@ class GitWorktreeOrchestrator:
                 "worktree_path": worktree_path,
                 "status": "running",
             }
+            record_daemon_event(
+                self.config,
+                repository,
+                "info",
+                "Worktree created and agent task claimed by the daemon.",
+                task_id=str(task["id"]),
+            )
             self.task_futures[str(task["id"])] = self.executor.submit(
                 self._run_task, task, settings
             )
@@ -178,6 +185,13 @@ class GitWorktreeOrchestrator:
         task_id = str(task["id"])
         worktree_path = str(task["worktree_path"])
         prompt = build_task_prompt(task)
+        record_daemon_event(
+            self.config,
+            str(task["repository"]),
+            "info",
+            f"{task['provider'].capitalize()} agent process started in its isolated worktree.",
+            task_id=task_id,
+        )
         if task["provider"] == "cursor":
             reply = self.run_cursor(worktree_path, prompt)
         else:
@@ -189,6 +203,18 @@ class GitWorktreeOrchestrator:
             return {"ok": False, "reply": reply, "error": reply}
 
         update_agent_task(self.config, task_id, "running", {"status": "verifying"})
+        commands = verification_commands_for_worktree(
+            worktree_path, settings["verificationCommands"]
+        )
+        command_text = "; ".join(" ".join(command) for command in commands)
+        record_daemon_event(
+            self.config,
+            str(task["repository"]),
+            "info",
+            "Agent completed; verifying branch"
+            + (f" with: {command_text}." if command_text else ". No test command was discovered."),
+            task_id=task_id,
+        )
         clean = git_output(worktree_path, ["status", "--porcelain"])
         head = git_output(worktree_path, ["rev-parse", "HEAD"])
         if clean:
@@ -206,7 +232,7 @@ class GitWorktreeOrchestrator:
                 "expected_status": "verifying",
             }
 
-        verification = run_verification(worktree_path, settings["verificationCommands"])
+        verification = run_verification(worktree_path, commands)
         if not verification["ok"]:
             return {
                 "ok": False,
@@ -362,7 +388,10 @@ class GitWorktreeOrchestrator:
                 if failure:
                     return {"ok": False, "error": failure, "attempts": attempts, "worktree": worktree_path}
 
-        verification = run_verification(worktree_path, settings["verificationCommands"])
+        commands = verification_commands_for_worktree(
+            worktree_path, settings["verificationCommands"]
+        )
+        verification = run_verification(worktree_path, commands)
         failure = "" if verification["ok"] else verification["output"]
         if failure:
             failure, attempts = self._run_resolver_loop(
@@ -484,6 +513,40 @@ def load_worktree_settings() -> dict:
         "primaryBranch": str(values.get("primary_branch", "main")),
         "verificationCommands": commands,
     }
+
+
+def verification_commands_for_worktree(
+    worktree_path: str, configured_commands: list[list[str]]
+) -> list[list[str]]:
+    if configured_commands:
+        return configured_commands
+
+    root = Path(worktree_path)
+    commands: list[list[str]] = []
+    if package_has_test_script(root / "package.json"):
+        commands.append(["npm", "test"])
+    if (root / "tests").is_dir():
+        commands.append(["python", "-m", "pytest"])
+
+    for child in sorted(root.iterdir()):
+        if not child.is_dir() or child.name.startswith("."):
+            continue
+        if package_has_test_script(child / "package.json"):
+            commands.append(["npm", "--prefix", child.name, "test"])
+        if (child / "tests").is_dir():
+            commands.append(["python", "-m", "pytest", str(child / "tests")])
+    return commands
+
+
+def package_has_test_script(path: Path) -> bool:
+    if not path.is_file():
+        return False
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    scripts = value.get("scripts") if isinstance(value, dict) else None
+    return isinstance(scripts, dict) and isinstance(scripts.get("test"), str)
 
 
 def positive_int(values: dict, key: str) -> int:

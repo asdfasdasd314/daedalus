@@ -13,6 +13,7 @@ from daedalus_daemon.orchestrator import (
     create_task_worktree,
     load_worktree_settings,
     run_verification,
+    verification_commands_for_worktree,
 )
 
 
@@ -65,6 +66,13 @@ class WorktreeTests(unittest.TestCase):
 
 
 class VerificationTests(unittest.TestCase):
+    def test_discovers_root_pytest_suite_when_no_commands_are_configured(self):
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory, "tests").mkdir()
+            commands = verification_commands_for_worktree(directory, [])
+
+        self.assertEqual(commands, [["python", "-m", "pytest"]])
+
     @patch("daedalus_daemon.orchestrator.run_process")
     def test_stops_at_first_failed_argument_array(self, mock_process):
         success = unittest.mock.Mock(returncode=0, stdout="ok", stderr="")

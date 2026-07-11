@@ -54,6 +54,11 @@ type AgentSessionPanelProps = {
   onSelectModel: (modelId: string) => void;
   onSendPrompt: () => void;
   onTargetedFeatureAdd: (feature: TargetedFeature) => void;
+  orchestratedTasks: Array<{
+    promptId: string;
+    prompt: string;
+    status: AgentPromptQueueStatus;
+  }>;
   projects: FeatureFileProjects;
   promptQueueStatusText: string;
   promptText: string;
@@ -86,6 +91,7 @@ export default function AgentSessionPanel({
   onSelectModel,
   onSendPrompt,
   onTargetedFeatureAdd,
+  orchestratedTasks,
   projects,
   promptQueueStatusText,
   promptText,
@@ -399,6 +405,24 @@ export default function AgentSessionPanel({
         <p className="min-w-0 break-words text-xs uppercase tracking-[0.22em] text-slate-500">
           Agent channel: {formatAgentPromptMessage(agentPromptMessage)}
         </p>
+      ) : null}
+
+      {orchestratedTasks.length > 0 ? (
+        <div className="grid gap-2 rounded-[1.25rem] border border-white/10 bg-slate-900/50 p-3">
+          <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400">
+            Durable agent tasks
+          </p>
+          {orchestratedTasks.slice(0, 8).map((task) => (
+            <div key={task.promptId} className="flex min-w-0 items-center gap-3 text-xs">
+              <span className="shrink-0 rounded-full bg-cyan-300/10 px-2 py-1 font-semibold uppercase tracking-[0.12em] text-cyan-100">
+                {task.status}
+              </span>
+              <span className="min-w-0 truncate text-slate-300" title={task.prompt}>
+                {task.prompt}
+              </span>
+            </div>
+          ))}
+        </div>
       ) : null}
 
       {!isAgentChatCleared && latestChat ? (
