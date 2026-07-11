@@ -203,6 +203,25 @@ class GitWorktreeOrchestrator:
             return {"ok": False, "reply": reply, "error": reply}
 
         update_agent_task(self.config, task_id, "running", {"status": "verifying"})
+        try:
+            committed = commit_worktree_changes(
+                worktree_path, f"Daedalus task {task_id}"
+            )
+        except RuntimeError as error:
+            return {
+                "ok": False,
+                "reply": reply,
+                "error": f"Daemon could not commit the agent worktree changes.\n\n{error}",
+                "expected_status": "verifying",
+            }
+        if committed:
+            record_daemon_event(
+                self.config,
+                str(task["repository"]),
+                "info",
+                "Daemon committed the agent's completed worktree changes.",
+                task_id=task_id,
+            )
         commands = verification_commands_for_worktree(
             worktree_path, settings["verificationCommands"]
         )
@@ -444,7 +463,17 @@ class GitWorktreeOrchestrator:
             if resolver_reply.startswith("Codex failed"):
                 failure = resolver_reply
                 continue
-            verification = run_verification(worktree_path, settings["verificationCommands"])
+            try:
+                commit_worktree_changes(
+                    worktree_path, f"Daedalus resolver attempt {attempts}"
+                )
+            except RuntimeError as error:
+                failure = f"Daemon could not commit resolver changes.\n\n{error}"
+                continue
+            commands = verification_commands_for_worktree(
+                worktree_path, settings["verificationCommands"]
+            )
+            verification = run_verification(worktree_path, commands)
             failure = "" if verification["ok"] else verification["output"]
         return failure, attempts
 
@@ -596,6 +625,19 @@ def remove_worktree(repository: str, worktree_path: str) -> None:
     run_process(repository, ["git", "worktree", "remove", worktree_path])
 
 
+def commit_worktree_changes(directory: str, message: str) -> bool:
+    if not git_output(directory, ["status", "--porcelain"]):
+        return False
+
+    add = run_process(directory, ["git", "add", "-A"])
+    if add.returncode != 0:
+        raise RuntimeError(format_process_failure(add.args, add.stdout, add.stderr))
+    commit = run_process(directory, ["git", "commit", "-m", message])
+    if commit.returncode != 0:
+        raise RuntimeError(format_process_failure(commit.args, commit.stdout, commit.stderr))
+    return True
+
+
 def run_verification(directory: str, commands: list[list[str]]) -> dict:
     outputs: list[str] = []
     for command in commands:
@@ -627,7 +669,8 @@ def build_task_prompt(task: dict) -> str:
     scope = f"\nTargeted feature files: {', '.join(paths)}" if paths else ""
     return (
         f"{task['prompt']}{scope}\n\n"
-        "Work only in this Git worktree. Commit every completed change to the current task branch. "
+        "Work only in this Git worktree. Commit every completed change to the current task branch; "
+        "if your sandbox cannot access Git worktree metadata, leave the completed changes for Daedalus to commit. "
         "Do not switch branches, merge other branches, or push a remote."
     )
 
@@ -637,7 +680,8 @@ def build_resolver_prompt(batch: dict, tasks: list[dict], failure: str) -> str:
     return (
         "Resolve the current integration failure while preserving every task's intent. "
         "Inspect the existing worktree state, make the smallest compatible fix, run relevant checks, "
-        "and commit the resolution. Do not switch branches or push.\n\n"
+        "and commit the resolution. If your sandbox cannot commit, leave the completed resolution for Daedalus to commit. "
+        "Do not switch branches or push.\n\n"
         f"Batch goals:\n{goals}\n\nFailure details:\n{failure}"
     )
 

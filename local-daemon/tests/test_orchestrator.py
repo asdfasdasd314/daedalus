@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from daedalus_daemon.orchestrator import (
     build_resolver_prompt,
     build_task_prompt,
+    commit_worktree_changes,
     create_task_worktree,
     load_worktree_settings,
     run_verification,
@@ -63,6 +64,20 @@ class WorktreeTests(unittest.TestCase):
             "/repo",
             ["git", "worktree", "add", "-b", branch, path, "abc123"],
         )
+
+    @patch("daedalus_daemon.orchestrator.run_process")
+    @patch("daedalus_daemon.orchestrator.git_output")
+    def test_daemon_commits_agent_changes_when_the_worktree_is_dirty(
+        self, mock_git_output, mock_process
+    ):
+        mock_git_output.return_value = " M changed.py"
+        success = unittest.mock.Mock(returncode=0, stdout="", stderr="")
+        mock_process.side_effect = [success, success]
+
+        committed = commit_worktree_changes("/worktree", "Daedalus task task-id")
+
+        self.assertTrue(committed)
+        self.assertEqual(mock_process.call_count, 2)
 
 
 class VerificationTests(unittest.TestCase):
