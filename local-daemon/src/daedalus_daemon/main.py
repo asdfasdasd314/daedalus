@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 import re
 import shutil
@@ -45,7 +46,11 @@ if __package__ in {None, ""}:
         post_parameter_files,
         update_current_message,
     )
-    from daedalus_daemon.config import load_daemon_config
+    from daedalus_daemon.config import (
+        get_env_config_value,
+        load_daemon_config,
+        load_env_files,
+    )
     from daedalus_daemon.scanner import (
         scan_feature_file_projects,
         scan_parameter_file_projects,
@@ -69,7 +74,7 @@ else:
         post_parameter_files,
         update_current_message,
     )
-    from .config import load_daemon_config
+    from .config import get_env_config_value, load_daemon_config, load_env_files
     from .scanner import scan_feature_file_projects, scan_parameter_file_projects
 
 
@@ -564,6 +569,15 @@ def run_codex_exec(
     )
 
 
+def resolve_cursor_api_key() -> str | None:
+    project_root = Path(__file__).resolve().parents[3]
+    env_config = load_env_files([
+        project_root / ".env",
+        project_root / "local-daemon" / ".env",
+    ])
+    return get_env_config_value(env_config, "CURSOR_API_KEY")
+
+
 def run_cursor_exec(directory: str, prompt: str) -> str:
     if shutil.which("agent") is None:
         return (
@@ -571,12 +585,18 @@ def run_cursor_exec(directory: str, prompt: str) -> str:
             "executable is available on the daemon PATH."
         )
 
+    env = os.environ.copy()
+    cursor_api_key = resolve_cursor_api_key()
+    if cursor_api_key:
+        env["CURSOR_API_KEY"] = cursor_api_key
+
     try:
         process = subprocess.run(
             ["agent", "-p", "--force", prompt],
             cwd=directory,
             capture_output=True,
             text=True,
+            env=env,
         )
     except Exception as error:
         return f"Cursor failed before execution completed.\n\n{error}"

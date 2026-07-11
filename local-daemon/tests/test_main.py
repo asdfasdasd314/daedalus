@@ -879,12 +879,13 @@ class RunCursorExecTests(unittest.TestCase):
         ):
             reply = run_cursor_exec("/workspace/project", prompt)
 
-        mocked_run.assert_called_once_with(
-            ["agent", "-p", "--force", prompt],
-            cwd="/workspace/project",
-            capture_output=True,
-            text=True,
-        )
+        mocked_run.assert_called_once()
+        call_args = mocked_run.call_args
+        self.assertEqual(call_args.args[0], ["agent", "-p", "--force", prompt])
+        self.assertEqual(call_args.kwargs["cwd"], "/workspace/project")
+        self.assertTrue(call_args.kwargs["capture_output"])
+        self.assertTrue(call_args.kwargs["text"])
+        self.assertIn("env", call_args.kwargs)
         self.assertEqual(reply, "done")
 
     def test_maps_cancelled_and_failed_processes_to_daemon_replies(self):

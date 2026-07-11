@@ -15,6 +15,7 @@ The feature-file graph display turns loaded feature files into a full-screen 2D 
 - **Connection Intensity**: Nodes with more in-project references render with stronger glow and color intensity so densely connected features stand out faster.
 - **Navigation**: The graph supports wheel zoom, ctrl/cmd zoom, touch pinch zoom, drag panning, and inertial viewport motion so the workspace can grow beyond a single screen.
 - **Absolute Node Scale**: Node radii stay tied to feature-file content and graph-world coordinates rather than viewport size, so mobile sees the same graph closer in instead of rescaled nodes.
+- **Responsive Node Scale**: Desktop keeps the baseline node radius while mobile applies a smaller parameterized radius so the initial phone view shows more feature nodes without changing zoom behavior.
 - **Node Dragging**: Desktop pointer users can still drag nodes directly in world space, while coarse-pointer mobile sessions prioritize tap, pan, and pinch instead of node repositioning.
 - **Physics Gate**: The graph's spring layout loop now respects a shell-owned enable flag so the top-right menu can freeze or resume node motion, and physics-off mode also blocks direct node repositioning without affecting hover or click selection.
 - **Shell Controls**: The graph now surfaces a compact upper-left ventures trigger on mobile, a circular bottom new-feature trigger, and a custom right-edge zoom slider while keeping overlay state in the workspace shell.
@@ -65,3 +66,4 @@ HACKING
 - 2026-07-09: Added a shell-controlled physics enable flag so the graph can freeze or resume spring motion from the workspace menu while leaving drag and zoom handling intact.
 - 2026-07-09: Hardened the physics-off path so nodes can no longer be repositioned by pointer drag while hover and click-to-open selection remain available.
 - 2026-07-09: Added shell-driven zoom-rail visibility so the graph's right-side slider can move offscreen without changing pinch, wheel, or keyboard zoom.
+- 2026-07-10: Added separate desktop and mobile node-size parameters so phone nodes start smaller while the zoom scale and label threshold remain unchanged.

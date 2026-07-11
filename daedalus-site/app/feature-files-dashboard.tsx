@@ -59,6 +59,8 @@ const DEFAULT_DESKTOP_ZOOM = 1;
 const DEFAULT_MOBILE_MIN_ZOOM = 0.78;
 const DEFAULT_MOBILE_MAX_ZOOM = 4.1;
 const DEFAULT_MOBILE_ZOOM = 1.45;
+const DEFAULT_DESKTOP_NODE_SCALE = 1;
+const DEFAULT_MOBILE_NODE_SCALE = 0.65;
 const DEFAULT_MOBILE_LABEL_MIN_ZOOM = 2.2;
 const GRAPH_PARAMETER_FILE_PATH = "parameter_files/feature-file-graph-display.toml";
 
@@ -1875,6 +1877,7 @@ export default function FeatureFilesDashboard({
         maxZoom={graphZoomSettings.maxZoom}
         minZoom={graphZoomSettings.minZoom}
         mobileLabelMinZoom={graphZoomSettings.mobileLabelMinZoom}
+        nodeScale={graphZoomSettings.nodeScale}
         physicsEnabled={isGraphPhysicsEnabled}
         onNodeSelect={handleFeatureNodeSelect}
         onOpenNewFeature={openNewFeatureOverlay}
@@ -3199,6 +3202,11 @@ function getGraphZoomSettings(
     isMobileLayout ? "mobile_default_zoom" : "desktop_default_zoom",
     isMobileLayout ? DEFAULT_MOBILE_ZOOM : DEFAULT_DESKTOP_ZOOM,
   );
+  const nodeScale = getNumericParameterValue(
+    parsedVariables,
+    isMobileLayout ? "mobile_node_scale" : "desktop_node_scale",
+    isMobileLayout ? DEFAULT_MOBILE_NODE_SCALE : DEFAULT_DESKTOP_NODE_SCALE,
+  );
   const mobileLabelMinZoom = getNumericParameterValue(
     parsedVariables,
     "mobile_label_min_zoom",
@@ -3209,6 +3217,7 @@ function getGraphZoomSettings(
     defaultZoom: clampNumber(defaultZoom, safeMinZoom, safeMaxZoom),
     maxZoom: safeMaxZoom,
     minZoom: safeMinZoom,
+    nodeScale: Math.max(0.1, nodeScale),
     mobileLabelMinZoom: clampNumber(
       mobileLabelMinZoom,
       safeMinZoom,

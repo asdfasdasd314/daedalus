@@ -79,6 +79,7 @@ type FeatureFileGraphProps = {
   maxZoom: number;
   minZoom: number;
   mobileLabelMinZoom: number;
+  nodeScale: number;
   onNodeSelect: (selection: FeatureGraphSelection) => void;
   onOpenNewFeature: () => void;
   onOpenVentures: () => void;
@@ -424,6 +425,7 @@ export default function FeatureFileGraph({
   maxZoom,
   minZoom,
   mobileLabelMinZoom,
+  nodeScale,
   onNodeSelect,
   onOpenNewFeature,
   onOpenVentures,
@@ -434,7 +436,10 @@ export default function FeatureFileGraph({
   showZoomSlider,
   zoom,
 }: FeatureFileGraphProps) {
-  const graphData = useMemo(() => buildGraphData(projects), [projects]);
+  const graphData = useMemo(
+    () => buildGraphData(projects, nodeScale),
+    [nodeScale, projects],
+  );
   const [nodes, setNodes] = useState(graphData.nodes);
   const [viewportSize, setViewportSize] = useState<ViewportSize>({
     width: 1,
@@ -1532,7 +1537,7 @@ export default function FeatureFileGraph({
   );
 }
 
-function buildGraphData(projects: FeatureFileProjects): GraphData {
+function buildGraphData(projects: FeatureFileProjects, nodeScale: number): GraphData {
   const projectEntries = Object.entries(projects);
   const clusters = createClusters(projectEntries);
   const nodes: FeatureNode[] = [];
@@ -1563,7 +1568,7 @@ function buildGraphData(projects: FeatureFileProjects): GraphData {
     nodes.push(...projectNodes);
   });
 
-  const nodesWithVisualMetrics = applyNodeVisualMetrics(nodes, edges);
+  const nodesWithVisualMetrics = applyNodeVisualMetrics(nodes, edges, nodeScale);
   const worldWidth = getWorldWidth(projectEntries.length);
   const worldHeight = getWorldHeight(projectEntries.length);
 
@@ -2030,7 +2035,11 @@ function getPinchState(
   };
 }
 
-function applyNodeVisualMetrics(nodes: FeatureNode[], edges: FeatureEdge[]) {
+function applyNodeVisualMetrics(
+  nodes: FeatureNode[],
+  edges: FeatureEdge[],
+  nodeScale: number,
+) {
   if (nodes.length === 0) {
     return nodes;
   }
@@ -2066,9 +2075,9 @@ function applyNodeVisualMetrics(nodes: FeatureNode[], edges: FeatureEdge[]) {
       connectionCount,
       connectionIntensity: connectionCount / maxConnectionCount,
       radius: clamp(
-        NODE_RADIUS * sizeRatio,
-        NODE_RADIUS * 0.6,
-        NODE_RADIUS * 2.4,
+        NODE_RADIUS * nodeScale * sizeRatio,
+        NODE_RADIUS * nodeScale * 0.6,
+        NODE_RADIUS * nodeScale * 2.4,
       ),
     };
   });
