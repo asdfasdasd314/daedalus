@@ -47,9 +47,11 @@ if __package__ in {None, ""}:
         PARAMETER_FILE_LOAD_PURPOSE,
         PARAMETER_FILE_UPDATE_PURPOSE,
         SupabaseUnavailableError,
+        GIT_SYNC_PURPOSE,
         fetch_current_message,
         post_agent_chat,
         post_feature_files,
+        post_git_sync_result,
         post_parameter_files,
         update_current_message,
     )
@@ -76,9 +78,11 @@ else:
         PARAMETER_FILE_LOAD_PURPOSE,
         PARAMETER_FILE_UPDATE_PURPOSE,
         SupabaseUnavailableError,
+        GIT_SYNC_PURPOSE,
         fetch_current_message,
         post_agent_chat,
         post_feature_files,
+        post_git_sync_result,
         post_parameter_files,
         update_current_message,
     )
@@ -482,6 +486,194 @@ def build_agent_prompt_state_message(prompt_id: str, state: str) -> str:
     })
 
 
+def build_git_sync_state_message(request_id: str, state: str) -> str:
+    return json.dumps({
+        "requestId": request_id,
+        "state": state,
+    })
+
+
+def parse_git_sync_message(message: str) -> dict[str, object] | None:
+    trimmed_message = message.strip()
+
+    if not trimmed_message:
+        return None
+
+    if trimmed_message in {DAEMON_RECEIVED_MESSAGE, DAEMON_SENT_RESPONSE}:
+        return {"state": trimmed_message}
+
+    try:
+        parsed_message = json.loads(trimmed_message)
+    except json.JSONDecodeError:
+        return None
+
+    if not isinstance(parsed_message, dict):
+        return None
+
+    return parsed_message
+
+
+def run_git_command(
+    directory: str,
+    command: list[str],
+    run_process=subprocess.run,
+) -> dict[str, object]:
+    result = run_process(
+        command,
+        cwd=directory,
+        capture_output=True,
+        text=True,
+    )
+
+    return {
+        "command": command,
+        "exitCode": result.returncode,
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+    }
+
+
+def build_skipped_push_step(reason: str) -> dict[str, object]:
+    return {
+        "command": ["git", "push"],
+        "exitCode": None,
+        "stdout": "",
+        "stderr": reason,
+        "skipped": True,
+    }
+
+
+def execute_git_sync_operation(
+    directory: str,
+    operation: str,
+    message: str = "",
+    run_process=subprocess.run,
+) -> tuple[list[dict[str, object]], str]:
+    steps: list[dict[str, object]] = []
+
+    if operation == "commit":
+        add_step = run_git_command(directory, ["git", "add", "."], run_process)
+        steps.append(add_step)
+
+        if add_step["exitCode"] != 0:
+            return steps, "failed"
+
+        commit_step = run_git_command(
+            directory,
+            ["git", "commit", "-m", message],
+            run_process,
+        )
+        steps.append(commit_step)
+
+        if commit_step["exitCode"] != 0:
+            return steps, "failed"
+
+        return steps, "success"
+
+    if operation == "sync":
+        pull_step = run_git_command(directory, ["git", "pull"], run_process)
+        steps.append(pull_step)
+
+        if pull_step["exitCode"] != 0:
+            steps.append(
+                build_skipped_push_step("Skipped because git pull failed."),
+            )
+            return steps, "failed"
+
+        push_step = run_git_command(directory, ["git", "push"], run_process)
+        steps.append(push_step)
+
+        if push_step["exitCode"] != 0:
+            return steps, "failed"
+
+        return steps, "success"
+
+    return steps, "failed"
+
+
+def run_git_sync_cycle(
+    config: dict,
+    read_message=fetch_current_message,
+    write_message=update_current_message,
+    deliver_result=post_git_sync_result,
+    run_process=subprocess.run,
+) -> None:
+    message = read_message(config, GIT_SYNC_PURPOSE)
+
+    if not message.strip():
+        return
+
+    git_request = parse_git_sync_message(message)
+
+    if not git_request:
+        return
+
+    if git_request.get("state") in {DAEMON_RECEIVED_MESSAGE, DAEMON_SENT_RESPONSE}:
+        return
+
+    request_id = git_request.get("requestId")
+
+    if not isinstance(request_id, str) or not request_id.strip():
+        return
+
+    directory = git_request.get("directory")
+    operation = git_request.get("operation")
+
+    if not isinstance(directory, str) or not directory.strip():
+        return
+
+    if operation not in {"commit", "sync"}:
+        return
+
+    commit_message = ""
+
+    if operation == "commit":
+        message_value = git_request.get("message")
+
+        if not isinstance(message_value, str) or not message_value.strip():
+            return
+
+        commit_message = message_value
+
+    write_message(
+        config,
+        GIT_SYNC_PURPOSE,
+        build_git_sync_state_message(request_id, DAEMON_RECEIVED_MESSAGE),
+    )
+
+    steps, status = execute_git_sync_operation(
+        directory,
+        operation,
+        commit_message,
+        run_process,
+    )
+
+    deliver_result(
+        config,
+        {
+            "requestId": request_id,
+            "directory": directory,
+            "operation": operation,
+            "status": status,
+            "steps": steps,
+        },
+    )
+
+    current_message = read_message(config, GIT_SYNC_PURPOSE)
+    current_request = parse_git_sync_message(current_message)
+
+    if (
+        current_request
+        and current_request.get("requestId") == request_id
+        and current_request.get("state") == DAEMON_RECEIVED_MESSAGE
+    ):
+        write_message(
+            config,
+            GIT_SYNC_PURPOSE,
+            build_git_sync_state_message(request_id, DAEMON_SENT_RESPONSE),
+        )
+
+
 def filter_targeted_feature_paths(targeted_feature_paths: object) -> list[str]:
     if not isinstance(targeted_feature_paths, list):
         return []
@@ -779,6 +971,10 @@ def main() -> None:
             continue
 
         if not run_cycle_safely("agent_prompt", run_agent_prompt_cycle, config):
+            time.sleep(config["pollIntervalMs"] / 1000)
+            continue
+
+        if not run_cycle_safely("git_sync", run_git_sync_cycle, config):
             time.sleep(config["pollIntervalMs"] / 1000)
             continue
 

@@ -7,6 +7,8 @@ from urllib.error import URLError
 
 AGENT_CHAT_PAYLOAD_KIND = "agent_chat"
 AGENT_PROMPT_PURPOSE = "agent_prompt"
+GIT_SYNC_PAYLOAD_KIND = "git_sync_result"
+GIT_SYNC_PURPOSE = "git_sync_request"
 CLIENT_LOAD_FEATURE_FILES = "client_load_feature_files"
 CLIENT_LOAD_PARAMETER_FILES = "client_load_parameter_files"
 DAEMON_RECEIVED_MESSAGE = "daemon_received_message"
@@ -89,6 +91,10 @@ def post_feature_files(config: dict, projects: dict[str, list[dict[str, str]]]) 
 
 def post_parameter_files(config: dict, projects: dict[str, list[dict[str, str]]]) -> None:
     upsert_daemon_payload(config, PARAMETER_FILES_PAYLOAD_KIND, {"projects": projects})
+
+
+def post_git_sync_result(config: dict, result: dict) -> None:
+    upsert_daemon_payload(config, GIT_SYNC_PAYLOAD_KIND, result)
 
 
 def post_agent_chat(

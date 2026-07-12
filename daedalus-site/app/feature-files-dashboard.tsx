@@ -3,6 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient, type Session } from "@supabase/supabase-js";
 import AgentSessionPanel from "./agent-session-panel";
+import GitSyncPanel from "./git-sync-panel";
+import type { GitSyncResult } from "./git-sync-types";
+import { parseGitSyncRowMessage } from "./git-sync-utils";
 import FeatureFileGraph, {
   type FeatureGraphSelection,
 } from "./feature-file-graph";
@@ -46,9 +49,11 @@ const PARAMETER_FILE_LOAD_PURPOSE = "parameter_file_load";
 const PARAMETER_FILE_UPDATE_PURPOSE = "parameter_file_update";
 const PARAMETER_FILE_UPDATE_COMMAND = "parameter_file_update";
 const AGENT_PROMPT_PURPOSE = "agent_prompt";
+const GIT_SYNC_PURPOSE = "git_sync_request";
 const FEATURE_FILES_PAYLOAD_KIND = "feature_files";
 const PARAMETER_FILES_PAYLOAD_KIND = "parameter_files";
 const AGENT_CHAT_PAYLOAD_KIND = "agent_chat";
+const GIT_SYNC_PAYLOAD_KIND = "git_sync_result";
 const DEFAULT_PROJECT_DIRECTORY = "/Users/jameshollingsworth/Projects/daedalus";
 const AGENT_PROMPT_QUEUE_STORAGE_KEY = "agent-prompt-queue-v1";
 const AGENT_CHAT_STORAGE_KEY = "agent-chat-snapshot-v1";
@@ -67,7 +72,7 @@ const GRAPH_PARAMETER_FILE_PATH = "parameter_files/feature-file-graph-display.to
 
 type AuthMode = "sign-in" | "sign-up";
 type DevEnvironmentState = "idle" | "loading" | "ready" | "error";
-type PrimaryOverlay = "feature-detail" | "new-feature" | null;
+type PrimaryOverlay = "feature-detail" | "new-feature" | "git-sync" | null;
 type FeatureDetailTab = "chat" | "info" | "params";
 type VentureProgressState = (typeof VENTURE_PROGRESS_STATES)[number];
 
@@ -245,6 +250,13 @@ export default function FeatureFilesDashboard({
     useState<SelectedFeatureSession | null>(null);
   const [venturesDrawerOpen, setVenturesDrawerOpen] = useState(false);
   const [isWorkspaceMenuOpen, setIsWorkspaceMenuOpen] = useState(false);
+  const [gitSyncCommitMessage, setGitSyncCommitMessage] = useState("");
+  const [gitSyncProjectDirectory, setGitSyncProjectDirectory] = useState(
+    DEFAULT_PROJECT_DIRECTORY,
+  );
+  const [gitSyncStatus, setGitSyncStatus] = useState("");
+  const [gitSyncResult, setGitSyncResult] = useState<GitSyncResult | null>(null);
+  const [isGitSyncRequestInFlight, setIsGitSyncRequestInFlight] = useState(false);
   const [isFeatureSearchOpen, setIsFeatureSearchOpen] = useState(false);
   const [isGraphPhysicsEnabled, setIsGraphPhysicsEnabled] = useState(true);
   const [isGraphZoomSliderVisible, setIsGraphZoomSliderVisible] =
@@ -287,6 +299,7 @@ export default function FeatureFilesDashboard({
   const latestLocalWriteStartedAt = useRef(0);
   const latestParameterUpdateWriteStartedAt = useRef(0);
   const activePromptId = useRef("");
+  const activeGitSyncRequestId = useRef("");
   const clearedAgentChatPrompt = useRef("");
   const agentPromptQueueRef = useRef<AgentPromptQueueEntry[]>([]);
   const graphZoomProfileRef = useRef("");
@@ -1073,6 +1086,61 @@ export default function FeatureFilesDashboard({
   ]);
 
   useEffect(() => {
+    if (!currentUser || !accessToken) {
+      return;
+    }
+
+    let isMounted = true;
+
+    async function pollGitSyncResult() {
+      try {
+        const nextResult = await fetchLatestGitSyncResult(
+          supabaseUrl,
+          supabasePublishableKey,
+          accessToken,
+          currentUserId,
+        );
+
+        if (!isMounted || !nextResult) {
+          return;
+        }
+
+        const currentRequestId = activeGitSyncRequestId.current;
+
+        if (currentRequestId && nextResult.requestId !== currentRequestId) {
+          return;
+        }
+
+        setGitSyncResult(nextResult);
+        setGitSyncStatus(
+          nextResult.status === "success"
+            ? `${nextResult.operation} completed successfully.`
+            : `${nextResult.operation} failed. Review the command output below.`,
+        );
+        setIsGitSyncRequestInFlight(false);
+        activeGitSyncRequestId.current = "";
+      } catch {
+        return;
+      }
+    }
+
+    void pollGitSyncResult();
+    const intervalId = window.setInterval(pollGitSyncResult, pollIntervalMs);
+
+    return () => {
+      isMounted = false;
+      window.clearInterval(intervalId);
+    };
+  }, [
+    accessToken,
+    currentUser,
+    currentUserId,
+    pollIntervalMs,
+    supabasePublishableKey,
+    supabaseUrl,
+  ]);
+
+  useEffect(() => {
     if (!isAgentPromptQueueHydrated) {
       return;
     }
@@ -1646,6 +1714,75 @@ export default function FeatureFilesDashboard({
     void signOut();
   }
 
+  function openGitSyncOverlay() {
+    closeWorkspaceMenu();
+    setVenturesDrawerOpen(false);
+    setSelectedFeatureSession(null);
+    setActivePrimaryOverlay("git-sync");
+    if (availableProjectDirectories.length > 0) {
+      setGitSyncProjectDirectory((currentDirectory) =>
+        availableProjectDirectories.includes(currentDirectory)
+          ? currentDirectory
+          : availableProjectDirectories[0],
+      );
+    }
+  }
+
+  function closeGitSyncOverlay() {
+    setActivePrimaryOverlay((currentOverlay) =>
+      currentOverlay === "git-sync" ? null : currentOverlay,
+    );
+  }
+
+  async function sendGitSyncRequest(
+    operation: "commit" | "sync",
+    message = "",
+  ) {
+    if (!currentUser || !accessToken || isGitSyncRequestInFlight) {
+      return;
+    }
+
+    if (operation === "commit" && !message.trim()) {
+      setGitSyncStatus("Enter a commit message before committing changes.");
+      return;
+    }
+
+    const requestId = createPromptId();
+    activeGitSyncRequestId.current = requestId;
+    setIsGitSyncRequestInFlight(true);
+    setGitSyncResult(null);
+    setGitSyncStatus("Sending Git request to Supabase.");
+
+    try {
+      await updateMessage(
+        supabaseUrl,
+        supabasePublishableKey,
+        accessToken,
+        currentUserId,
+        GIT_SYNC_PURPOSE,
+        JSON.stringify({
+          requestId,
+          directory: gitSyncProjectDirectory,
+          operation,
+          ...(operation === "commit" ? { message: message.trim() } : {}),
+        }),
+      );
+      setGitSyncStatus("Git request sent. Waiting for daemon pickup.");
+    } catch {
+      activeGitSyncRequestId.current = "";
+      setIsGitSyncRequestInFlight(false);
+      setGitSyncStatus("Unable to send the Git request right now.");
+    }
+  }
+
+  function commitGitSyncChanges() {
+    void sendGitSyncRequest("commit", gitSyncCommitMessage);
+  }
+
+  function syncGitSyncWithGitHub() {
+    void sendGitSyncRequest("sync");
+  }
+
   function handleFeatureNodeSelect(selection: FeatureGraphSelection) {
     setSelectedProjectDirectory(selection.projectPath);
     setTargetedFeatures([
@@ -2193,6 +2330,17 @@ export default function FeatureFilesDashboard({
                   </span>
                   <span className="text-[11px] uppercase tracking-[0.2em] text-slate-400">
                     {isGraphZoomSliderVisible ? "Visible" : "Hidden"}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={openGitSyncOverlay}
+                  className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-semibold text-slate-100 transition hover:bg-white/6"
+                >
+                  <span>Git Sync</span>
+                  <span className="text-[11px] uppercase tracking-[0.2em] text-slate-400">
+                    Manual
                   </span>
                 </button>
                 <button
@@ -2801,6 +2949,46 @@ export default function FeatureFilesDashboard({
               </div>
             </div>
           </aside>
+        ) : null}
+
+        {activePrimaryOverlay === "git-sync" ? (
+          <section className={primaryOverlayClassName}>
+            <div className="flex items-start justify-between gap-4 border-b border-white/10 px-4 py-4 sm:px-5">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">
+                  Git Sync
+                </p>
+                <h2 className="mt-2 text-xl font-semibold text-white">
+                  Manual repository operations
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-slate-300">
+                  Commit local changes or sync with GitHub using explicit git commands run by the daemon.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeGitSyncOverlay}
+                className="rounded-full border border-white/10 bg-white/6 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:bg-white/10"
+              >
+                X
+              </button>
+            </div>
+            <div className="agent-chat-scrollbar min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-4 sm:px-5">
+              <GitSyncPanel
+                availableProjectDirectories={availableProjectDirectories}
+                commitMessage={gitSyncCommitMessage}
+                defaultProjectDirectory={DEFAULT_PROJECT_DIRECTORY}
+                isRequestInFlight={isGitSyncRequestInFlight}
+                latestResult={gitSyncResult}
+                onCommitMessageChange={setGitSyncCommitMessage}
+                onCommitChanges={commitGitSyncChanges}
+                onSelectedProjectDirectoryChange={setGitSyncProjectDirectory}
+                onSyncWithGitHub={syncGitSyncWithGitHub}
+                selectedProjectDirectory={gitSyncProjectDirectory}
+                statusText={gitSyncStatus}
+              />
+            </div>
+          </section>
         ) : null}
 
         {activePrimaryOverlay === "new-feature" ? (
@@ -3668,6 +3856,25 @@ async function fetchLatestDaemonEvent(
   }
   const rows = (await response.json()) as DaemonEventRow[];
   return rows[0] ?? null;
+}
+
+async function fetchLatestGitSyncResult(
+  supabaseUrl: string,
+  supabasePublishableKey: string,
+  accessToken: string,
+  userId: string,
+) {
+  try {
+    return await fetchDaemonPayload<GitSyncResult>(
+      supabaseUrl,
+      supabasePublishableKey,
+      accessToken,
+      userId,
+      GIT_SYNC_PAYLOAD_KIND,
+    );
+  } catch {
+    return null;
+  }
 }
 
 async function fetchLatestAgentChat(
