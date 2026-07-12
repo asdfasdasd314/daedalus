@@ -12,11 +12,13 @@ from daedalus_daemon.communications import (
     AGENT_PROMPT_PURPOSE,
     FEATURE_FILES_PAYLOAD_KIND,
     FEATURE_FILE_LOAD_PURPOSE,
+    GIT_SYNC_PAYLOAD_KIND,
     PARAMETER_FILES_PAYLOAD_KIND,
     PARAMETER_FILE_LOAD_PURPOSE,
     fetch_current_message,
     post_agent_chat,
     post_feature_files,
+    post_git_sync_result,
     post_parameter_files,
     update_current_message,
 )
@@ -295,6 +297,60 @@ class UpdateCurrentMessageTests(unittest.TestCase):
                     "targetedFeaturePaths": [
                         "feature_files/agent-prompt-chat.md",
                         "feature_files/feature-file-graph-display.md",
+                    ],
+                },
+                "p_user_id": "user-1",
+            }],
+        )
+
+
+class PostGitSyncResultTests(unittest.TestCase):
+    def test_posts_git_sync_result_to_daemon_payload_rpc(self):
+        request_bodies: list[dict] = []
+
+        def fake_urlopen(http_request, timeout=None):
+            request_bodies.append(json.loads(http_request.data.decode("utf-8")))
+            return FakeResponse({})
+
+        with patch("daedalus_daemon.communications.request.urlopen", side_effect=fake_urlopen):
+            post_git_sync_result(
+                {
+                    "supabaseUrl": "https://example.supabase.co",
+                    "supabasePublishableKey": "publishable-key",
+                    "daemonUserId": "user-1",
+                },
+                {
+                    "requestId": "git-sync-1",
+                    "directory": "/workspace/project",
+                    "operation": "commit",
+                    "status": "success",
+                    "steps": [
+                        {
+                            "command": ["git", "add", "."],
+                            "exitCode": 0,
+                            "stdout": "",
+                            "stderr": "",
+                        },
+                    ],
+                },
+            )
+
+        self.assertEqual(
+            request_bodies,
+            [{
+                "p_kind": GIT_SYNC_PAYLOAD_KIND,
+                "p_payload": {
+                    "requestId": "git-sync-1",
+                    "directory": "/workspace/project",
+                    "operation": "commit",
+                    "status": "success",
+                    "steps": [
+                        {
+                            "command": ["git", "add", "."],
+                            "exitCode": 0,
+                            "stdout": "",
+                            "stderr": "",
+                        },
                     ],
                 },
                 "p_user_id": "user-1",

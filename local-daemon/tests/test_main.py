@@ -16,10 +16,12 @@ from daedalus_daemon import (
     DAEMON_SENT_PARAMETER_FILES,
     DAEMON_SENT_RESPONSE,
     FEATURE_FILE_LOAD_PURPOSE,
+    GIT_SYNC_PURPOSE,
     PARAMETER_FILE_LOAD_PURPOSE,
     run_agent_prompt_cycle,
     run_codex_exec,
     run_cursor_exec,
+    run_git_sync_cycle,
     run_parameter_file_poll_cycle,
     run_parameter_file_update_cycle,
     run_poll_cycle,
@@ -30,6 +32,7 @@ from daedalus_daemon.main import (
     TARGETED_FEATURES_PROMPT_PREFIX,
     apply_parameter_file_update,
     build_agent_prompt_state_message,
+    build_git_sync_state_message,
     build_parameter_file_update_state_message,
     build_codex_prompt,
     build_cursor_prompt,
@@ -1006,6 +1009,248 @@ class RunCursorExecTests(unittest.TestCase):
         self.assertIn("exit code 1", reply)
         self.assertIn("partial", reply)
         self.assertIn("boom", reply)
+
+
+class FakeGitProcess:
+    def __init__(self, returncode: int, stdout: str = "", stderr: str = ""):
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
+
+
+class RunGitSyncCycleTests(unittest.TestCase):
+    def test_commit_runs_git_add_before_git_commit(self):
+        writes: list[tuple[str, str]] = []
+        deliveries: list[dict] = []
+        commands: list[list[str]] = []
+        request_payload = json.dumps({
+            "requestId": "git-sync-1",
+            "directory": "/workspace/project",
+            "operation": "commit",
+            "message": "Save work",
+        })
+        message_reads = [
+            request_payload,
+            build_git_sync_state_message("git-sync-1", DAEMON_RECEIVED_MESSAGE),
+        ]
+
+        def fake_read_message(_config, purpose):
+            self.assertEqual(purpose, GIT_SYNC_PURPOSE)
+            return message_reads.pop(0)
+
+        def fake_write_message(_config, purpose, message):
+            writes.append((purpose, message))
+
+        def fake_deliver_result(_config, result):
+            deliveries.append(result)
+
+        def fake_run_process(command, cwd, capture_output, text):
+            self.assertEqual(cwd, "/workspace/project")
+            self.assertTrue(capture_output)
+            self.assertTrue(text)
+            commands.append(command)
+            return FakeGitProcess(0)
+
+        run_git_sync_cycle(
+            {"pollIntervalMs": 5000},
+            read_message=fake_read_message,
+            write_message=fake_write_message,
+            deliver_result=fake_deliver_result,
+            run_process=fake_run_process,
+        )
+
+        self.assertEqual(
+            commands,
+            [
+                ["git", "add", "."],
+                ["git", "commit", "-m", "Save work"],
+            ],
+        )
+        self.assertEqual(
+            writes,
+            [
+                (
+                    GIT_SYNC_PURPOSE,
+                    build_git_sync_state_message("git-sync-1", DAEMON_RECEIVED_MESSAGE),
+                ),
+                (
+                    GIT_SYNC_PURPOSE,
+                    build_git_sync_state_message("git-sync-1", DAEMON_SENT_RESPONSE),
+                ),
+            ],
+        )
+        self.assertEqual(
+            deliveries,
+            [{
+                "requestId": "git-sync-1",
+                "directory": "/workspace/project",
+                "operation": "commit",
+                "status": "success",
+                "steps": [
+                    {
+                        "command": ["git", "add", "."],
+                        "exitCode": 0,
+                        "stdout": "",
+                        "stderr": "",
+                    },
+                    {
+                        "command": ["git", "commit", "-m", "Save work"],
+                        "exitCode": 0,
+                        "stdout": "",
+                        "stderr": "",
+                    },
+                ],
+            }],
+        )
+
+    def test_add_failure_prevents_commit_and_returns_captured_output(self):
+        deliveries: list[dict] = []
+        request_payload = json.dumps({
+            "requestId": "git-sync-2",
+            "directory": "/workspace/project",
+            "operation": "commit",
+            "message": "Save work",
+        })
+
+        def fake_read_message(_config, _purpose):
+            return request_payload
+
+        def fake_write_message(_config, _purpose, _message):
+            return None
+
+        def fake_deliver_result(_config, result):
+            deliveries.append(result)
+
+        def fake_run_process(command, cwd, capture_output, text):
+            self.assertEqual(command, ["git", "add", "."])
+            return FakeGitProcess(1, stdout="", stderr="add failed")
+
+        run_git_sync_cycle(
+            {"pollIntervalMs": 5000},
+            read_message=fake_read_message,
+            write_message=fake_write_message,
+            deliver_result=fake_deliver_result,
+            run_process=fake_run_process,
+        )
+
+        self.assertEqual(len(deliveries), 1)
+        self.assertEqual(deliveries[0]["status"], "failed")
+        self.assertEqual(len(deliveries[0]["steps"]), 1)
+        self.assertEqual(deliveries[0]["steps"][0]["stderr"], "add failed")
+        self.assertEqual(deliveries[0]["requestId"], "git-sync-2")
+        self.assertEqual(deliveries[0]["operation"], "commit")
+
+    def test_pull_success_runs_push(self):
+        deliveries: list[dict] = []
+        commands: list[list[str]] = []
+        request_payload = json.dumps({
+            "requestId": "git-sync-3",
+            "directory": "/workspace/project",
+            "operation": "sync",
+        })
+
+        def fake_read_message(_config, _purpose):
+            return request_payload
+
+        def fake_write_message(_config, _purpose, _message):
+            return None
+
+        def fake_deliver_result(_config, result):
+            deliveries.append(result)
+
+        def fake_run_process(command, cwd, capture_output, text):
+            commands.append(command)
+            return FakeGitProcess(0, stdout=f"{command[-1]} ok")
+
+        run_git_sync_cycle(
+            {"pollIntervalMs": 5000},
+            read_message=fake_read_message,
+            write_message=fake_write_message,
+            deliver_result=fake_deliver_result,
+            run_process=fake_run_process,
+        )
+
+        self.assertEqual(commands, [["git", "pull"], ["git", "push"]])
+        self.assertEqual(deliveries[0]["status"], "success")
+        self.assertEqual(len(deliveries[0]["steps"]), 2)
+
+    def test_pull_failure_prevents_push(self):
+        deliveries: list[dict] = []
+        commands: list[list[str]] = []
+        request_payload = json.dumps({
+            "requestId": "git-sync-4",
+            "directory": "/workspace/project",
+            "operation": "sync",
+        })
+
+        def fake_read_message(_config, _purpose):
+            return request_payload
+
+        def fake_write_message(_config, _purpose, _message):
+            return None
+
+        def fake_deliver_result(_config, result):
+            deliveries.append(result)
+
+        def fake_run_process(command, cwd, capture_output, text):
+            commands.append(command)
+            if command == ["git", "pull"]:
+                return FakeGitProcess(1, stderr="merge conflict")
+            raise AssertionError("push should not run")
+
+        run_git_sync_cycle(
+            {"pollIntervalMs": 5000},
+            read_message=fake_read_message,
+            write_message=fake_write_message,
+            deliver_result=fake_deliver_result,
+            run_process=fake_run_process,
+        )
+
+        self.assertEqual(commands, [["git", "pull"]])
+        self.assertEqual(deliveries[0]["status"], "failed")
+        self.assertEqual(len(deliveries[0]["steps"]), 2)
+        self.assertTrue(deliveries[0]["steps"][1].get("skipped"))
+        self.assertEqual(
+            deliveries[0]["steps"][1]["stderr"],
+            "Skipped because git pull failed.",
+        )
+
+    def test_push_failure_is_returned_to_frontend(self):
+        deliveries: list[dict] = []
+        request_payload = json.dumps({
+            "requestId": "git-sync-5",
+            "directory": "/workspace/project",
+            "operation": "sync",
+        })
+
+        def fake_read_message(_config, _purpose):
+            return request_payload
+
+        def fake_write_message(_config, _purpose, _message):
+            return None
+
+        def fake_deliver_result(_config, result):
+            deliveries.append(result)
+
+        def fake_run_process(command, cwd, capture_output, text):
+            if command == ["git", "pull"]:
+                return FakeGitProcess(0)
+            if command == ["git", "push"]:
+                return FakeGitProcess(1, stderr="rejected")
+            raise AssertionError(f"unexpected command: {command}")
+
+        run_git_sync_cycle(
+            {"pollIntervalMs": 5000},
+            read_message=fake_read_message,
+            write_message=fake_write_message,
+            deliver_result=fake_deliver_result,
+            run_process=fake_run_process,
+        )
+
+        self.assertEqual(deliveries[0]["status"], "failed")
+        self.assertEqual(deliveries[0]["steps"][-1]["stderr"], "rejected")
+        self.assertEqual(deliveries[0]["requestId"], "git-sync-5")
+        self.assertEqual(deliveries[0]["operation"], "sync")
 
 
 if __name__ == "__main__":
