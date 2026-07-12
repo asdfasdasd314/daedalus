@@ -31,6 +31,7 @@ type AgentPromptQueueStatus =
 type AgentSessionPanelProps = {
   agentModels: AgentModelsConfig;
   agentPromptMessage: string;
+  areDurableTasksLoaded: boolean;
   availableProjectDirectories: string[];
   currentPromptQueueItem: {
     promptId: string;
@@ -78,6 +79,7 @@ type AgentSessionPanelProps = {
 export default function AgentSessionPanel({
   agentModels,
   agentPromptMessage,
+  areDurableTasksLoaded,
   availableProjectDirectories,
   currentPromptQueueItem,
   defaultProjectDirectory,
@@ -431,7 +433,7 @@ export default function AgentSessionPanel({
         </p>
       ) : null}
 
-      {orchestratedTasks.length > 0 || finalizedDurableTaskCount > 0 ? (
+      {areDurableTasksLoaded && orchestratedTasks.length > 0 ? (
         <div className="grid gap-2 rounded-[1.25rem] border border-white/10 bg-slate-900/50 p-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400">
@@ -470,7 +472,7 @@ export default function AgentSessionPanel({
               ) : null}
             </div>
           </div>
-          {orchestratedTasks.slice(0, 8).map((task) => (
+          {orchestratedTasks.map((task) => (
             <div key={task.promptId} className="flex min-w-0 items-center gap-3 text-xs">
               <span className="shrink-0 rounded-full bg-cyan-300/10 px-2 py-1 font-semibold uppercase tracking-[0.12em] text-cyan-100">
                 {task.status}
