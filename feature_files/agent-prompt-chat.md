@@ -74,3 +74,5 @@ HACKING
 - 2026-07-11: Routed agent-mode submissions through durable orchestrator tasks while retaining the existing direct Planning Mode transport.
 - 2026-07-12: Added a bottom-right Copy button on the user prompt bubble that copies the submitted prompt text to the clipboard.
 - 2026-07-12: Added an inline Confirm/Undo clear control for durable agent tasks, backed by an owner-scoped Supabase delete policy and REST delete request.
+- 2026-07-12: Removed the Cursor CLI file-edit permissions helper text from the shared agent prompt chat controls.
+- 2026-07-12: Resolved the integration conflict while preserving durable-task clearing and Cursor helper-text removal.
