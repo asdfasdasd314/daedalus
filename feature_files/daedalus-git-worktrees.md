@@ -12,6 +12,7 @@ Daedalus Git Worktrees isolates agent-mode prompts on task branches and uses a d
 - **Base-State Cohorts**: Tasks admitted from the same `main` commit are verified independently and integrated in submission order after the cohort fills or its quiet window expires.
 - **Safe Promotion**: Combined work is tested on an integration branch and local `main` advances only by a verified fast-forward; no remote push occurs.
 - **Resolver Loop**: Merge conflicts and combined-test failures launch a resolver agent up to three times, with daemon warnings for attempts and a blocking error after exhaustion.
+- **Integration Notification**: A successful promotion records an info event in `daemon_events` after the batch is completed, allowing the dashboard to report completion instead of leaving the last resolver warning visible.
 - **Planning Bypass**: Planning-mode prompts retain the read-only direct execution path and consume no worktree capacity.
 - **Deferred Controls**: User cancellation, pruning, remote push, and post-integration revert controls are intentionally outside this first delivery.
 
@@ -33,3 +34,4 @@ HACKING
 - 2026-07-11: Made the daemon finalize worktree and resolver commits when agent sandboxes cannot create Git metadata locks.
 - 2026-07-11: Added a durable three-attempt agent repair loop for individual worktree verification failures, with captured failures supplied to each retry and a terminal daemon error on exhaustion.
 - 2026-07-12: Moved durable orchestration ahead of legacy polling so an unrelated communications failure cannot leave submitted agent tasks queued without lifecycle events.
+- 2026-07-12: Added a final info event after successful batch promotion so the UI receives a durable orchestrator-completed notification.
