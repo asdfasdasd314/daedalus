@@ -13,6 +13,7 @@ The agent prompt chat adds a reusable prompt composer to the existing dashboard 
 - **Targeted Feature Scope**: The chat panel keeps a separate `Targeted Features` chip row for the next outbound prompt only, and each prompt now carries a `targetedFeaturePaths` list of project-relative `feature_files/*.md` paths.
 - **Execution Loop**: Planning prompts keep the direct `agent_prompt` message path, while agent-mode prompts become durable `agent_tasks` consumed by the Git worktree orchestrator; both return the latest prompt/reply pair through `daemon_payloads`.
 - **Chat Progress**: The dashboard watches the `agent_prompt` row so it can show daemon pickup and completion updates while the reply is still being generated.
+- **Orchestrator Completion**: The dashboard polls the durable `daemon_events` stream, including the orchestrator's final successful-integration event, so resolver warnings are replaced by a visible completion notification after promotion.
 - **Queued Prompt Safety**: If a newer prompt arrives while an older one is still running, the daemon leaves the newer row in place instead of overwriting it with `daemon_sent_response`.
 - **Latest Pair Only**: The UI keeps only the newest submitted prompt and daemon reply instead of a full transcript.
 - **Clear Control**: The chat panel now includes a local clear action that hides the current prompt/reply block and suppresses the cached exchange until a new prompt is sent.
@@ -36,6 +37,7 @@ The agent prompt chat adds a reusable prompt composer to the existing dashboard 
 - `shared/database/schema.sql`: Checked-in schema snapshot for the communications table.
 - `local-daemon/src/daedalus_daemon/communications.py`: Purpose-aware Supabase read and write helpers for the daemon.
 - `local-daemon/src/daedalus_daemon/main.py`: Feature-file polling plus agent prompt execution and reply delivery.
+- `shared/database/migrations/009_git_worktree_orchestrator.sql`: Defines the user-scoped `daemon_events` table that carries orchestration completion notifications to the dashboard.
 - `feature_files/cursor-agent.md`: Cursor execution provider used by the shared prompt transport.
 - `feature_files/daedalus-git-worktrees.md`: Durable agent-mode queue, isolation, verification, and integration lifecycle.
 
@@ -76,3 +78,4 @@ HACKING
 - 2026-07-12: Added an inline Confirm/Undo clear control for durable agent tasks, backed by an owner-scoped Supabase delete policy and REST delete request.
 - 2026-07-12: Removed the Cursor CLI file-edit permissions helper text from the shared agent prompt chat controls.
 - 2026-07-12: Resolved the integration conflict while preserving durable-task clearing and Cursor helper-text removal.
+- 2026-07-12: Added the durable orchestrator success event consumed by the dashboard so a completed integration reports success after any resolver warnings.

@@ -571,6 +571,13 @@ class GitWorktreeOrchestrator:
 
             batch.update({"status": "completed", "completed_at": utc_now()})
             upsert_orchestration_batch(self.config, batch)
+            record_daemon_event(
+                self.config,
+                str(batch["repository"]),
+                "info",
+                f"Batch {batch_id} integrated successfully into the repository.",
+                batch_id=batch_id,
+            )
             tasks = list_agent_tasks(self.config)
             for task in tasks:
                 if str(task["id"]) not in task_ids:
