@@ -751,6 +751,13 @@ def main() -> None:
     orchestrator = GitWorktreeOrchestrator(config, run_codex_exec, run_cursor_exec)
 
     while True:
+        # Durable agent tasks must not wait behind the legacy communications polls.
+        # Those polls can be unavailable while the task scheduler is still able to
+        # claim queued work and report its lifecycle events.
+        if not run_cycle_safely("agent_orchestrator", orchestrator.run_cycle, config):
+            time.sleep(config["pollIntervalMs"] / 1000)
+            continue
+
         if not run_cycle_safely("feature_file_load", run_poll_cycle, config):
             time.sleep(config["pollIntervalMs"] / 1000)
             continue
@@ -772,10 +779,6 @@ def main() -> None:
             continue
 
         if not run_cycle_safely("agent_prompt", run_agent_prompt_cycle, config):
-            time.sleep(config["pollIntervalMs"] / 1000)
-            continue
-
-        if not run_cycle_safely("agent_orchestrator", orchestrator.run_cycle, config):
             time.sleep(config["pollIntervalMs"] / 1000)
             continue
 

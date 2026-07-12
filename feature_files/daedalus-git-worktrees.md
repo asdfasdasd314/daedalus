@@ -32,3 +32,4 @@ HACKING
 - 2026-07-11: Added durable lifecycle events and automatic repository test discovery so worktree tasks show progress and do not run Daedalus-only commands in other projects.
 - 2026-07-11: Made the daemon finalize worktree and resolver commits when agent sandboxes cannot create Git metadata locks.
 - 2026-07-11: Added a durable three-attempt agent repair loop for individual worktree verification failures, with captured failures supplied to each retry and a terminal daemon error on exhaustion.
+- 2026-07-12: Moved durable orchestration ahead of legacy polling so an unrelated communications failure cannot leave submitted agent tasks queued without lifecycle events.
