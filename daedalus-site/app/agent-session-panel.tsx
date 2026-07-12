@@ -127,7 +127,8 @@ export default function AgentSessionPanel({
   );
   const [selectedFeaturePath, setSelectedFeaturePath] = useState("");
   const [isMarkdownReplyView, setIsMarkdownReplyView] = useState(true);
-  const [copyButtonLabel, setCopyButtonLabel] = useState("Copy");
+  const [copyPromptButtonLabel, setCopyPromptButtonLabel] = useState("Copy");
+  const [copyReplyButtonLabel, setCopyReplyButtonLabel] = useState("Copy");
   const effectiveSelectedFeaturePath = selectableFeatures.some(
     (feature) => feature.filePath === selectedFeaturePath,
   )
@@ -136,8 +137,20 @@ export default function AgentSessionPanel({
 
   useEffect(() => {
     setIsMarkdownReplyView(true);
-    setCopyButtonLabel("Copy");
+    setCopyPromptButtonLabel("Copy");
+    setCopyReplyButtonLabel("Copy");
   }, [latestChat?.prompt, latestChat?.reply, isAgentChatCleared]);
+
+  function copyUserPrompt() {
+    if (!latestChat?.prompt) {
+      return;
+    }
+
+    void navigator.clipboard.writeText(latestChat.prompt).then(() => {
+      setCopyPromptButtonLabel("Copied");
+      window.setTimeout(() => setCopyPromptButtonLabel("Copy"), 1500);
+    });
+  }
 
   function copyAgentReply() {
     if (!latestChat?.reply) {
@@ -145,8 +158,8 @@ export default function AgentSessionPanel({
     }
 
     void navigator.clipboard.writeText(latestChat.reply).then(() => {
-      setCopyButtonLabel("Copied");
-      window.setTimeout(() => setCopyButtonLabel("Copy"), 1500);
+      setCopyReplyButtonLabel("Copied");
+      window.setTimeout(() => setCopyReplyButtonLabel("Copy"), 1500);
     });
   }
 
@@ -428,7 +441,7 @@ export default function AgentSessionPanel({
       {!isAgentChatCleared && latestChat ? (
         <div className="grid min-w-0 gap-3 pt-2">
           <div className="flex min-w-0 justify-end">
-            <div className="w-full max-w-[19rem] min-w-0 break-words rounded-[1.5rem] rounded-br-md bg-cyan-300 px-4 py-3 text-sm text-slate-950 sm:max-w-[85%]">
+            <div className="relative w-full max-w-[19rem] min-w-0 break-words rounded-[1.5rem] rounded-br-md bg-cyan-300 px-4 py-3 pb-10 text-sm text-slate-950 sm:max-w-[85%]">
               <p>{latestChat.prompt}</p>
               {latestChat.model ? (
                 <p className="mt-2 break-words text-xs leading-5 text-slate-700">
@@ -439,6 +452,13 @@ export default function AgentSessionPanel({
                   </span>
                 </p>
               ) : null}
+              <button
+                type="button"
+                onClick={copyUserPrompt}
+                className="absolute bottom-2 right-2 rounded-full border border-slate-950/15 bg-slate-950/10 px-3 py-1 text-xs font-semibold text-slate-950 transition hover:bg-slate-950/20"
+              >
+                {copyPromptButtonLabel}
+              </button>
             </div>
           </div>
           <div className="grid min-w-0 justify-items-start gap-2">
@@ -543,7 +563,7 @@ export default function AgentSessionPanel({
                   onClick={copyAgentReply}
                   className="absolute bottom-2 right-2 rounded-full border border-white/10 bg-slate-950/80 px-3 py-1 text-xs font-semibold text-slate-200 transition hover:bg-slate-800"
                 >
-                  {copyButtonLabel}
+                  {copyReplyButtonLabel}
                 </button>
               ) : null}
             </div>

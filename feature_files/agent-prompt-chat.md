@@ -21,6 +21,7 @@ The agent prompt chat adds a reusable prompt composer to the existing dashboard 
 - **Predictable Reply View State**: The shared panel resets the reply visualizer to Formatted whenever the latest exchange changes or chat is cleared, so a new daemon response never inherits a stale Raw selection.
 - **Reply Content Fitting**: The compact segmented control wraps at phone widths, and code blocks and tables scroll within the reply bubble so they cannot widen the overlay or page.
 - **Reply Copy Control**: A bottom-right Copy button on the agent reply bubble writes the raw daemon response text to the clipboard, independent of Formatted vs Raw view.
+- **Prompt Copy Control**: A bottom-right Copy button on the user prompt bubble writes the submitted prompt text to the clipboard so it can be reused or edited elsewhere.
 
 ## Relevant Files
 - `daedalus-site/app/feature-files-dashboard.tsx`: Workspace shell that mounts the shared chat session inside the new-feature and feature-detail overlays.
@@ -69,3 +70,4 @@ HACKING
 - 2026-07-10: Added a shared safe Markdown/raw reply visualizer with GFM tables and task lists, local reset behavior, and mobile-contained long content.
 - 2026-07-10: Added a bottom-right Copy button on the agent reply bubble that copies the raw daemon response to the clipboard.
 - 2026-07-11: Routed agent-mode submissions through durable orchestrator tasks while retaining the existing direct Planning Mode transport.
+- 2026-07-12: Added a bottom-right Copy button on the user prompt bubble that copies the submitted prompt text to the clipboard.
