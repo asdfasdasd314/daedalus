@@ -154,6 +154,8 @@ on agent_tasks for insert to authenticated
 with check (user_id = auth.uid() and status = 'queued');
 create policy "authenticated users can read own agent tasks"
 on agent_tasks for select to authenticated using (user_id = auth.uid());
+create policy "authenticated users can delete own agent tasks"
+on agent_tasks for delete to authenticated using (user_id = auth.uid());
 create policy "authenticated users can read own orchestration batches"
 on orchestration_batches for select to authenticated using (user_id = auth.uid());
 create policy "authenticated users can read own daemon events"
