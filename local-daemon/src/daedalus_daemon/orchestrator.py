@@ -184,7 +184,6 @@ class GitWorktreeOrchestrator:
     def _run_task(self, task: dict, settings: dict) -> dict:
         task_id = str(task["id"])
         worktree_path = str(task["worktree_path"])
-        prompt = build_task_prompt(task)
         record_daemon_event(
             self.config,
             str(task["repository"]),
@@ -192,12 +191,7 @@ class GitWorktreeOrchestrator:
             f"{task['provider'].capitalize()} agent process started in its isolated worktree.",
             task_id=task_id,
         )
-        if task["provider"] == "cursor":
-            reply = self.run_cursor(worktree_path, prompt)
-        else:
-            reply = self.run_codex(
-                worktree_path, prompt, str(task["model"]), str(task["reasoning"])
-            )
+        reply = self._run_task_agent(worktree_path, task, build_task_prompt(task))
 
         if reply.startswith(("Codex failed", "Cursor failed", "Cursor was cancelled")):
             return {"ok": False, "reply": reply, "error": reply}
@@ -251,20 +245,87 @@ class GitWorktreeOrchestrator:
                 "expected_status": "verifying",
             }
 
+        verification_attempts = int(task.get("verification_attempts") or 0)
         verification = run_verification(worktree_path, commands)
-        if not verification["ok"]:
-            return {
-                "ok": False,
-                "reply": reply,
+        while not verification["ok"]:
+            verification_attempts += 1
+            update_agent_task(self.config, task_id, "verifying", {
+                "verification_attempts": verification_attempts,
                 "error": verification["output"],
-                "expected_status": "verifying",
-            }
+            })
+            if verification_attempts >= settings["taskVerificationAttemptLimit"]:
+                error = (
+                    "Agent unable to complete changes; test suites failed "
+                    f"{settings['taskVerificationAttemptLimit']} times.\n\n"
+                    f"{verification['output']}"
+                )
+                return {
+                    "ok": False,
+                    "reply": reply,
+                    "error": error,
+                    "expected_status": "verifying",
+                }
+
+            next_attempt = verification_attempts + 1
+            record_daemon_event(
+                self.config,
+                str(task["repository"]),
+                "warning",
+                "Test suite failed; launching agent repair attempt "
+                f"{next_attempt}/{settings['taskVerificationAttemptLimit']}.",
+                task_id=task_id,
+            )
+            repair_reply = self._run_task_agent(
+                worktree_path,
+                task,
+                build_task_repair_prompt(
+                    task,
+                    verification["output"],
+                    next_attempt,
+                    settings["taskVerificationAttemptLimit"],
+                ),
+            )
+            if repair_reply.startswith(("Codex failed", "Cursor failed", "Cursor was cancelled")):
+                return {
+                    "ok": False,
+                    "reply": repair_reply,
+                    "error": repair_reply,
+                    "expected_status": "verifying",
+                }
+            reply = repair_reply
+            try:
+                committed = commit_worktree_changes(
+                    worktree_path, f"Daedalus task repair {task_id} attempt {next_attempt}"
+                )
+            except RuntimeError as error:
+                return {
+                    "ok": False,
+                    "reply": reply,
+                    "error": f"Daemon could not commit the agent repair changes.\n\n{error}",
+                    "expected_status": "verifying",
+                }
+            if committed:
+                record_daemon_event(
+                    self.config,
+                    str(task["repository"]),
+                    "info",
+                    f"Daemon committed repair changes from attempt {next_attempt}.",
+                    task_id=task_id,
+                )
+            verification = run_verification(worktree_path, commands)
         return {
             "ok": True,
             "reply": reply,
             "verification": verification["output"],
             "expected_status": "verifying",
         }
+
+    def _run_task_agent(self, worktree_path: str, task: dict, prompt: str) -> str:
+        if task["provider"] == "cursor":
+            return self.run_cursor(worktree_path, prompt)
+        return self.run_codex(
+            worktree_path, prompt, str(task["model"]), str(task["reasoning"])
+        )
 
     def _finish_tasks(self, tasks: list[dict]) -> None:
         tasks_by_id = {str(task["id"]): task for task in tasks}
@@ -539,6 +600,9 @@ def load_worktree_settings() -> dict:
         "maxAgentsPerRepository": positive_int(values, "max_agents_per_repository"),
         "cohortIdleWindowSeconds": positive_int(values, "cohort_idle_window_seconds"),
         "resolverAttemptLimit": positive_int(values, "resolver_attempt_limit"),
+        "taskVerificationAttemptLimit": positive_int(
+            values, "task_verification_attempt_limit"
+        ),
         "primaryBranch": str(values.get("primary_branch", "main")),
         "verificationCommands": commands,
     }
@@ -672,6 +736,20 @@ def build_task_prompt(task: dict) -> str:
         "Work only in this Git worktree. Commit every completed change to the current task branch; "
         "if your sandbox cannot access Git worktree metadata, leave the completed changes for Daedalus to commit. "
         "Do not switch branches, merge other branches, or push a remote."
+    )
+
+
+def build_task_repair_prompt(
+    task: dict, failure: str, attempt: int, limit: int
+) -> str:
+    return (
+        "Repair the failing verification suite in this existing isolated Git worktree. "
+        "Preserve the original task intent, inspect the current changes and failure details, and make the smallest fix. "
+        "Commit every completed change; if your sandbox cannot access Git worktree metadata, leave the completed changes for Daedalus to commit. "
+        "Do not switch branches, merge other branches, or push a remote.\n\n"
+        f"Original task:\n{task['prompt']}\n\n"
+        f"Repair attempt: {attempt}/{limit}\n\n"
+        f"Verification failure:\n{failure}"
     )
 
 

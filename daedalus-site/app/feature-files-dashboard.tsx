@@ -130,6 +130,7 @@ type AgentPromptQueueEntry = AgentPromptPayload & {
   sentAt?: number;
   completedAt?: number;
   error?: string;
+  verificationAttempts?: number;
 };
 
 type AgentTaskRow = {
@@ -147,6 +148,7 @@ type AgentTaskRow = {
   started_at: string | null;
   completed_at: string | null;
   error: string;
+  verification_attempts: number;
 };
 
 type DaemonEventRow = {
@@ -3336,7 +3338,11 @@ function getAgentPromptQueueStatusText(queue: AgentPromptQueueEntry[]) {
 function formatDurableTaskStatus(task: AgentPromptQueueEntry) {
   if (task.status === "queued") return "Agent task is durably queued.";
   if (task.status === "running") return "Agent is running in an isolated Git worktree.";
-  if (task.status === "verifying") return "Agent branch is being verified.";
+  if (task.status === "verifying") {
+    return task.verificationAttempts
+      ? `Agent branch is being verified (attempt ${task.verificationAttempts}/3).`
+      : "Agent branch is being verified.";
+  }
   if (task.status === "ready") return "Agent branch is waiting for its integration cohort.";
   if (task.status === "integrating") return "Orchestrator is testing the combined integration branch.";
   if (task.status === "resolving") return "Resolver agent is repairing the integration batch.";
@@ -3360,6 +3366,7 @@ function mapAgentTaskRowToQueueEntry(row: AgentTaskRow): AgentPromptQueueEntry {
     sentAt: row.started_at ? Date.parse(row.started_at) : undefined,
     completedAt: row.completed_at ? Date.parse(row.completed_at) : undefined,
     error: row.error || undefined,
+    verificationAttempts: row.verification_attempts,
   };
 }
 

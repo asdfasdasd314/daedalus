@@ -8,6 +8,7 @@ Daedalus Git Worktrees isolates agent-mode prompts on task branches and uses a d
 - **Central Configuration**: Scheduler, resolver, branch, and verification settings are loaded once from Daedalus's feature-owned parameter file rather than requiring configuration files in managed repositories.
 - **Durable Progress**: The daemon records task claim, agent-start, and verification events so agent-mode work is observable without relying on the legacy single-prompt channel.
 - **Daemon-Owned Commits**: When an agent sandbox cannot reach Git's shared worktree metadata, the daemon stages and commits the completed isolated changes before verification.
+- **Task Repair Loop**: Individual verification suites receive up to three total attempts in the same isolated worktree, with later agent repairs informed by the captured failure before a durable terminal error is reported.
 - **Base-State Cohorts**: Tasks admitted from the same `main` commit are verified independently and integrated in submission order after the cohort fills or its quiet window expires.
 - **Safe Promotion**: Combined work is tested on an integration branch and local `main` advances only by a verified fast-forward; no remote push occurs.
 - **Resolver Loop**: Merge conflicts and combined-test failures launch a resolver agent up to three times, with daemon warnings for attempts and a blocking error after exhaustion.
@@ -30,3 +31,4 @@ HACKING
 - 2026-07-11: Centralized orchestrator configuration in Daedalus so managed repositories no longer require their own worktree parameter file.
 - 2026-07-11: Added durable lifecycle events and automatic repository test discovery so worktree tasks show progress and do not run Daedalus-only commands in other projects.
 - 2026-07-11: Made the daemon finalize worktree and resolver commits when agent sandboxes cannot create Git metadata locks.
+- 2026-07-11: Added a durable three-attempt agent repair loop for individual worktree verification failures, with captured failures supplied to each retry and a terminal daemon error on exhaustion.

@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from daedalus_daemon.orchestrator import (
     build_resolver_prompt,
+    build_task_repair_prompt,
     build_task_prompt,
     commit_worktree_changes,
     create_task_worktree,
@@ -27,6 +28,7 @@ class WorktreeSettingsTests(unittest.TestCase):
                 'max_agents_per_repository = 4\n'
                 'cohort_idle_window_seconds = 30\n'
                 'resolver_attempt_limit = 3\n'
+                'task_verification_attempt_limit = 3\n'
                 'primary_branch = "main"\n'
                 'verification_commands = [["python", "-m", "unittest"]]\n',
                 encoding="utf-8",
@@ -39,6 +41,7 @@ class WorktreeSettingsTests(unittest.TestCase):
                 settings = load_worktree_settings()
 
         self.assertEqual(settings["maxAgentsPerRepository"], 4)
+        self.assertEqual(settings["taskVerificationAttemptLimit"], 3)
         self.assertEqual(settings["verificationCommands"], [["python", "-m", "unittest"]])
 
 
@@ -109,6 +112,15 @@ class PromptTests(unittest.TestCase):
         })
         self.assertIn("feature_files/example.md", prompt)
         self.assertIn("Commit every completed change", prompt)
+
+    def test_task_repair_prompt_contains_original_task_and_failure(self):
+        prompt = build_task_repair_prompt(
+            {"prompt": "Build it"}, "COMMAND: pytest\nSTDERR: failed", 2, 3
+        )
+
+        self.assertIn("Build it", prompt)
+        self.assertIn("COMMAND: pytest", prompt)
+        self.assertIn("2/3", prompt)
 
     def test_resolver_prompt_contains_all_goals_and_failure(self):
         prompt = build_resolver_prompt(

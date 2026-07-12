@@ -100,6 +100,7 @@ create table agent_tasks (
   batch_id uuid,
   result text not null default '',
   error text not null default '',
+  verification_attempts integer not null default 0,
   created_at timestamptz not null default now(),
   started_at timestamptz,
   completed_at timestamptz,
@@ -261,6 +262,7 @@ begin
     batch_id = coalesce((p_updates->>'batch_id')::uuid, batch_id),
     result = coalesce(p_updates->>'result', result),
     error = coalesce(p_updates->>'error', error),
+    verification_attempts = coalesce((p_updates->>'verification_attempts')::integer, verification_attempts),
     started_at = case when p_updates ? 'started_at' then (p_updates->>'started_at')::timestamptz else started_at end,
     completed_at = case when p_updates ? 'completed_at' then (p_updates->>'completed_at')::timestamptz else completed_at end,
     updated_at = now()
