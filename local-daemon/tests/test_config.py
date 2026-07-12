@@ -47,6 +47,10 @@ class LoadDaemonConfigTests(unittest.TestCase):
             config,
             {
                 "daemonUserId": "daemon-user",
+                "httpRequestRetryDelayMs": 750,
+                "httpRequestRetryLimit": 3,
+                "httpRequestTimeoutSeconds": 20,
+                "networkOutageCooldownMs": 15000,
                 "pollIntervalMs": 7000,
                 "supabasePublishableKey": "daemon-key",
                 "supabaseUrl": "https://daemon.example.supabase.co",

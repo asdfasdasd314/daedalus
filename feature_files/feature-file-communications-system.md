@@ -39,3 +39,4 @@ HACKING
 - 2026-07-08: Replaced dashboard Supabase request call sites with a derived `currentUserId` value so hosted Next.js builds stop failing on nullable auth user narrowing inside async handlers.
 - 2026-07-09: Added daemon-side Supabase request retries and per-cycle crash guards so transient HTTPS connection resets no longer stop the background polling loop.
 - 2026-07-09: Added an explicit network-outage cooldown so exhausted Supabase retries now pause the daemon briefly instead of immediately hammering the remaining poll cycles.
+- 2026-07-12: Updated daemon communications and config tests to accept urlopen timeouts and assert the new retry/cooldown defaults.

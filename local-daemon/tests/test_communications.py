@@ -43,7 +43,7 @@ class UpdateCurrentMessageTests(unittest.TestCase):
         request_urls: list[str] = []
         request_headers: list[dict[str, str]] = []
 
-        def fake_urlopen(http_request):
+        def fake_urlopen(http_request, timeout=None):
             seen_methods.append(http_request.get_method())
             request_urls.append(http_request.full_url)
             request_headers.append(dict(http_request.header_items()))
@@ -81,7 +81,7 @@ class UpdateCurrentMessageTests(unittest.TestCase):
         request_bodies: list[dict] = []
         request_urls: list[str] = []
 
-        def fake_urlopen(http_request):
+        def fake_urlopen(http_request, timeout=None):
             request_urls.append(http_request.full_url)
             request_bodies.append(json.loads(http_request.data.decode("utf-8")))
             return FakeResponse([{"message": "daemon_sent_feature_files"}])
@@ -106,7 +106,7 @@ class UpdateCurrentMessageTests(unittest.TestCase):
     def test_reads_parameter_message_for_requested_purpose(self):
         request_bodies: list[dict] = []
 
-        def fake_urlopen(http_request):
+        def fake_urlopen(http_request, timeout=None):
             request_bodies.append(json.loads(http_request.data.decode("utf-8")))
             return FakeResponse([{"message": "daemon_sent_parameter_files"}])
 
@@ -129,7 +129,7 @@ class UpdateCurrentMessageTests(unittest.TestCase):
     def test_posts_feature_files_to_daemon_payload_rpc(self):
         request_bodies: list[dict] = []
 
-        def fake_urlopen(http_request):
+        def fake_urlopen(http_request, timeout=None):
             request_bodies.append(json.loads(http_request.data.decode("utf-8")))
             return FakeResponse({})
 
@@ -172,7 +172,7 @@ class UpdateCurrentMessageTests(unittest.TestCase):
         seen_methods: list[str] = []
         request_bodies: list[dict] = []
 
-        def fake_urlopen(http_request):
+        def fake_urlopen(http_request, timeout=None):
             seen_methods.append(http_request.get_method())
             request_bodies.append(json.loads(http_request.data.decode("utf-8")))
             return FakeResponse({})
@@ -217,7 +217,7 @@ class UpdateCurrentMessageTests(unittest.TestCase):
         seen_methods: list[str] = []
         request_bodies: list[dict] = []
 
-        def fake_urlopen(http_request):
+        def fake_urlopen(http_request, timeout=None):
             seen_methods.append(http_request.get_method())
             request_bodies.append(json.loads(http_request.data.decode("utf-8")))
             return FakeResponse({})
@@ -258,7 +258,7 @@ class UpdateCurrentMessageTests(unittest.TestCase):
     def test_posts_agent_chat_with_targeted_feature_paths(self):
         request_bodies: list[dict] = []
 
-        def fake_urlopen(http_request):
+        def fake_urlopen(http_request, timeout=None):
             request_bodies.append(json.loads(http_request.data.decode("utf-8")))
             return FakeResponse({})
 
