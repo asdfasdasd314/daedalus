@@ -218,6 +218,7 @@ export default function FeatureFilesDashboard({
   >([]);
   const [isAgentPromptQueueHydrated, setIsAgentPromptQueueHydrated] =
     useState(false);
+  const [durableTaskUserId, setDurableTaskUserId] = useState("");
   const [finalizedDurableTaskCount, setFinalizedDurableTaskCount] =
     useState(0);
   const [projects, setProjects] = useState<FeatureFileProjects | null>(null);
@@ -294,6 +295,8 @@ export default function FeatureFilesDashboard({
   const currentUser = session?.user ?? null;
   const currentUserId = currentUser?.id ?? "";
   const accessToken = session?.access_token ?? "";
+  const areDurableTasksLoaded =
+    Boolean(currentUserId) && durableTaskUserId === currentUserId;
 
   useEffect(() => {
     let isMounted = true;
@@ -566,15 +569,13 @@ export default function FeatureFilesDashboard({
             supabasePublishableKey,
             accessToken,
             currentUserId,
-          ),
+          ).catch(() => null),
         ]);
         if (!isMounted) {
           return;
         }
 
-        const durableQueue = rows
-          .filter((row) => row.status !== "completed")
-          .map(mapAgentTaskRowToQueueEntry);
+        const durableQueue = rows.map(mapAgentTaskRowToQueueEntry);
         setFinalizedDurableTaskCount(
           rows.filter((row) => isFinalizedAgentTaskStatus(row.status)).length,
         );
@@ -582,6 +583,7 @@ export default function FeatureFilesDashboard({
           ...currentQueue.filter((item) => item.planningMode),
           ...durableQueue,
         ]);
+        setDurableTaskUserId(currentUserId);
         if (latestEvent?.severity === "warning") {
           setPromptStatus(`Daemon warning: ${latestEvent.message}`);
         } else if (latestEvent?.severity === "error") {
@@ -2827,6 +2829,7 @@ export default function FeatureFilesDashboard({
               <AgentSessionPanel
                 agentModels={agentModels}
                 agentPromptMessage={agentPromptMessage}
+                areDurableTasksLoaded={areDurableTasksLoaded}
                 availableProjectDirectories={availableProjectDirectories}
                 currentPromptQueueItem={currentPromptQueueItem}
                 defaultProjectDirectory={DEFAULT_PROJECT_DIRECTORY}
@@ -2936,6 +2939,7 @@ export default function FeatureFilesDashboard({
                 <AgentSessionPanel
                   agentModels={agentModels}
                   agentPromptMessage={agentPromptMessage}
+                  areDurableTasksLoaded={areDurableTasksLoaded}
                   availableProjectDirectories={availableProjectDirectories}
                   currentPromptQueueItem={currentPromptQueueItem}
                   defaultProjectDirectory={DEFAULT_PROJECT_DIRECTORY}
