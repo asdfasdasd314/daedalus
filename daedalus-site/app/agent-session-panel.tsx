@@ -377,12 +377,11 @@ export default function AgentSessionPanel({
         >
           Clear chat
         </button>
-        {!isAgentChatCleared ? (
+        {!isAgentChatCleared &&
+        (promptQueueStatusText || selectedProvider !== "cursor") ? (
           <p className="min-w-0 break-words text-sm text-slate-300">
             {promptQueueStatusText ||
-              selectedProvider === "cursor"
-                ? "The daemon will use Cursor CLI with file-edit permissions."
-                : `The daemon will use ${selectedModelId} with ${selectedReasoning} reasoning.`}
+              `The daemon will use ${selectedModelId} with ${selectedReasoning} reasoning.`}
           </p>
         ) : null}
       </div>
