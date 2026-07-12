@@ -266,6 +266,9 @@ export default function FeatureFilesDashboard({
     useState(false);
   const [isClearingCompletedVentures, setIsClearingCompletedVentures] =
     useState(false);
+  const [isConfirmingClearDurableTasks, setIsConfirmingClearDurableTasks] =
+    useState(false);
+  const [isClearingDurableTasks, setIsClearingDurableTasks] = useState(false);
   const [savingVentureId, setSavingVentureId] = useState("");
   const [updatingProgressVentureId, setUpdatingProgressVentureId] =
     useState("");
@@ -1459,6 +1462,9 @@ export default function FeatureFilesDashboard({
     ([projectDirectory]) => projectDirectory,
   );
   const currentPromptQueueItem = agentPromptQueue[0] ?? null;
+  const durableTaskCount = agentPromptQueue.filter(
+    (item) => !item.planningMode,
+  ).length;
   const promptQueueStatusText =
     promptStatus || getAgentPromptQueueStatusText(agentPromptQueue);
   const devEnvironmentState = getDevEnvironmentState(
@@ -1935,6 +1941,42 @@ export default function FeatureFilesDashboard({
       setVentureError("Unable to clear completed ventures right now.");
     } finally {
       setIsClearingCompletedVentures(false);
+    }
+  }
+
+  async function clearDurableTasks() {
+    if (
+      isClearingDurableTasks ||
+      durableTaskCount === 0 ||
+      !currentUser ||
+      !accessToken
+    ) {
+      return;
+    }
+
+    setIsClearingDurableTasks(true);
+    setPromptStatus("");
+
+    try {
+      await deleteAgentTaskRows(
+        supabaseUrl,
+        supabasePublishableKey,
+        accessToken,
+        currentUserId,
+      );
+      setAgentPromptQueue((currentQueue) =>
+        currentQueue.filter((item) => item.planningMode),
+      );
+      activePromptId.current = "";
+      setLatestChat((currentChat) =>
+        currentChat?.planningMode ? currentChat : null,
+      );
+      setIsConfirmingClearDurableTasks(false);
+      setPromptStatus("Durable agent tasks cleared.");
+    } catch {
+      setPromptStatus("Unable to clear durable agent tasks right now.");
+    } finally {
+      setIsClearingDurableTasks(false);
     }
   }
 
@@ -2781,6 +2823,9 @@ export default function FeatureFilesDashboard({
                 isPlanningMode={isPlanningMode}
                 latestChat={latestChat}
                 onAbandonQueuedAgentPrompt={abandonQueuedAgentPrompt}
+                onClearDurableTasks={() => setIsConfirmingClearDurableTasks(true)}
+                onConfirmClearDurableTasks={() => void clearDurableTasks()}
+                onUndoClearDurableTasks={() => setIsConfirmingClearDurableTasks(false)}
                 onClearAgentChat={clearAgentChat}
                 onPlanningModeChange={setIsPlanningMode}
                 onProviderChange={selectProvider}
@@ -2794,7 +2839,13 @@ export default function FeatureFilesDashboard({
                 onTargetedFeatureAdd={addTargetedFeature}
                 orchestratedTasks={agentPromptQueue
                   .filter((item) => !item.planningMode)
-                  .map(({ promptId, prompt, status }) => ({ promptId, prompt, status }))}
+                  .map(({ promptId, prompt, status }) => ({
+                    promptId,
+                    prompt,
+                    status,
+                  }))}
+                isConfirmingClearDurableTasks={isConfirmingClearDurableTasks}
+                isClearingDurableTasks={isClearingDurableTasks}
                 projects={projects ?? {}}
                 promptQueueStatusText={promptQueueStatusText}
                 promptText={promptText}
@@ -2880,6 +2931,9 @@ export default function FeatureFilesDashboard({
                   isPlanningMode={isPlanningMode}
                   latestChat={latestChat}
                   onAbandonQueuedAgentPrompt={abandonQueuedAgentPrompt}
+                  onClearDurableTasks={() => setIsConfirmingClearDurableTasks(true)}
+                  onConfirmClearDurableTasks={() => void clearDurableTasks()}
+                  onUndoClearDurableTasks={() => setIsConfirmingClearDurableTasks(false)}
                   onClearAgentChat={clearAgentChat}
                   onPlanningModeChange={setIsPlanningMode}
                   onProviderChange={selectProvider}
@@ -2893,7 +2947,13 @@ export default function FeatureFilesDashboard({
                   onTargetedFeatureAdd={addTargetedFeature}
                   orchestratedTasks={agentPromptQueue
                     .filter((item) => !item.planningMode)
-                    .map(({ promptId, prompt, status }) => ({ promptId, prompt, status }))}
+                    .map(({ promptId, prompt, status }) => ({
+                      promptId,
+                      prompt,
+                      status,
+                    }))}
+                  isConfirmingClearDurableTasks={isConfirmingClearDurableTasks}
+                  isClearingDurableTasks={isClearingDurableTasks}
                   projects={projects ?? {}}
                   promptQueueStatusText={promptQueueStatusText}
                   promptText={promptText}
@@ -3545,6 +3605,26 @@ async function fetchAgentTasks(
     throw new Error("agent task query failed");
   }
   return (await response.json()) as AgentTaskRow[];
+}
+
+async function deleteAgentTaskRows(
+  supabaseUrl: string,
+  supabasePublishableKey: string,
+  accessToken: string,
+  userId: string,
+) {
+  const url = new URL("/rest/v1/agent_tasks", supabaseUrl);
+  url.searchParams.set("user_id", `eq.${userId}`);
+  const response = await fetch(url, {
+    method: "DELETE",
+    headers: {
+      ...getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
+      Prefer: "return=minimal",
+    },
+  });
+  if (!response.ok) {
+    throw new Error("agent task delete failed");
+  }
 }
 
 async function fetchLatestDaemonEvent(

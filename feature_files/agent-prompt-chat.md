@@ -22,15 +22,17 @@ The agent prompt chat adds a reusable prompt composer to the existing dashboard 
 - **Reply Content Fitting**: The compact segmented control wraps at phone widths, and code blocks and tables scroll within the reply bubble so they cannot widen the overlay or page.
 - **Reply Copy Control**: A bottom-right Copy button on the agent reply bubble writes the raw daemon response text to the clipboard, independent of Formatted vs Raw view.
 - **Prompt Copy Control**: A bottom-right Copy button on the user prompt bubble writes the submitted prompt text to the clipboard so it can be reused or edited elsewhere.
+- **Durable Task Clear**: The durable agent-task list includes an inline clear action that requires `Confirm` or `Undo` before deleting the authenticated user's persisted task rows.
 
 ## Relevant Files
 - `daedalus-site/app/feature-files-dashboard.tsx`: Workspace shell that mounts the shared chat session inside the new-feature and feature-detail overlays.
-- `daedalus-site/app/agent-session-panel.tsx`: Shared prompt composer UI with project/model/planning controls, feature tagging, retry actions, and the latest chat transcript.
+- `daedalus-site/app/agent-session-panel.tsx`: Shared prompt composer UI with project/model/planning controls, feature tagging, durable-task clear confirmation, retry actions, and the latest chat transcript.
 - `daedalus-site/package.json`: Declares the safe Markdown renderer and GitHub-flavored Markdown plugin used by the shared reply visualizer.
 - `shared/database/migrations/008_auth_scoped_daedalus.sql`: Adds the user-owned daemon payload row used for latest chat replies.
 - `daedalus-site/lib/agent-models.ts`: Server helper that loads the frontend-owned model configuration for the dashboard.
 - `daedalus-site/config/agent_models.json`: Frontend-local Codex provider model and reasoning options for the prompt composer.
 - `shared/database/migrations/003_add_communication_purpose.sql`: Migration that adds the `purpose` column and backfills the feature-file row.
+- `shared/database/migrations/010_allow_agent_task_clear.sql`: Adds the authenticated owner-only delete policy used by the durable-task clear control.
 - `shared/database/schema.sql`: Checked-in schema snapshot for the communications table.
 - `local-daemon/src/daedalus_daemon/communications.py`: Purpose-aware Supabase read and write helpers for the daemon.
 - `local-daemon/src/daedalus_daemon/main.py`: Feature-file polling plus agent prompt execution and reply delivery.
@@ -71,3 +73,4 @@ HACKING
 - 2026-07-10: Added a bottom-right Copy button on the agent reply bubble that copies the raw daemon response to the clipboard.
 - 2026-07-11: Routed agent-mode submissions through durable orchestrator tasks while retaining the existing direct Planning Mode transport.
 - 2026-07-12: Added a bottom-right Copy button on the user prompt bubble that copies the submitted prompt text to the clipboard.
+- 2026-07-12: Added an inline Confirm/Undo clear control for durable agent tasks, backed by an owner-scoped Supabase delete policy and REST delete request.

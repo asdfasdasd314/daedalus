@@ -43,7 +43,9 @@ type AgentSessionPanelProps = {
   isPlanningMode: boolean;
   latestChat: AgentChatExchange | null;
   onAbandonQueuedAgentPrompt: (promptId: string) => void;
+  onClearDurableTasks: () => void;
   onClearAgentChat: () => void;
+  onConfirmClearDurableTasks: () => void;
   onPlanningModeChange: (checked: boolean) => void;
   onProviderChange: (provider: string) => void;
   onPromptTextChange: (text: string) => void;
@@ -54,6 +56,9 @@ type AgentSessionPanelProps = {
   onSelectModel: (modelId: string) => void;
   onSendPrompt: () => void;
   onTargetedFeatureAdd: (feature: TargetedFeature) => void;
+  onUndoClearDurableTasks: () => void;
+  isConfirmingClearDurableTasks: boolean;
+  isClearingDurableTasks: boolean;
   orchestratedTasks: Array<{
     promptId: string;
     prompt: string;
@@ -80,7 +85,9 @@ export default function AgentSessionPanel({
   isPlanningMode,
   latestChat,
   onAbandonQueuedAgentPrompt,
+  onClearDurableTasks,
   onClearAgentChat,
+  onConfirmClearDurableTasks,
   onPlanningModeChange,
   onProviderChange,
   onPromptTextChange,
@@ -91,6 +98,9 @@ export default function AgentSessionPanel({
   onSelectModel,
   onSendPrompt,
   onTargetedFeatureAdd,
+  onUndoClearDurableTasks,
+  isConfirmingClearDurableTasks,
+  isClearingDurableTasks,
   orchestratedTasks,
   projects,
   promptQueueStatusText,
@@ -422,9 +432,41 @@ export default function AgentSessionPanel({
 
       {orchestratedTasks.length > 0 ? (
         <div className="grid gap-2 rounded-[1.25rem] border border-white/10 bg-slate-900/50 p-3">
-          <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400">
-            Durable agent tasks
-          </p>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400">
+              {isConfirmingClearDurableTasks
+                ? "Confirm clearing durable agent tasks?"
+                : "Durable agent tasks"}
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={
+                  isConfirmingClearDurableTasks
+                    ? onConfirmClearDurableTasks
+                    : onClearDurableTasks
+                }
+                disabled={isClearingDurableTasks}
+                className="rounded-full border border-rose-400/20 bg-rose-500/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-rose-100 transition hover:bg-rose-500/15 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
+              >
+                {isClearingDurableTasks
+                  ? "Clearing..."
+                  : isConfirmingClearDurableTasks
+                    ? "Confirm"
+                    : "Clear tasks"}
+              </button>
+              {isConfirmingClearDurableTasks ? (
+                <button
+                  type="button"
+                  onClick={onUndoClearDurableTasks}
+                  disabled={isClearingDurableTasks}
+                  className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
+                >
+                  Undo
+                </button>
+              ) : null}
+            </div>
+          </div>
           {orchestratedTasks.slice(0, 8).map((task) => (
             <div key={task.promptId} className="flex min-w-0 items-center gap-3 text-xs">
               <span className="shrink-0 rounded-full bg-cyan-300/10 px-2 py-1 font-semibold uppercase tracking-[0.12em] text-cyan-100">
