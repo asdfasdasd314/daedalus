@@ -216,6 +216,9 @@ export default function FeatureFilesDashboard({
   const [agentPromptQueue, setAgentPromptQueue] = useState<
     AgentPromptQueueEntry[]
   >([]);
+  const [durableAgentTasks, setDurableAgentTasks] = useState<
+    AgentPromptQueueEntry[]
+  >([]);
   const [isAgentPromptQueueHydrated, setIsAgentPromptQueueHydrated] =
     useState(false);
   const [durableTaskUserId, setDurableTaskUserId] = useState("");
@@ -289,6 +292,7 @@ export default function FeatureFilesDashboard({
   const activePromptId = useRef("");
   const clearedAgentChatPrompt = useRef("");
   const agentPromptQueueRef = useRef<AgentPromptQueueEntry[]>([]);
+  const durableTaskPollUserIdRef = useRef("");
   const graphZoomProfileRef = useRef("");
   const workspaceMenuRef = useRef<HTMLDivElement | null>(null);
   const latestChatRef = useRef<AgentChatExchange | null>(null);
@@ -297,6 +301,10 @@ export default function FeatureFilesDashboard({
   const accessToken = session?.access_token ?? "";
   const areDurableTasksLoaded =
     Boolean(currentUserId) && durableTaskUserId === currentUserId;
+
+  useEffect(() => {
+    durableTaskPollUserIdRef.current = currentUserId;
+  }, [currentUserId]);
 
   useEffect(() => {
     let isMounted = true;
@@ -348,7 +356,11 @@ export default function FeatureFilesDashboard({
       if (storedQueue) {
         const parsedQueue = JSON.parse(storedQueue) as AgentPromptQueueEntry[];
         // eslint-disable-next-line react-hooks/set-state-in-effect
-        setAgentPromptQueue(Array.isArray(parsedQueue) ? parsedQueue : []);
+        setAgentPromptQueue(
+          Array.isArray(parsedQueue)
+            ? parsedQueue.filter((item) => item.planningMode)
+            : [],
+        );
       }
 
       const storedChat = window.localStorage.getItem(AGENT_CHAT_STORAGE_KEY);
@@ -550,28 +562,51 @@ export default function FeatureFilesDashboard({
   ]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setDurableAgentTasks([]);
+    setDurableTaskUserId("");
+    setFinalizedDurableTaskCount(0);
+  }, [currentUserId]);
+
+  useEffect(() => {
     if (!currentUser || !accessToken) {
       return;
     }
 
     let isMounted = true;
+    let isPollInFlight = false;
+    let requestGeneration = 0;
+    const pollUserId = currentUserId;
+
     async function pollDurableAgentTasks() {
+      if (isPollInFlight) {
+        return;
+      }
+
+      isPollInFlight = true;
+      const acceptedGeneration = ++requestGeneration;
+
       try {
         const [rows, latestEvent] = await Promise.all([
           fetchAgentTasks(
             supabaseUrl,
             supabasePublishableKey,
             accessToken,
-            currentUserId,
+            pollUserId,
           ),
           fetchLatestDaemonEvent(
             supabaseUrl,
             supabasePublishableKey,
             accessToken,
-            currentUserId,
+            pollUserId,
           ).catch(() => null),
         ]);
-        if (!isMounted) {
+
+        if (
+          !isMounted ||
+          acceptedGeneration !== requestGeneration ||
+          pollUserId !== durableTaskPollUserIdRef.current
+        ) {
           return;
         }
 
@@ -579,11 +614,8 @@ export default function FeatureFilesDashboard({
         setFinalizedDurableTaskCount(
           rows.filter((row) => isFinalizedAgentTaskStatus(row.status)).length,
         );
-        setAgentPromptQueue((currentQueue) => [
-          ...currentQueue.filter((item) => item.planningMode),
-          ...durableQueue,
-        ]);
-        setDurableTaskUserId(currentUserId);
+        setDurableAgentTasks(durableQueue);
+        setDurableTaskUserId(pollUserId);
         if (latestEvent?.severity === "warning") {
           setPromptStatus(`Daemon warning: ${latestEvent.message}`);
         } else if (latestEvent?.severity === "error") {
@@ -595,6 +627,8 @@ export default function FeatureFilesDashboard({
         }
       } catch {
         return;
+      } finally {
+        isPollInFlight = false;
       }
     }
 
@@ -1152,6 +1186,9 @@ export default function FeatureFilesDashboard({
     setVenturesDrawerOpen(false);
     setVentures([]);
     setLatestChat(null);
+    setDurableAgentTasks([]);
+    setDurableTaskUserId("");
+    setFinalizedDurableTaskCount(0);
   }
 
   async function requestParameterFileUpdate({
@@ -1476,7 +1513,11 @@ export default function FeatureFilesDashboard({
   );
   const currentPromptQueueItem = agentPromptQueue[0] ?? null;
   const promptQueueStatusText =
-    promptStatus || getAgentPromptQueueStatusText(agentPromptQueue);
+    promptStatus ||
+    getAgentPromptQueueStatusText(agentPromptQueue) ||
+    (durableAgentTasks[0]
+      ? formatDurableTaskStatus(durableAgentTasks[0])
+      : "");
   const devEnvironmentState = getDevEnvironmentState(
     error,
     isLoadingFeatureFiles,
@@ -1974,10 +2015,9 @@ export default function FeatureFilesDashboard({
         accessToken,
         currentUserId,
       );
-      setAgentPromptQueue((currentQueue) =>
-        currentQueue.filter(
-          (item) =>
-            item.planningMode || !isFinalizedAgentTaskStatus(item.status),
+      setDurableAgentTasks((currentTasks) =>
+        currentTasks.filter(
+          (item) => !isFinalizedAgentTaskStatus(item.status),
         ),
       );
       setFinalizedDurableTaskCount(0);
@@ -2852,13 +2892,13 @@ export default function FeatureFilesDashboard({
                 onSelectModel={selectModel}
                 onSendPrompt={sendAgentPrompt}
                 onTargetedFeatureAdd={addTargetedFeature}
-                orchestratedTasks={agentPromptQueue
-                  .filter((item) => !item.planningMode)
-                  .map(({ promptId, prompt, status }) => ({
+                durableTasks={durableAgentTasks.map(
+                  ({ promptId, prompt, status }) => ({
                     promptId,
                     prompt,
                     status,
-                  }))}
+                  }),
+                )}
                 finalizedDurableTaskCount={finalizedDurableTaskCount}
                 isConfirmingClearDurableTasks={isConfirmingClearDurableTasks}
                 isClearingDurableTasks={isClearingDurableTasks}
@@ -2962,13 +3002,13 @@ export default function FeatureFilesDashboard({
                   onSelectModel={selectModel}
                   onSendPrompt={sendAgentPrompt}
                   onTargetedFeatureAdd={addTargetedFeature}
-                  orchestratedTasks={agentPromptQueue
-                    .filter((item) => !item.planningMode)
-                    .map(({ promptId, prompt, status }) => ({
+                  durableTasks={durableAgentTasks.map(
+                    ({ promptId, prompt, status }) => ({
                       promptId,
                       prompt,
                       status,
-                    }))}
+                    }),
+                  )}
                   finalizedDurableTaskCount={finalizedDurableTaskCount}
                   isConfirmingClearDurableTasks={isConfirmingClearDurableTasks}
                   isClearingDurableTasks={isClearingDurableTasks}
@@ -3383,11 +3423,6 @@ function getAgentPromptQueueStatusText(queue: AgentPromptQueueEntry[]) {
     }
 
     return "Daemon is running the current prompt.";
-  }
-
-  const orchestratedPrompt = queue.find((item) => !item.planningMode);
-  if (orchestratedPrompt) {
-    return formatDurableTaskStatus(orchestratedPrompt);
   }
 
   const stalledPrompt = queue[0];

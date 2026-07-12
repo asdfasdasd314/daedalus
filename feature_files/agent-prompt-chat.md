@@ -25,7 +25,7 @@ The agent prompt chat adds a reusable prompt composer to the existing dashboard 
 - **Prompt Copy Control**: A bottom-right Copy button on the user prompt bubble writes the submitted prompt text to the clipboard so it can be reused or edited elsewhere.
 - **Durable Task Clear**: The durable agent-task list includes an inline clear action that requires `Confirm` or `Undo` before deleting the authenticated user's persisted task rows.
 - **Finalized Task Clear**: The durable-task clear action deletes only finalized `completed`, `failed`, or `blocked` rows; queued, running, verifying, ready, integrating, and resolving tasks remain untouched.
-- **Stable Durable Task Visibility**: The task window waits for a successful task query for the signed-in user before rendering, then shows every durable task status, including completed history.
+- **Stable Durable Task Visibility**: This feature owns stable durable-task visibility in the shared chat panel: durable `agent_tasks` rows stay in dedicated authenticated-user state (separate from the local planning-prompt queue), polling is single-flight and ignores stale responses, and the task window waits for a successful current-user query before rendering every durable status, including completed history.
 
 ## Relevant Files
 - `daedalus-site/app/feature-files-dashboard.tsx`: Workspace shell that mounts the shared chat session inside the new-feature and feature-detail overlays.
@@ -83,3 +83,4 @@ HACKING
 - 2026-07-12: Added the durable orchestrator success event consumed by the dashboard so a completed integration reports success after any resolver warnings.
 - 2026-07-12: Restricted the durable-task clear action to finalized completed, failed, and blocked task states while preserving active tasks in the dashboard queue.
 - 2026-07-12: Delayed durable-task window rendering until its current-user query completes, retained completed rows in the full task list, and made GPT-5.6 Terra with medium reasoning the default Codex selection.
+- 2026-07-12: Split durable agent tasks into dedicated poll state with single-flight stale-response guarding so overlapping Supabase polls can no longer blink the task panel.
