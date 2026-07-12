@@ -113,6 +113,12 @@ type AgentPromptQueueStatus =
   | "failed"
   | "stalled";
 
+const FINALIZED_AGENT_TASK_STATUSES: AgentPromptQueueStatus[] = [
+  "completed",
+  "failed",
+  "blocked",
+];
+
 type AgentPromptPayload = {
   promptId: string;
   directory: string;
@@ -212,6 +218,8 @@ export default function FeatureFilesDashboard({
   >([]);
   const [isAgentPromptQueueHydrated, setIsAgentPromptQueueHydrated] =
     useState(false);
+  const [finalizedDurableTaskCount, setFinalizedDurableTaskCount] =
+    useState(0);
   const [projects, setProjects] = useState<FeatureFileProjects | null>(null);
   const [parameterProjects, setParameterProjects] =
     useState<ParameterFileProjects | null>(null);
@@ -567,6 +575,9 @@ export default function FeatureFilesDashboard({
         const durableQueue = rows
           .filter((row) => row.status !== "completed")
           .map(mapAgentTaskRowToQueueEntry);
+        setFinalizedDurableTaskCount(
+          rows.filter((row) => isFinalizedAgentTaskStatus(row.status)).length,
+        );
         setAgentPromptQueue((currentQueue) => [
           ...currentQueue.filter((item) => item.planningMode),
           ...durableQueue,
@@ -1462,9 +1473,6 @@ export default function FeatureFilesDashboard({
     ([projectDirectory]) => projectDirectory,
   );
   const currentPromptQueueItem = agentPromptQueue[0] ?? null;
-  const durableTaskCount = agentPromptQueue.filter(
-    (item) => !item.planningMode,
-  ).length;
   const promptQueueStatusText =
     promptStatus || getAgentPromptQueueStatusText(agentPromptQueue);
   const devEnvironmentState = getDevEnvironmentState(
@@ -1947,7 +1955,7 @@ export default function FeatureFilesDashboard({
   async function clearDurableTasks() {
     if (
       isClearingDurableTasks ||
-      durableTaskCount === 0 ||
+      finalizedDurableTaskCount === 0 ||
       !currentUser ||
       !accessToken
     ) {
@@ -1965,8 +1973,12 @@ export default function FeatureFilesDashboard({
         currentUserId,
       );
       setAgentPromptQueue((currentQueue) =>
-        currentQueue.filter((item) => item.planningMode),
+        currentQueue.filter(
+          (item) =>
+            item.planningMode || !isFinalizedAgentTaskStatus(item.status),
+        ),
       );
+      setFinalizedDurableTaskCount(0);
       activePromptId.current = "";
       setLatestChat((currentChat) =>
         currentChat?.planningMode ? currentChat : null,
@@ -2844,6 +2856,7 @@ export default function FeatureFilesDashboard({
                     prompt,
                     status,
                   }))}
+                finalizedDurableTaskCount={finalizedDurableTaskCount}
                 isConfirmingClearDurableTasks={isConfirmingClearDurableTasks}
                 isClearingDurableTasks={isClearingDurableTasks}
                 projects={projects ?? {}}
@@ -2952,6 +2965,7 @@ export default function FeatureFilesDashboard({
                       prompt,
                       status,
                     }))}
+                  finalizedDurableTaskCount={finalizedDurableTaskCount}
                   isConfirmingClearDurableTasks={isConfirmingClearDurableTasks}
                   isClearingDurableTasks={isClearingDurableTasks}
                   projects={projects ?? {}}
@@ -3607,6 +3621,10 @@ async function fetchAgentTasks(
   return (await response.json()) as AgentTaskRow[];
 }
 
+function isFinalizedAgentTaskStatus(status: AgentPromptQueueStatus) {
+  return FINALIZED_AGENT_TASK_STATUSES.includes(status);
+}
+
 async function deleteAgentTaskRows(
   supabaseUrl: string,
   supabasePublishableKey: string,
@@ -3615,6 +3633,7 @@ async function deleteAgentTaskRows(
 ) {
   const url = new URL("/rest/v1/agent_tasks", supabaseUrl);
   url.searchParams.set("user_id", `eq.${userId}`);
+  url.searchParams.set("status", "in.(completed,failed,blocked)");
   const response = await fetch(url, {
     method: "DELETE",
     headers: {

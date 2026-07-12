@@ -59,6 +59,7 @@ type AgentSessionPanelProps = {
   onUndoClearDurableTasks: () => void;
   isConfirmingClearDurableTasks: boolean;
   isClearingDurableTasks: boolean;
+  finalizedDurableTaskCount: number;
   orchestratedTasks: Array<{
     promptId: string;
     prompt: string;
@@ -101,6 +102,7 @@ export default function AgentSessionPanel({
   onUndoClearDurableTasks,
   isConfirmingClearDurableTasks,
   isClearingDurableTasks,
+  finalizedDurableTaskCount,
   orchestratedTasks,
   projects,
   promptQueueStatusText,
@@ -429,12 +431,12 @@ export default function AgentSessionPanel({
         </p>
       ) : null}
 
-      {orchestratedTasks.length > 0 ? (
+      {orchestratedTasks.length > 0 || finalizedDurableTaskCount > 0 ? (
         <div className="grid gap-2 rounded-[1.25rem] border border-white/10 bg-slate-900/50 p-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400">
               {isConfirmingClearDurableTasks
-                ? "Confirm clearing durable agent tasks?"
+                ? `Confirm clearing ${finalizedDurableTaskCount} finalized durable agent task${finalizedDurableTaskCount === 1 ? "" : "s"}?`
                 : "Durable agent tasks"}
             </p>
             <div className="flex flex-wrap items-center gap-2">
@@ -445,14 +447,16 @@ export default function AgentSessionPanel({
                     ? onConfirmClearDurableTasks
                     : onClearDurableTasks
                 }
-                disabled={isClearingDurableTasks}
+                disabled={
+                  isClearingDurableTasks || finalizedDurableTaskCount === 0
+                }
                 className="rounded-full border border-rose-400/20 bg-rose-500/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-rose-100 transition hover:bg-rose-500/15 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
               >
                 {isClearingDurableTasks
                   ? "Clearing..."
                   : isConfirmingClearDurableTasks
                     ? "Confirm"
-                    : "Clear tasks"}
+                    : "Clear finalized tasks"}
               </button>
               {isConfirmingClearDurableTasks ? (
                 <button
