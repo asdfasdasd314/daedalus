@@ -317,6 +317,7 @@ export default function FeatureFilesDashboard({
   const [error, setError] = useState("");
   const latestLocalWriteStartedAt = useRef(0);
   const latestParameterUpdateWriteStartedAt = useRef(0);
+  const initialDevEnvironmentUserIdRef = useRef("");
   const activePromptId = useRef("");
   const activeGitSyncRequestId = useRef("");
   const clearedAgentChatPrompt = useRef("");
@@ -371,6 +372,22 @@ export default function FeatureFilesDashboard({
       authListener.subscription.unsubscribe();
     };
   }, [supabase]);
+
+  useEffect(() => {
+    if (!currentUser || !accessToken) {
+      initialDevEnvironmentUserIdRef.current = "";
+      return;
+    }
+
+    if (initialDevEnvironmentUserIdRef.current === currentUserId) {
+      return;
+    }
+
+    initialDevEnvironmentUserIdRef.current = currentUserId;
+    void requestDevEnvironment();
+    // The startup load should run once for each signed-in user.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accessToken, currentUser, currentUserId]);
 
   useEffect(() => {
     agentPromptQueueRef.current = agentPromptQueue;
