@@ -23,6 +23,12 @@ class LoadDaemonConfigTests(unittest.TestCase):
                 "poll_interval_ms = 7000\n",
                 encoding="utf-8",
             )
+            (parameter_dir / "feature-execution-system.toml").write_text(
+                "allow_concurrent_runs = false\n"
+                "termination_grace_seconds = 2\n"
+                "diagnostic_tail_max_chars = 12000\n",
+                encoding="utf-8",
+            )
             (project_root / ".env").write_text(
                 "\n".join([
                     "DAEDALUS_USER_ID=root-user",
@@ -47,11 +53,14 @@ class LoadDaemonConfigTests(unittest.TestCase):
             config,
             {
                 "daemonUserId": "daemon-user",
+                "allowConcurrentRuns": False,
+                "diagnosticTailMaxChars": 12000,
                 "httpRequestRetryDelayMs": 750,
                 "httpRequestRetryLimit": 3,
                 "httpRequestTimeoutSeconds": 20,
                 "networkOutageCooldownMs": 15000,
                 "pollIntervalMs": 7000,
+                "terminationGraceSeconds": 2,
                 "supabasePublishableKey": "daemon-key",
                 "supabaseUrl": "https://daemon.example.supabase.co",
             },
@@ -66,6 +75,12 @@ class LoadDaemonConfigTests(unittest.TestCase):
             parameter_dir.mkdir()
             (parameter_dir / "feature-file-communications-system.toml").write_text(
                 "poll_interval_ms = 5000\n",
+                encoding="utf-8",
+            )
+            (parameter_dir / "feature-execution-system.toml").write_text(
+                "allow_concurrent_runs = false\n"
+                "termination_grace_seconds = 2\n"
+                "diagnostic_tail_max_chars = 12000\n",
                 encoding="utf-8",
             )
 
@@ -96,6 +111,12 @@ class LoadDaemonConfigTests(unittest.TestCase):
                 "poll_interval_ms = 5000\n",
                 encoding="utf-8",
             )
+            (parameter_dir / "feature-execution-system.toml").write_text(
+                "allow_concurrent_runs = false\n"
+                "termination_grace_seconds = 2\n"
+                "diagnostic_tail_max_chars = 12000\n",
+                encoding="utf-8",
+            )
             (project_root / ".env").write_text(
                 "SUPABASE_URL=https://root.example.supabase.co\n",
                 encoding="utf-8",
@@ -117,6 +138,12 @@ class LoadDaemonConfigTests(unittest.TestCase):
             parameter_dir.mkdir()
             (parameter_dir / "feature-file-communications-system.toml").write_text(
                 "other_value = 1\n",
+                encoding="utf-8",
+            )
+            (parameter_dir / "feature-execution-system.toml").write_text(
+                "allow_concurrent_runs = false\n"
+                "termination_grace_seconds = 2\n"
+                "diagnostic_tail_max_chars = 12000\n",
                 encoding="utf-8",
             )
 

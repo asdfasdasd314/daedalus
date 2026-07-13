@@ -12,6 +12,9 @@ def load_daemon_config() -> dict:
     parameter_config = load_parameter_file(
         project_root / "parameter_files" / "feature-file-communications-system.toml",
     )
+    execution_config = load_parameter_file(
+        project_root / "parameter_files" / "feature-execution-system.toml",
+    )
 
     config = {
         "daemonUserId": get_env_config_value(env_config, "DAEDALUS_USER_ID"),
@@ -36,6 +39,13 @@ def load_daemon_config() -> dict:
             20,
         ),
         "pollIntervalMs": get_poll_interval_ms(parameter_config),
+        "allowConcurrentRuns": get_optional_bool(execution_config, "allow_concurrent_runs", False),
+        "terminationGraceSeconds": get_optional_positive_int(
+            execution_config, "termination_grace_seconds", 2,
+        ),
+        "diagnosticTailMaxChars": get_optional_positive_int(
+            execution_config, "diagnostic_tail_max_chars", 12000,
+        ),
         "supabasePublishableKey": get_env_config_value(env_config, "SUPABASE_PUBLISHABLE_KEY"),
         "supabaseUrl": get_env_config_value(env_config, "SUPABASE_URL"),
     }
@@ -120,4 +130,11 @@ def get_optional_positive_int(parameter_config: dict, key: str, default: int) ->
             "parameter_files/feature-file-communications-system.toml",
         )
 
+    return value
+
+
+def get_optional_bool(parameter_config: dict, key: str, default: bool) -> bool:
+    value = parameter_config.get(key, default)
+    if not isinstance(value, bool):
+        raise RuntimeError(f"Invalid daemon parameter: {key}")
     return value

@@ -1,0 +1,26 @@
+# Feature Execution System
+
+## Summary
+The feature execution system lets an authenticated user start a feature-declared command through the local daemon. The daemon treats the paired parameter file as the sole command authority, supervises the child process asynchronously, and persists lifecycle state and bounded diagnostics in Supabase.
+
+## Key Points
+- **Daemon-owned commands**: Browser requests contain only a project directory and feature-file path; the daemon re-reads and validates `[execution].command` before launch.
+- **Containment checks**: Project roots must come from feature scanning, and feature and parameter paths must stay within the selected project.
+- **Durable lifecycle**: Queued, running, terminal, cancellation, and review acknowledgement states are stored independently from agent tasks.
+- **Non-blocking supervision**: Processes run in their own sessions, with output captured by reader threads and polled by the daemon loop.
+
+## Relevant Files
+- `local-daemon/src/daedalus_daemon/execution.py`: Validation, process supervision, diagnostics, and cancellation.
+- `local-daemon/src/daedalus_daemon/main.py`: Execution-cycle wiring.
+- `local-daemon/src/daedalus_daemon/communications.py`: Execution-run RPC wrappers.
+- `daedalus-site/app/feature-files-dashboard.tsx`: Feature overlay Run/status/Cancel UI.
+- `daedalus-site/app/feature-workspace-utils.ts`: Paired-file and runnable metadata helpers.
+- `shared/database/migrations/016_feature_execution_runs.sql`: Durable run table, RLS, and RPCs.
+
+## Dev Mode
+HACKING
+
+## State Log
+- 2026-07-13: Initialized the durable feature execution system ownership boundary.
+- 2026-07-13: Implemented daemon-owned feature command validation, durable run lifecycle protocol, and overlay Run/status/Cancel controls; test execution awaits standalone authorization.
+- 2026-07-13: Updated daemon configuration fixtures to include the required execution-system parameters and its exposed runtime settings.

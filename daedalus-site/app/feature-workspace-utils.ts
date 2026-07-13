@@ -1,4 +1,6 @@
 import type { FeatureFileProjects } from "@/lib/feature-file-cache";
+import type { ParameterFileRecord } from "@/lib/parameter-file-cache";
+import { getExecutionCommandMetadata } from "@/lib/parameter-file-parser";
 
 export type WorkspaceFeatureOption = {
   featureName: string;
@@ -25,6 +27,20 @@ export function getParameterFilePathForFeature(featureFilePath: string) {
   return normalizeFeatureFilePath(featureFilePath)
     .replace(/^feature_files\//, "parameter_files/")
     .replace(/\.md$/, ".toml");
+}
+
+export function getRunnableFeatureMetadata(
+  featureFilePath: string,
+  parameterFile: ParameterFileRecord | null,
+) {
+  if (!parameterFile) {
+    return { runnable: false as const, reason: `Missing ${getParameterFilePathForFeature(featureFilePath)}.` };
+  }
+  return getExecutionCommandMetadata(parameterFile.toml);
+}
+
+export function buildFeatureExecutionRequest(projectDirectory: string, featureFilePath: string) {
+  return { project_directory: projectDirectory, feature_file_path: normalizeFeatureFilePath(featureFilePath) };
 }
 
 export function getFeatureNameFromMarkdown(markdown: string, fallbackPath: string) {

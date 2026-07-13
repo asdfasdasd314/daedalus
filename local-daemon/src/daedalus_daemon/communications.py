@@ -160,6 +160,30 @@ def update_agent_task(
     return bool(result)
 
 
+def claim_feature_execution_run(config: dict) -> dict | None:
+    result = call_daemon_rpc(config, "daemon_claim_feature_execution_run", {
+        "p_user_id": config["daemonUserId"],
+    })
+    return result[0] if isinstance(result, list) and result else None
+
+
+def update_feature_execution_run(
+    config: dict, run_id: str, expected_status: str, updates: dict,
+) -> bool:
+    result = call_daemon_rpc(config, "daemon_update_feature_execution_run", {
+        "p_user_id": config["daemonUserId"], "p_run_id": run_id,
+        "p_expected_status": expected_status, "p_updates": updates,
+    })
+    return bool(result)
+
+
+def list_active_feature_execution_runs(config: dict) -> list[dict]:
+    result = call_daemon_rpc(config, "daemon_list_active_feature_execution_runs", {
+        "p_user_id": config["daemonUserId"],
+    })
+    return result if isinstance(result, list) else []
+
+
 def list_orchestration_batches(config: dict) -> list[dict]:
     return call_daemon_rpc(config, "daemon_list_orchestration_batches", {
         "p_user_id": config["daemonUserId"],

@@ -24,6 +24,30 @@ export type ParsedParameterFile = {
   variables: ParameterVariable[];
 };
 
+export type ExecutionCommandMetadata =
+  | { runnable: true; command: string[]; preview: string }
+  | { runnable: false; reason: string };
+
+export function getExecutionCommandMetadata(toml: string): ExecutionCommandMetadata {
+  const executionCommand = parseParameterFile(toml).variables.find(
+    (variable) => variable.name === "execution.command",
+  );
+
+  if (!executionCommand) {
+    return { runnable: false, reason: "No [execution] command declaration." };
+  }
+
+  const command = parseStringArray(executionCommand.rawValue);
+  if (!command || command.length === 0 || command.some((item) => !item.trim())) {
+    return {
+      runnable: false,
+      reason: "execution.command must be a non-empty TOML array of strings.",
+    };
+  }
+
+  return { runnable: true, command, preview: command.join(" ") };
+}
+
 type ParsedTomlValue = {
   kind: ParameterVariableKind;
   displayValue: string;
@@ -316,6 +340,16 @@ function isDoubleQuotedString(valueText: string) {
 
 function isSingleQuotedString(valueText: string) {
   return /^'[^']*'$/.test(valueText);
+}
+
+function parseStringArray(valueText: string): string[] | null {
+  const trimmed = valueText.trim();
+  if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) return null;
+  const items = trimmed.slice(1, -1).match(/(?:"(?:[^"\\]|\\.)*"|'[^']*')/g);
+  if (!items || items.join(",").replace(/\s/g, "") !== trimmed.slice(1, -1).replace(/\s/g, "")) {
+    return null;
+  }
+  return items.map((item) => item.startsWith("\"") ? parseDoubleQuotedString(item) : item.slice(1, -1));
 }
 
 function parseDoubleQuotedString(valueText: string) {

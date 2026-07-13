@@ -36,6 +36,8 @@ import { parseParameterFile } from "@/lib/parameter-file-parser";
 import {
   getFeatureOptionsForProject,
   getFeatureTagsForPaths,
+  getRunnableFeatureMetadata,
+  buildFeatureExecutionRequest,
   getParameterFilePathForFeature,
   getProjectLabel,
   normalizeFeatureFilePath,
@@ -211,6 +213,14 @@ type SelectedFeatureSession = {
   projectPath: string;
 };
 
+type FeatureExecutionStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
+type FeatureExecutionRunRow = {
+  id: string; project_directory: string; feature_file_path: string;
+  status: FeatureExecutionStatus; cancel_requested: boolean; command: string[];
+  started_at: string | null; completed_at: string | null; exit_code: number | null;
+  stdout_tail: string; stderr_tail: string; error: string; message: string;
+};
+
 export default function FeatureFilesDashboard({
   agentModels,
   pollIntervalMs,
@@ -257,6 +267,8 @@ export default function FeatureFilesDashboard({
   const [projects, setProjects] = useState<FeatureFileProjects | null>(null);
   const [parameterProjects, setParameterProjects] =
     useState<ParameterFileProjects | null>(null);
+  const [featureExecutionRuns, setFeatureExecutionRuns] = useState<FeatureExecutionRunRow[]>([]);
+  const [featureExecutionMessage, setFeatureExecutionMessage] = useState("");
   const [selectedModelId, setSelectedModelId] = useState(defaultModel.id);
   const [selectedProvider, setSelectedProvider] = useState("codex");
   const [selectedReasoning, setSelectedReasoning] = useState(
@@ -854,6 +866,30 @@ export default function FeatureFilesDashboard({
     supabasePublishableKey,
     supabaseUrl,
   ]);
+
+  useEffect(() => {
+    if (!currentUser || !accessToken) return;
+    let mounted = true;
+    async function pollFeatureRuns() {
+      try {
+        const rows = await fetchFeatureExecutionRuns(
+          supabaseUrl, supabasePublishableKey, accessToken, currentUserId,
+        );
+        if (!mounted) return;
+        setFeatureExecutionRuns(rows);
+        await Promise.all(rows.filter((row) => row.message === CLIENT_REVIEW).map((row) =>
+          completeFeatureExecutionReview(
+            supabaseUrl, supabasePublishableKey, accessToken, currentUserId, row.id,
+          ),
+        ));
+      } catch {
+        if (mounted) setFeatureExecutionMessage("Unable to refresh feature execution status.");
+      }
+    }
+    void pollFeatureRuns();
+    const interval = window.setInterval(pollFeatureRuns, pollIntervalMs);
+    return () => { mounted = false; window.clearInterval(interval); };
+  }, [accessToken, currentUser, currentUserId, pollIntervalMs, supabasePublishableKey, supabaseUrl]);
 
   useEffect(() => {
     if (parameterFileMessage !== DAEMON_SENT_PARAMETER_FILES) {
@@ -1494,6 +1530,8 @@ export default function FeatureFilesDashboard({
     setSession(null);
     setProjects(null);
     setParameterProjects(null);
+    setFeatureExecutionRuns([]);
+    setFeatureExecutionMessage("");
     setSelectedFeatureSession(null);
     setActivePrimaryOverlay(null);
     setVenturesDrawerOpen(false);
@@ -2052,6 +2090,15 @@ export default function FeatureFilesDashboard({
         .get(selectedFeatureSession.projectPath)
         ?.get(getParameterFilePathForFeature(selectedFeatureSession.filePath)) ??
       null
+    : null;
+  const runnableFeature = selectedFeatureSession
+    ? getRunnableFeatureMetadata(selectedFeatureSession.filePath, matchedParameterFile)
+    : { runnable: false as const, reason: "No feature selected." };
+  const selectedFeatureRun = selectedFeatureSession
+    ? featureExecutionRuns.find((run) =>
+      run.project_directory === selectedFeatureSession.projectPath &&
+      normalizeFeatureFilePath(run.feature_file_path) === selectedFeatureSession.filePath,
+    ) ?? null
     : null;
 
   function selectModel(modelId: string) {
@@ -2644,6 +2691,33 @@ export default function FeatureFilesDashboard({
         ),
       );
       setPromptStatus("Unable to cancel the agent task right now.");
+    }
+  }
+
+  async function startFeatureExecution() {
+    if (!currentUser || !accessToken || !selectedFeatureSession || !runnableFeature.runnable || selectedFeatureRun?.status === "queued" || selectedFeatureRun?.status === "running") return;
+    setFeatureExecutionMessage("Submitting run request.");
+    try {
+      await insertFeatureExecutionRun(
+        supabaseUrl, supabasePublishableKey, accessToken, currentUserId,
+        buildFeatureExecutionRequest(selectedFeatureSession.projectPath, selectedFeatureSession.filePath),
+      );
+      setFeatureExecutionMessage("Run queued for the local daemon.");
+    } catch {
+      setFeatureExecutionMessage("Unable to queue this feature run. It may already be active.");
+    }
+  }
+
+  async function cancelFeatureExecution() {
+    if (!currentUser || !accessToken || !selectedFeatureRun) return;
+    setFeatureExecutionRuns((current) => current.map((run) => run.id === selectedFeatureRun.id ? { ...run, cancel_requested: true } : run));
+    try {
+      await requestFeatureExecutionCancel(
+        supabaseUrl, supabasePublishableKey, accessToken, currentUserId, selectedFeatureRun.id,
+      );
+      setFeatureExecutionMessage("Cancellation requested.");
+    } catch {
+      setFeatureExecutionMessage("Unable to request cancellation right now.");
     }
   }
 
@@ -3615,6 +3689,38 @@ export default function FeatureFilesDashboard({
               </button>
             </div>
             <div className="border-b border-white/10 px-4 py-3 sm:px-5">
+              <section className="mb-3 rounded-[1rem] border border-white/10 bg-black/25 px-3 py-3 text-xs text-slate-300">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-white">Feature execution</p>
+                    {runnableFeature.runnable ? (
+                      <p className="mt-1 break-all text-slate-400">{runnableFeature.preview}</p>
+                    ) : (
+                      <p className="mt-1 text-amber-200">{runnableFeature.reason}</p>
+                    )}
+                  </div>
+                  {selectedFeatureRun?.status === "queued" || selectedFeatureRun?.status === "running" ? (
+                    <button type="button" onClick={() => void cancelFeatureExecution()} disabled={selectedFeatureRun.cancel_requested} className="rounded-full border border-amber-300/30 px-3 py-2 font-semibold text-amber-100 disabled:opacity-50">
+                      {selectedFeatureRun.cancel_requested ? "Cancelling" : "Cancel"}
+                    </button>
+                  ) : (
+                    <button type="button" onClick={() => void startFeatureExecution()} disabled={!runnableFeature.runnable} className="rounded-full bg-emerald-300 px-3 py-2 font-semibold text-slate-950 disabled:opacity-40">
+                      Run
+                    </button>
+                  )}
+                </div>
+                {selectedFeatureRun ? (
+                  <div className="mt-3 grid gap-1 border-t border-white/10 pt-2 text-slate-400">
+                    <p>Status: <span className="text-white">{selectedFeatureRun.status}</span>{selectedFeatureRun.exit_code !== null ? ` · exit ${selectedFeatureRun.exit_code}` : ""}</p>
+                    {selectedFeatureRun.started_at ? <p>Started: {formatFeatureExecutionTime(selectedFeatureRun.started_at)}</p> : null}
+                    {selectedFeatureRun.completed_at ? <p>Finished: {formatFeatureExecutionTime(selectedFeatureRun.completed_at)}</p> : null}
+                    {selectedFeatureRun.error ? <p className="text-rose-200">{selectedFeatureRun.error}</p> : null}
+                    {selectedFeatureRun.stdout_tail ? <pre className="max-h-28 overflow-auto whitespace-pre-wrap rounded bg-slate-950 p-2">stdout: {selectedFeatureRun.stdout_tail}</pre> : null}
+                    {selectedFeatureRun.stderr_tail ? <pre className="max-h-28 overflow-auto whitespace-pre-wrap rounded bg-slate-950 p-2 text-amber-100">stderr: {selectedFeatureRun.stderr_tail}</pre> : null}
+                  </div>
+                ) : null}
+                {featureExecutionMessage ? <p className="mt-2 text-slate-400">{featureExecutionMessage}</p> : null}
+              </section>
               <div className="flex flex-wrap gap-2 rounded-[1.25rem] border border-white/10 bg-black/25 p-1">
                 <button
                   type="button"
@@ -4381,6 +4487,62 @@ async function insertAgentTask(
   if (!response.ok) {
     throw new Error("agent task insert failed");
   }
+}
+
+async function insertFeatureExecutionRun(
+  supabaseUrl: string, supabasePublishableKey: string, accessToken: string,
+  userId: string, request: { project_directory: string; feature_file_path: string },
+) {
+  const response = await fetch(new URL("/rest/v1/feature_execution_runs", supabaseUrl), {
+    method: "POST",
+    headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
+    body: JSON.stringify({ user_id: userId, ...request, status: "queued", message: DAEMON_REVIEW }),
+  });
+  if (!response.ok) throw new Error("feature execution run insert failed");
+}
+
+async function fetchFeatureExecutionRuns(
+  supabaseUrl: string, supabasePublishableKey: string, accessToken: string, userId: string,
+) {
+  const url = new URL("/rest/v1/feature_execution_runs", supabaseUrl);
+  url.searchParams.set("user_id", `eq.${userId}`);
+  url.searchParams.set("order", "created_at.desc");
+  const response = await fetch(url, { headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken) });
+  if (!response.ok) throw new Error("feature execution run query failed");
+  return await response.json() as FeatureExecutionRunRow[];
+}
+
+async function requestFeatureExecutionCancel(
+  supabaseUrl: string, supabasePublishableKey: string, accessToken: string, userId: string, runId: string,
+) {
+  const url = new URL("/rest/v1/feature_execution_runs", supabaseUrl);
+  url.searchParams.set("id", `eq.${runId}`);
+  url.searchParams.set("user_id", `eq.${userId}`);
+  url.searchParams.set("status", "in.(queued,running)");
+  const response = await fetch(url, {
+    method: "PATCH", headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
+    body: JSON.stringify({ cancel_requested: true }),
+  });
+  if (!response.ok) throw new Error("feature execution cancellation failed");
+}
+
+async function completeFeatureExecutionReview(
+  supabaseUrl: string, supabasePublishableKey: string, accessToken: string, userId: string, runId: string,
+) {
+  const url = new URL("/rest/v1/feature_execution_runs", supabaseUrl);
+  url.searchParams.set("id", `eq.${runId}`);
+  url.searchParams.set("user_id", `eq.${userId}`);
+  url.searchParams.set("message", `eq.${CLIENT_REVIEW}`);
+  const response = await fetch(url, {
+    method: "PATCH", headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
+    body: JSON.stringify({ message: CLIENT_COMPLETE }),
+  });
+  if (!response.ok) throw new Error("feature execution acknowledgement failed");
+}
+
+function formatFeatureExecutionTime(value: string) {
+  const timestamp = new Date(value);
+  return Number.isNaN(timestamp.valueOf()) ? value : timestamp.toLocaleString();
 }
 
 async function fetchAgentTasks(
