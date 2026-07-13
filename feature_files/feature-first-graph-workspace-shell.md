@@ -16,6 +16,7 @@ The feature-first graph workspace shell owns the responsive workspace framing ar
 - **Mobile Hit Alignment**: The shell's fullscreen mobile mount depends on the graph converting touch and wheel coordinates through the SVG's actual transformed space instead of proportional element-rect math, because the preserved `viewBox` can letterbox on tall screens.
 - **Drawer Label Consistency**: The shell reuses the shared root-relative project label helpers inside the ventures drawer so project tags match the chat panel instead of exposing absolute daemon paths.
 - **Feature Search Overlay**: The shell mounts the feature-search fuzzy finder as a workspace overlay/control, opens it from the hamburger menu or `⌘K` / `Ctrl+K`, and routes result selection through the same feature-node selection flow as the graph.
+- **Canonical Project Payload**: The shell receives one project entry per canonical filesystem checkout because daemon discovery excludes Git linked task worktrees.
 
 ## Relevant Files
 - `daedalus-site/app/feature-files-dashboard.tsx`: Main workspace shell that owns overlay routing, responsive layout rules, venture drawer presentation, and feature-detail tabs.
@@ -44,3 +45,4 @@ HACKING
 - 2026-07-09: Raised mobile ventures and primary overlay sheets to `z-30` so their close controls sit above the `z-20` workspace hamburger instead of overlapping underneath it.
 - 2026-07-10: Removed the fullscreen graph viewport dead zone by measuring the SVG, sizing its viewBox and culling bounds responsively, and preserving the centered world point across browser resizes.
 - 2026-07-11: Wired the feature-search fuzzy finder as a shell overlay opened from the workspace menu and ⌘/Ctrl+K, reusing graph feature-node selection for result opens.
+- 2026-07-12: Documented the canonical project payload behavior that removes duplicate graph clusters created by linked Git worktrees.
