@@ -45,6 +45,7 @@ The agent prompt chat adds a reusable prompt composer to the existing dashboard 
 - `shared/database/migrations/009_git_worktree_orchestrator.sql`: Defines the user-scoped `daemon_events` table that carries orchestration completion notifications to the dashboard.
 - `feature_files/cursor-agent.md`: Cursor execution provider used by the shared prompt transport.
 - `feature_files/daedalus-git-worktrees.md`: Durable agent-mode queue, isolation, verification, and integration lifecycle.
+- `feature_files/agent-task-notifications.md`: Bell inbox that consumes durable-task poll completion signals (`completed` / `failed` / `blocked`) without owning the poll itself.
 
 ## Dev Mode
 HACKING
@@ -89,3 +90,4 @@ HACKING
 - 2026-07-12: Split durable agent tasks into dedicated poll state with single-flight stale-response guarding so overlapping Supabase polls can no longer blink the task panel.
 - 2026-07-12: Pinned the most recent successful durable-batch integration confirmation above transient chat and task statuses, reloading it independently so it cannot flicker away during polling or after a page reload.
 - 2026-07-12: Replaced the chat feature-scope dropdown with the shared fuzzy finder in tag mode so operators can search and add targeted feature chips.
+- 2026-07-12: Cross-linked agent-task-notifications as the bell inbox that consumes durable-task poll completion signals without owning the poll transport.
