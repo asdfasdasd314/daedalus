@@ -9,6 +9,13 @@ AGENT_CHAT_PAYLOAD_KIND = "agent_chat"
 AGENT_PROMPT_PURPOSE = "agent_prompt"
 GIT_SYNC_PAYLOAD_KIND = "git_sync_result"
 GIT_SYNC_PURPOSE = "git_sync_request"
+DAEMON_REVIEW = "daemon_review"
+CLIENT_REVIEW = "client_review"
+DAEMON_COMPLETE = "daemon_complete"
+CLIENT_COMPLETE = "client_complete"
+
+# Legacy names remain importable for third-party callers during the protocol
+# migration. New production paths must use the four review states above.
 CLIENT_LOAD_FEATURE_FILES = "client_load_feature_files"
 CLIENT_LOAD_PARAMETER_FILES = "client_load_parameter_files"
 DAEMON_RECEIVED_MESSAGE = "daemon_received_message"
@@ -26,13 +33,13 @@ class SupabaseUnavailableError(Exception):
     pass
 
 
-def fetch_current_message(config: dict, purpose: str) -> str:
+def fetch_current_message(config: dict, purpose: str) -> str | None:
     rows = fetch_communication_rows(config, purpose)
 
     if not rows:
-        return ""
+        return None
 
-    return rows[0].get("message", "")
+    return rows[0].get("content")
 
 
 def fetch_communication_rows(config: dict, purpose: str) -> list[dict]:
@@ -51,9 +58,15 @@ def fetch_communication_rows(config: dict, purpose: str) -> list[dict]:
         return json.loads(response.read().decode("utf-8"))
 
 
-def update_current_message(config: dict, purpose: str, message: str) -> None:
+def update_current_message(
+    config: dict,
+    purpose: str,
+    message: str,
+    content: str | None = None,
+) -> None:
     body = json.dumps({
         "p_message": message,
+        "p_content": content,
         "p_purpose": purpose,
         "p_user_id": config["daemonUserId"],
     }).encode("utf-8")
@@ -134,6 +147,8 @@ def update_agent_task(
     expected_status: str,
     updates: dict,
 ) -> bool:
+    if updates.get("status") in {"completed", "failed", "blocked"}:
+        updates = {**updates, "message": CLIENT_REVIEW}
     result = call_daemon_rpc(config, "daemon_update_agent_task", {
         "p_user_id": config["daemonUserId"],
         "p_task_id": task_id,
@@ -150,6 +165,15 @@ def list_orchestration_batches(config: dict) -> list[dict]:
 
 
 def upsert_orchestration_batch(config: dict, batch: dict) -> None:
+    if "message" not in batch:
+        batch = {
+            **batch,
+            "message": (
+                DAEMON_COMPLETE
+                if batch.get("status") in {"completed", "blocked"}
+                else DAEMON_REVIEW
+            ),
+        }
     call_daemon_rpc(config, "daemon_upsert_orchestration_batch", {
         "p_user_id": config["daemonUserId"],
         "p_batch": batch,

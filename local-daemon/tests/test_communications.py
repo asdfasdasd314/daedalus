@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from daedalus_daemon.communications import (
     AGENT_CHAT_PAYLOAD_KIND,
     AGENT_PROMPT_PURPOSE,
+    DAEMON_COMPLETE,
     FEATURE_FILES_PAYLOAD_KIND,
     FEATURE_FILE_LOAD_PURPOSE,
     GIT_SYNC_PAYLOAD_KIND,
@@ -63,7 +64,7 @@ class UpdateCurrentMessageTests(unittest.TestCase):
                     "daemonUserId": "user-1",
                 },
                 FEATURE_FILE_LOAD_PURPOSE,
-                "client_load_feature_files",
+                DAEMON_COMPLETE,
             )
 
         self.assertEqual(seen_methods, ["POST"])
@@ -73,7 +74,8 @@ class UpdateCurrentMessageTests(unittest.TestCase):
         self.assertEqual(
             request_bodies,
             [{
-                "p_message": "client_load_feature_files",
+                "p_content": None,
+                "p_message": DAEMON_COMPLETE,
                 "p_purpose": FEATURE_FILE_LOAD_PURPOSE,
                 "p_user_id": "user-1",
             }],
@@ -86,7 +88,7 @@ class UpdateCurrentMessageTests(unittest.TestCase):
         def fake_urlopen(http_request, timeout=None):
             request_urls.append(http_request.full_url)
             request_bodies.append(json.loads(http_request.data.decode("utf-8")))
-            return FakeResponse([{"message": "daemon_sent_feature_files"}])
+            return FakeResponse([{"content": "agent request"}])
 
         with patch("daedalus_daemon.communications.request.urlopen", side_effect=fake_urlopen):
             message = fetch_current_message(
@@ -98,7 +100,7 @@ class UpdateCurrentMessageTests(unittest.TestCase):
                 FEATURE_FILE_LOAD_PURPOSE,
             )
 
-        self.assertEqual(message, "daemon_sent_feature_files")
+        self.assertEqual(message, "agent request")
         self.assertEqual(request_urls, ["https://example.supabase.co/rest/v1/rpc/daemon_get_communication"])
         self.assertEqual(
             request_bodies,
@@ -110,7 +112,7 @@ class UpdateCurrentMessageTests(unittest.TestCase):
 
         def fake_urlopen(http_request, timeout=None):
             request_bodies.append(json.loads(http_request.data.decode("utf-8")))
-            return FakeResponse([{"message": "daemon_sent_parameter_files"}])
+            return FakeResponse([{"content": None}])
 
         with patch("daedalus_daemon.communications.request.urlopen", side_effect=fake_urlopen):
             message = fetch_current_message(
@@ -122,7 +124,7 @@ class UpdateCurrentMessageTests(unittest.TestCase):
                 PARAMETER_FILE_LOAD_PURPOSE,
             )
 
-        self.assertEqual(message, "daemon_sent_parameter_files")
+        self.assertIsNone(message)
         self.assertEqual(
             request_bodies,
             [{"p_purpose": PARAMETER_FILE_LOAD_PURPOSE, "p_user_id": "user-1"}],

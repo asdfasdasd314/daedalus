@@ -37,12 +37,8 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from daedalus_daemon.communications import (
         AGENT_PROMPT_PURPOSE,
-        CLIENT_LOAD_FEATURE_FILES,
-        CLIENT_LOAD_PARAMETER_FILES,
-        DAEMON_RECEIVED_MESSAGE,
-        DAEMON_SENT_FEATURE_FILES,
-        DAEMON_SENT_PARAMETER_FILES,
-        DAEMON_SENT_RESPONSE,
+        CLIENT_REVIEW,
+        DAEMON_COMPLETE,
         FEATURE_FILE_LOAD_PURPOSE,
         PARAMETER_FILE_LOAD_PURPOSE,
         PARAMETER_FILE_UPDATE_PURPOSE,
@@ -68,12 +64,8 @@ if __package__ in {None, ""}:
 else:
     from .communications import (
         AGENT_PROMPT_PURPOSE,
-        CLIENT_LOAD_FEATURE_FILES,
-        CLIENT_LOAD_PARAMETER_FILES,
-        DAEMON_RECEIVED_MESSAGE,
-        DAEMON_SENT_FEATURE_FILES,
-        DAEMON_SENT_PARAMETER_FILES,
-        DAEMON_SENT_RESPONSE,
+        CLIENT_REVIEW,
+        DAEMON_COMPLETE,
         FEATURE_FILE_LOAD_PURPOSE,
         PARAMETER_FILE_LOAD_PURPOSE,
         PARAMETER_FILE_UPDATE_PURPOSE,
@@ -101,8 +93,6 @@ def run_poll_cycle(
     run_project_load_cycle(
         config,
         FEATURE_FILE_LOAD_PURPOSE,
-        CLIENT_LOAD_FEATURE_FILES,
-        DAEMON_SENT_FEATURE_FILES,
         read_message,
         write_message,
         scan_projects,
@@ -120,8 +110,6 @@ def run_parameter_file_poll_cycle(
     run_project_load_cycle(
         config,
         PARAMETER_FILE_LOAD_PURPOSE,
-        CLIENT_LOAD_PARAMETER_FILES,
-        DAEMON_SENT_PARAMETER_FILES,
         read_message,
         write_message,
         scan_projects,
@@ -142,19 +130,6 @@ def run_parameter_file_update_cycle(
     if not update_request:
         return
 
-    if update_request.get("state") in {
-        DAEMON_RECEIVED_MESSAGE,
-        DAEMON_SENT_PARAMETER_FILES,
-        DAEMON_ERROR,
-    }:
-        return
-
-    write_message(
-        config,
-        PARAMETER_FILE_UPDATE_PURPOSE,
-        build_parameter_file_update_state_message(DAEMON_RECEIVED_MESSAGE),
-    )
-
     try:
         apply_parameter_file_update(update_request)
         projects = scan_projects()
@@ -163,6 +138,7 @@ def run_parameter_file_update_cycle(
         write_message(
             config,
             PARAMETER_FILE_UPDATE_PURPOSE,
+            CLIENT_REVIEW,
             build_parameter_file_update_state_message(DAEMON_ERROR, str(error)),
         )
         return
@@ -170,33 +146,33 @@ def run_parameter_file_update_cycle(
     write_message(
         config,
         PARAMETER_FILE_UPDATE_PURPOSE,
-        build_parameter_file_update_state_message(DAEMON_SENT_PARAMETER_FILES),
+        DAEMON_COMPLETE,
     )
 
 
 def run_project_load_cycle(
     config: dict,
     purpose: str,
-    client_message: str,
-    sent_message: str,
     read_message,
     write_message,
     scan_projects,
     deliver_projects,
 ) -> None:
-    message = read_message(config, purpose)
-
-    if message != client_message:
+    if read_message(config, purpose) is None:
         return
-
-    write_message(config, purpose, DAEMON_RECEIVED_MESSAGE)
     projects = scan_projects()
     try:
         deliver_projects(config, projects)
     except Exception as error:
         print(f"Failed to deliver {purpose}: {error}")
+        write_message(
+            config,
+            purpose,
+            CLIENT_REVIEW,
+            json.dumps({"error": str(error)}),
+        )
         return
-    write_message(config, purpose, sent_message)
+    write_message(config, purpose, DAEMON_COMPLETE)
 
 
 def run_agent_prompt_cycle(
@@ -209,15 +185,12 @@ def run_agent_prompt_cycle(
 ) -> None:
     message = read_message(config, AGENT_PROMPT_PURPOSE)
 
-    if not message.strip():
+    if not isinstance(message, str) or not message.strip():
         return
 
     prompt_request = parse_agent_prompt_message(message)
 
     if not prompt_request:
-        return
-
-    if prompt_request.get("state") in {DAEMON_RECEIVED_MESSAGE, DAEMON_SENT_RESPONSE}:
         return
 
     prompt_id = prompt_request.get("promptId")
@@ -239,12 +212,6 @@ def run_agent_prompt_cycle(
         if provider == CURSOR_PROVIDER
         else build_codex_prompt(prompt, planning_mode, targeted_feature_paths)
     )
-    write_message(
-        config,
-        AGENT_PROMPT_PURPOSE,
-        build_agent_prompt_state_message(prompt_id, DAEMON_RECEIVED_MESSAGE),
-    )
-
     if provider == CURSOR_PROVIDER:
         reply = (
             run_cursor_exec(directory, final_prompt, planning_mode)
@@ -273,29 +240,16 @@ def run_agent_prompt_cycle(
         targeted_feature_paths,
     )
 
-    current_message = read_message(config, AGENT_PROMPT_PURPOSE)
-    current_prompt_request = parse_agent_prompt_message(current_message)
-
-    if (
-        current_prompt_request
-        and current_prompt_request.get("promptId") == prompt_id
-        and current_prompt_request.get("state") == DAEMON_RECEIVED_MESSAGE
-    ):
-        write_message(
-            config,
-            AGENT_PROMPT_PURPOSE,
-            build_agent_prompt_state_message(prompt_id, DAEMON_SENT_RESPONSE),
-        )
+    write_message(config, AGENT_PROMPT_PURPOSE, DAEMON_COMPLETE)
 
 
 def parse_agent_prompt_message(message: str) -> dict[str, object] | None:
+    if not isinstance(message, str):
+        return None
     trimmed_message = message.strip()
 
     if not trimmed_message:
         return None
-
-    if trimmed_message in {DAEMON_RECEIVED_MESSAGE, DAEMON_SENT_RESPONSE}:
-        return {"state": trimmed_message}
 
     try:
         parsed_message = json.loads(trimmed_message)
@@ -309,6 +263,8 @@ def parse_agent_prompt_message(message: str) -> dict[str, object] | None:
 
 
 def parse_parameter_file_update_message(message: str) -> dict[str, object] | None:
+    if not isinstance(message, str):
+        return None
     trimmed_message = message.strip()
 
     if not trimmed_message:
@@ -321,9 +277,6 @@ def parse_parameter_file_update_message(message: str) -> dict[str, object] | Non
 
     if not isinstance(parsed_message, dict):
         return None
-
-    if parsed_message.get("state") in {DAEMON_RECEIVED_MESSAGE, DAEMON_SENT_PARAMETER_FILES, DAEMON_ERROR}:
-        return parsed_message
 
     if parsed_message.get("command") != PARAMETER_FILE_UPDATE_COMMAND:
         return None
@@ -494,13 +447,12 @@ def build_git_sync_state_message(request_id: str, state: str) -> str:
 
 
 def parse_git_sync_message(message: str) -> dict[str, object] | None:
+    if not isinstance(message, str):
+        return None
     trimmed_message = message.strip()
 
     if not trimmed_message:
         return None
-
-    if trimmed_message in {DAEMON_RECEIVED_MESSAGE, DAEMON_SENT_RESPONSE}:
-        return {"state": trimmed_message}
 
     try:
         parsed_message = json.loads(trimmed_message)
@@ -600,15 +552,12 @@ def run_git_sync_cycle(
 ) -> None:
     message = read_message(config, GIT_SYNC_PURPOSE)
 
-    if not message.strip():
+    if not isinstance(message, str) or not message.strip():
         return
 
     git_request = parse_git_sync_message(message)
 
     if not git_request:
-        return
-
-    if git_request.get("state") in {DAEMON_RECEIVED_MESSAGE, DAEMON_SENT_RESPONSE}:
         return
 
     request_id = git_request.get("requestId")
@@ -635,12 +584,6 @@ def run_git_sync_cycle(
 
         commit_message = message_value
 
-    write_message(
-        config,
-        GIT_SYNC_PURPOSE,
-        build_git_sync_state_message(request_id, DAEMON_RECEIVED_MESSAGE),
-    )
-
     steps, status = execute_git_sync_operation(
         directory,
         operation,
@@ -659,19 +602,7 @@ def run_git_sync_cycle(
         },
     )
 
-    current_message = read_message(config, GIT_SYNC_PURPOSE)
-    current_request = parse_git_sync_message(current_message)
-
-    if (
-        current_request
-        and current_request.get("requestId") == request_id
-        and current_request.get("state") == DAEMON_RECEIVED_MESSAGE
-    ):
-        write_message(
-            config,
-            GIT_SYNC_PURPOSE,
-            build_git_sync_state_message(request_id, DAEMON_SENT_RESPONSE),
-        )
+    write_message(config, GIT_SYNC_PURPOSE, DAEMON_COMPLETE)
 
 
 def filter_targeted_feature_paths(targeted_feature_paths: object) -> list[str]:
