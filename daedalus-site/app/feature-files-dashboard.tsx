@@ -1492,10 +1492,14 @@ export default function FeatureFilesDashboard({
         ]);
       setMessage(nextFeatureFileMessage);
       setParameterFileMessage(nextParameterFileMessage);
-    } catch {
+    } catch (error) {
       setIsLoadingFeatureFiles(false);
       setIsLoadingParameterFiles(false);
-      setError("Unable to write the dev-environment load requests to Supabase.");
+      setError(
+        error instanceof Error
+          ? `Unable to write the dev-environment load requests to Supabase: ${error.message}`
+          : "Unable to write the dev-environment load requests to Supabase.",
+      );
     }
   }
 
@@ -3548,7 +3552,9 @@ async function updateMessage(
   });
 
   if (!existingRowsResponse.ok) {
-    throw new Error("communications message lookup failed");
+    throw new Error(
+      `communications message lookup failed (${existingRowsResponse.status}): ${await existingRowsResponse.text()}`,
+    );
   }
 
   const existingRows = (await existingRowsResponse.json()) as Array<{
@@ -3578,7 +3584,9 @@ async function updateMessage(
         });
 
   if (!response.ok) {
-    throw new Error("communications message update failed");
+    throw new Error(
+      `communications message update failed (${response.status}): ${await response.text()}`,
+    );
   }
 
   return content ?? "";
