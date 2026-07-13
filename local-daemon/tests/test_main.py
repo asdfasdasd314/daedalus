@@ -41,6 +41,7 @@ from daedalus_daemon.main import (
     register_agent_process,
     unregister_agent_process,
     update_parameter_variable_in_toml,
+    update_execution_entry_point_in_toml,
 )
 
 
@@ -311,6 +312,24 @@ class ParameterFileUpdateTests(unittest.TestCase):
             update_parameter_variable_in_toml('[settings]\nname = "old"', "settings.name", "new"),
             '[settings]\nname = "new"',
         )
+
+
+class EntryPointTomlUpdateTests(unittest.TestCase):
+    def test_adds_entry_point_without_disturbing_existing_keys(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory:
+            parameter_file = Path(directory) / "feature.toml"
+            parameter_file.write_text('# keep\n[execution]\nmode = "fast"\n[other]\nvalue = 1\n')
+            update_execution_entry_point_in_toml(parameter_file, "add", "src/run.py")
+            self.assertEqual(parameter_file.read_text(), '# keep\n[execution]\nmode = "fast"\nentry_point = "src/run.py"\n[other]\nvalue = 1\n')
+
+    def test_delete_requires_existing_entry_point(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory:
+            parameter_file = Path(directory) / "feature.toml"
+            parameter_file.write_text('[execution]\nmode = "fast"\n')
+            with self.assertRaises(ValueError):
+                update_execution_entry_point_in_toml(parameter_file, "delete", "")
 
 
 class BuildCodexPromptTests(unittest.TestCase):

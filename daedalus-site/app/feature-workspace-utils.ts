@@ -1,6 +1,6 @@
 import type { FeatureFileProjects } from "@/lib/feature-file-cache";
 import type { ParameterFileRecord } from "@/lib/parameter-file-cache";
-import { getExecutionCommandMetadata } from "@/lib/parameter-file-parser";
+import { getExecutionEntryPointMetadata, parseParameterFile } from "@/lib/parameter-file-parser";
 
 export type WorkspaceFeatureOption = {
   featureName: string;
@@ -36,7 +36,35 @@ export function getRunnableFeatureMetadata(
   if (!parameterFile) {
     return { runnable: false as const, reason: `Missing ${getParameterFilePathForFeature(featureFilePath)}.` };
   }
-  return getExecutionCommandMetadata(parameterFile.toml);
+  return getExecutionEntryPointMetadata(parameterFile.toml);
+}
+
+export function normalizeEntryPointPath(path: string) {
+  const normalized = path.trim().replace(/\\/g, "/").replace(/^\.\//, "");
+  if (!normalized || normalized.startsWith("/") || /^[A-Za-z]:\//.test(normalized)) return null;
+  const parts = normalized.split("/");
+  if (parts.some((part) => !part || part === "." || part === "..")) return null;
+  return parts.join("/");
+}
+
+export function getRelevantFileEntryPointSuggestions(markdown: string, parameterToml: string) {
+  const lines = markdown.split("\n");
+  const headingIndex = lines.findIndex((line) => line.trim() === "## Relevant Files");
+  const relevantFiles = headingIndex < 0
+    ? []
+    : lines.slice(headingIndex + 1, lines.findIndex((line, index) => index > headingIndex && /^##\s/.test(line)) || undefined);
+  const suggestions: string[] = [];
+  for (const line of relevantFiles) {
+    if (!/^\s*[-*]\s/.test(line)) continue;
+    for (const match of line.matchAll(/`([^`]+)`/g)) {
+      const path = normalizeEntryPointPath(match[1]);
+      if (path && !suggestions.includes(path)) suggestions.push(path);
+    }
+  }
+  const saved = parseParameterFile(parameterToml).variables.find((variable) => variable.name === "execution.entry_point");
+  const savedPath = saved?.kind === "string" ? saved.displayValue.trim() : "";
+  if (savedPath && !suggestions.includes(savedPath)) suggestions.unshift(savedPath);
+  return { savedEntryPoint: savedPath ?? "", suggestions };
 }
 
 export function buildFeatureExecutionRequest(projectDirectory: string, featureFilePath: string) {

@@ -20,6 +20,7 @@ def paired_parameter_file_path(feature_file_path: str) -> str:
 
 
 def resolve_inside_project(project_root: Path, relative_path: str) -> Path:
+    project_root = project_root.resolve()
     normalized = relative_path.replace("\\", "/").removeprefix("./")
     candidate = (project_root / normalized).resolve()
     if candidate == project_root or project_root not in candidate.parents:
@@ -27,19 +28,21 @@ def resolve_inside_project(project_root: Path, relative_path: str) -> Path:
     return candidate
 
 
-def validate_execution_command(parameter_file: Path) -> list[str]:
+def validate_execution_entry_point(project_root: Path, parameter_file: Path) -> tuple[Path, list[str]]:
     with parameter_file.open("rb") as source:
         parsed = tomllib.load(source)
     execution = parsed.get("execution")
-    command = execution.get("command") if isinstance(execution, dict) else None
-    if not isinstance(command, list) or not command:
-        raise ValueError("Parameter file must declare [execution] command as a non-empty string array.")
-    if not all(isinstance(item, str) and item.strip() for item in command):
-        raise ValueError("Execution command entries must be non-empty strings.")
-    return command
+    entry_point = execution.get("entry_point") if isinstance(execution, dict) else None
+    if not isinstance(entry_point, str) or not entry_point.strip():
+        raise ValueError("Parameter file must declare a nonblank [execution] entry_point.")
+    normalized_entry_point = entry_point.replace("\\", "/").removeprefix("./")
+    resolved_entry_point_file = resolve_inside_project(project_root, normalized_entry_point)
+    if not resolved_entry_point_file.is_file():
+        raise ValueError("execution.entry_point must name an existing regular file inside the project.")
+    return project_root / normalized_entry_point, ["python", normalized_entry_point]
 
 
-def validate_execution_request(run: dict, scanned_projects: dict[str, list[dict[str, str]]]) -> tuple[Path, Path, list[str]]:
+def validate_execution_request(run: dict, scanned_projects: dict[str, list[dict[str, str]]]) -> tuple[Path, Path, Path, list[str]]:
     project_value = run.get("project_directory")
     feature_value = run.get("feature_file_path")
     if not isinstance(project_value, str) or not isinstance(feature_value, str):
@@ -56,7 +59,8 @@ def validate_execution_request(run: dict, scanned_projects: dict[str, list[dict[
         raise ValueError("Selected feature file is no longer available in the scanned project.")
     if not parameter_file.is_file():
         raise ValueError("The selected feature has no paired parameter file.")
-    return project_root, parameter_file, validate_execution_command(parameter_file)
+    entry_point_file, command = validate_execution_entry_point(project_root, parameter_file)
+    return project_root, parameter_file, entry_point_file, command
 
 
 def append_tail(current: str, chunk: str, limit: int) -> str:
@@ -101,7 +105,7 @@ class FeatureExecutionSupervisor:
             })
             return
         try:
-            project_root, parameter_file, command = validate_execution_request(
+            project_root, parameter_file, entry_point_file, command = validate_execution_request(
                 run, scan_feature_file_projects(),
             )
             process = subprocess.Popen(
@@ -115,6 +119,7 @@ class FeatureExecutionSupervisor:
             update_feature_execution_run(self.config, run["id"], "running", {
                 "status": "running", "process_id": process.pid,
                 "parameter_file_path": str(parameter_file.relative_to(project_root)),
+                "entry_point_path": str(entry_point_file.relative_to(project_root)),
                 "command": command, "started_at": "now",
             })
         except Exception as error:

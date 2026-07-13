@@ -16,6 +16,7 @@ CODEX_PROVIDER = "codex"
 CURSOR_PROVIDER = "cursor"
 DAEMON_ERROR = "daemon_error"
 PARAMETER_FILE_UPDATE_COMMAND = "parameter_file_update"
+ENTRY_POINT_UPDATE_COMMAND = "entry_point_update"
 PLANNING_PROMPT_PREFIX = """You are in planning mode.
 
 Do not edit files.
@@ -60,6 +61,7 @@ if __package__ in {None, ""}:
         FEATURE_FILE_LOAD_PURPOSE,
         PARAMETER_FILE_LOAD_PURPOSE,
         PARAMETER_FILE_UPDATE_PURPOSE,
+        ENTRY_POINT_UPDATE_PURPOSE,
         SupabaseUnavailableError,
         GIT_SYNC_PURPOSE,
         fetch_current_message,
@@ -88,6 +90,7 @@ else:
         FEATURE_FILE_LOAD_PURPOSE,
         PARAMETER_FILE_LOAD_PURPOSE,
         PARAMETER_FILE_UPDATE_PURPOSE,
+        ENTRY_POINT_UPDATE_PURPOSE,
         SupabaseUnavailableError,
         GIT_SYNC_PURPOSE,
         fetch_current_message,
@@ -231,6 +234,26 @@ def run_parameter_file_update_cycle(
         PARAMETER_FILE_UPDATE_PURPOSE,
         DAEMON_COMPLETE,
     )
+
+
+def run_entry_point_update_cycle(
+    config: dict,
+    read_message=fetch_current_message,
+    write_message=update_current_message,
+    scan_projects=scan_parameter_file_projects,
+    scan_feature_projects=scan_feature_file_projects,
+    deliver_projects=post_parameter_files,
+) -> None:
+    request = parse_entry_point_update_message(read_message(config, ENTRY_POINT_UPDATE_PURPOSE))
+    if not request:
+        return
+    try:
+        apply_entry_point_update(request, scan_feature_projects())
+        deliver_projects(config, scan_projects())
+    except Exception as error:
+        write_message(config, ENTRY_POINT_UPDATE_PURPOSE, CLIENT_REVIEW, build_entry_point_update_state_message(DAEMON_ERROR, str(error)))
+        return
+    write_message(config, ENTRY_POINT_UPDATE_PURPOSE, CLIENT_REVIEW, build_entry_point_update_state_message(DAEMON_COMPLETE))
 
 
 def run_project_load_cycle(
@@ -395,6 +418,65 @@ def build_parameter_file_update_state_message(state: str, error: str = "") -> st
         payload["error"] = error
 
     return json.dumps(payload)
+
+
+def parse_entry_point_update_message(message: str) -> dict[str, object] | None:
+    if not isinstance(message, str) or not message.strip(): return None
+    try: payload = json.loads(message)
+    except json.JSONDecodeError: return None
+    if not isinstance(payload, dict) or payload.get("command") != ENTRY_POINT_UPDATE_COMMAND: return None
+    if payload.get("operation") not in {"add", "update", "delete"}: return None
+    if not isinstance(payload.get("projectPath"), str) or not isinstance(payload.get("featureFilePath"), str): return None
+    if payload["operation"] != "delete" and not isinstance(payload.get("entryPoint"), str): return None
+    return payload
+
+
+def build_entry_point_update_state_message(state: str, error: str = "") -> str:
+    payload = {"command": ENTRY_POINT_UPDATE_COMMAND, "state": state}
+    if error: payload["error"] = error
+    return json.dumps(payload)
+
+
+def apply_entry_point_update(request: dict[str, object], scanned_projects: dict[str, list[dict[str, str]]]) -> None:
+    project_root = Path(str(request["projectPath"])).resolve()
+    if str(project_root) not in scanned_projects: raise ValueError("Selected project is not a scanner-discovered project root.")
+    feature_path = str(request["featureFilePath"]).replace("\\", "/").removeprefix("./")
+    if feature_path not in {entry["path"] for entry in scanned_projects[str(project_root)]}: raise ValueError("Selected feature file is no longer available in the scanned project.")
+    if not feature_path.startswith("feature_files/") or not feature_path.endswith(".md"): raise ValueError("Feature path must use feature_files/*.md.")
+    parameter_path = "parameter_files/" + feature_path[len("feature_files/"):-3] + ".toml"
+    parameter_file = (project_root / parameter_path).resolve()
+    if project_root not in parameter_file.parents or not parameter_file.is_file(): raise ValueError("The selected feature has no paired parameter file.")
+    entry_point = str(request.get("entryPoint", "")).strip().replace("\\", "/").removeprefix("./")
+    if request["operation"] != "delete":
+        if not entry_point or entry_point.startswith("/") or re.match(r"^[A-Za-z]:/", entry_point) or any(part in {"", ".", ".."} for part in entry_point.split("/")): raise ValueError("Entry point must be a nonblank project-relative path.")
+        target = (project_root / entry_point).resolve()
+        if project_root not in target.parents or not target.is_file(): raise ValueError("Entry point must be an existing regular file inside the selected project.")
+    update_execution_entry_point_in_toml(parameter_file, str(request["operation"]), entry_point)
+
+
+def update_execution_entry_point_in_toml(parameter_file: Path, operation: str, entry_point: str) -> None:
+    lines = parameter_file.read_text(encoding="utf-8").split("\n")
+    section_start = None; section_end = len(lines); entry_index = None; current_section = ""
+    for index, line in enumerate(lines):
+        section = re.fullmatch(r"\s*\[(.+)\]\s*", line)
+        if section:
+            if current_section == "execution" and section_end == len(lines): section_end = index
+            current_section = section.group(1).strip()
+            if current_section == "execution": section_start = index
+            continue
+        if current_section == "execution" and re.match(r"\s*entry_point\s*=", line): entry_index = index
+    if operation == "add" and entry_index is not None: raise ValueError("This feature already has an entry point.")
+    if operation in {"update", "delete"} and entry_index is None: raise ValueError("This feature has no saved entry point.")
+    if operation == "delete": lines.pop(entry_index)
+    elif entry_index is not None:
+        prefix_match = re.match(r"^(\s*entry_point\s*=\s*)(.*)$", lines[entry_index])
+        _, inline_comment = split_toml_value_and_comment(prefix_match.group(2).strip())
+        lines[entry_index] = prefix_match.group(1) + json.dumps(entry_point) + (f" {inline_comment}" if inline_comment else "")
+    elif section_start is not None: lines.insert(section_end, f"entry_point = {json.dumps(entry_point)}")
+    else:
+        if lines and lines[-1] != "": lines.append("")
+        lines.extend(["[execution]", f"entry_point = {json.dumps(entry_point)}"])
+    parameter_file.write_text("\n".join(lines), encoding="utf-8")
 
 
 def apply_parameter_file_update(update_request: dict[str, object]) -> None:
@@ -1092,6 +1174,10 @@ def main() -> None:
             run_parameter_file_update_cycle,
             config,
         ):
+            time.sleep(config["pollIntervalMs"] / 1000)
+            continue
+
+        if not run_cycle_safely("entry_point_update", run_entry_point_update_cycle, config):
             time.sleep(config["pollIntervalMs"] / 1000)
             continue
 

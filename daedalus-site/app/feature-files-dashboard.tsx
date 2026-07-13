@@ -16,6 +16,7 @@ import FeatureSearchDialog, {
   type FeatureSearchMode,
 } from "./feature-search-dialog";
 import ParameterVariableSelector from "./parameter-variable-selector";
+import EntryPointPicker from "./entry-point-picker";
 import type {
   AgentChatExchange,
   TargetedFeature,
@@ -52,6 +53,8 @@ type DashboardProps = {
 };
 
 const DAEMON_REVIEW = "daemon_review";
+const DAEMON_ERROR = "daemon_error";
+const DAEMON_COMPLETE = "daemon_complete";
 const CLIENT_REVIEW = "client_review";
 const CLIENT_COMPLETE = "client_complete";
 const DAEMON_RECEIVED_MESSAGE = "daemon_received_message";
@@ -62,6 +65,8 @@ const FEATURE_FILE_LOAD_PURPOSE = "feature_file_load";
 const PARAMETER_FILE_LOAD_PURPOSE = "parameter_file_load";
 const PARAMETER_FILE_UPDATE_PURPOSE = "parameter_file_update";
 const PARAMETER_FILE_UPDATE_COMMAND = "parameter_file_update";
+const ENTRY_POINT_UPDATE_PURPOSE = "entry_point_update";
+const ENTRY_POINT_UPDATE_COMMAND = "entry_point_update";
 const AGENT_PROMPT_PURPOSE = "agent_prompt";
 const GIT_SYNC_PURPOSE = "git_sync_request";
 const FEATURE_FILES_PAYLOAD_KIND = "feature_files";
@@ -206,6 +211,7 @@ type ParameterUpdateRequest = {
   value: string;
   variableName: string;
 };
+type EntryPointUpdateRequest = { projectPath: string; featureFilePath: string; operation: "add" | "update" | "delete"; entryPoint?: string };
 
 type SelectedFeatureSession = {
   featureName: string;
@@ -216,7 +222,7 @@ type SelectedFeatureSession = {
 type FeatureExecutionStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
 type FeatureExecutionRunRow = {
   id: string; project_directory: string; feature_file_path: string;
-  status: FeatureExecutionStatus; cancel_requested: boolean; command: string[];
+  status: FeatureExecutionStatus; cancel_requested: boolean; command: string[]; parameter_file_path: string; entry_point_path: string;
   started_at: string | null; completed_at: string | null; exit_code: number | null;
   stdout_tail: string; stderr_tail: string; error: string; message: string;
 };
@@ -246,6 +252,9 @@ export default function FeatureFilesDashboard({
   const [parameterFileMessage, setParameterFileMessage] = useState("");
   const [agentPromptMessage, setAgentPromptMessage] = useState("");
   const [parameterUpdateMessage, setParameterUpdateMessage] = useState("");
+  const [entryPointUpdateMessage, setEntryPointUpdateMessage] = useState("");
+  const [isEntryPointUpdatePending, setIsEntryPointUpdatePending] = useState(false);
+  const [entryPointUpdateError, setEntryPointUpdateError] = useState("");
   const [promptText, setPromptText] = useState("");
   const [promptStatus, setPromptStatus] = useState("");
   const [lastIntegratedBatchStatus, setLastIntegratedBatchStatus] =
@@ -670,6 +679,36 @@ export default function FeatureFilesDashboard({
     supabasePublishableKey,
     supabaseUrl,
   ]);
+
+  useEffect(() => {
+    if (!currentUser || !accessToken) return;
+    let isMounted = true;
+    async function pollEntryPointUpdateMessage() {
+      try {
+        const nextMessage = await fetchCurrentMessage(supabaseUrl, supabasePublishableKey, accessToken, currentUserId, ENTRY_POINT_UPDATE_PURPOSE);
+        if (!isMounted || !nextMessage) return;
+        setEntryPointUpdateMessage(nextMessage);
+        await completeCommunicationReview(supabaseUrl, supabasePublishableKey, accessToken, currentUserId, ENTRY_POINT_UPDATE_PURPOSE);
+      } catch { return; }
+    }
+    void pollEntryPointUpdateMessage();
+    const intervalId = window.setInterval(pollEntryPointUpdateMessage, pollIntervalMs);
+    return () => { isMounted = false; window.clearInterval(intervalId); };
+  }, [accessToken, currentUser, currentUserId, pollIntervalMs, supabasePublishableKey, supabaseUrl]);
+
+  useEffect(() => {
+    const result = parseParameterUpdateRowMessage(entryPointUpdateMessage) as { state?: string; error?: string } | null;
+    if (!result) return;
+    if (result.state === DAEMON_ERROR) {
+      setEntryPointUpdateError(result.error || "The daemon could not update the entry point.");
+      setIsEntryPointUpdatePending(false);
+      return;
+    }
+    if (result.state !== DAEMON_COMPLETE || !currentUser || !accessToken) return;
+    fetchDaemonPayload<{ projects?: ParameterFileProjects }>(supabaseUrl, supabasePublishableKey, accessToken, currentUserId, PARAMETER_FILES_PAYLOAD_KIND)
+      .then((body) => { if (body) setParameterProjects(body.projects ?? {}); setEntryPointUpdateError(""); setIsEntryPointUpdatePending(false); })
+      .catch(() => { setEntryPointUpdateError("The entry point changed, but refreshed parameters were unavailable."); setIsEntryPointUpdatePending(false); });
+  }, [accessToken, currentUser, currentUserId, entryPointUpdateMessage, supabasePublishableKey, supabaseUrl]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -1569,6 +1608,19 @@ export default function FeatureFilesDashboard({
       }),
     );
     setParameterUpdateMessage(nextMessage);
+  }
+
+  async function requestEntryPointUpdate(request: EntryPointUpdateRequest) {
+    if (!currentUser || !accessToken) throw new Error("Sign in before changing an entry point.");
+    setIsEntryPointUpdatePending(true);
+    setEntryPointUpdateError("");
+    try {
+      const nextMessage = await updateMessage(supabaseUrl, supabasePublishableKey, accessToken, currentUserId, ENTRY_POINT_UPDATE_PURPOSE, JSON.stringify({ command: ENTRY_POINT_UPDATE_COMMAND, ...request }));
+      setEntryPointUpdateMessage(nextMessage);
+    } catch (error) {
+      setIsEntryPointUpdatePending(false);
+      throw error;
+    }
   }
 
   async function requestDevEnvironment() {
@@ -3828,13 +3880,16 @@ export default function FeatureFilesDashboard({
                       {getParameterFilePathForFeature(selectedFeatureSession.filePath)}
                     </p>
                     {matchedParameterFile ? (
-                      <ParameterVariableSelector
-                        key={`${selectedFeatureSession.projectPath}:${matchedParameterFile.path}`}
-                        projectPath={selectedFeatureSession.projectPath}
-                        parameterFilePath={matchedParameterFile.path}
-                        parameterFile={matchedParameterFile}
-                        onRequestSave={requestParameterFileUpdate}
-                      />
+                      <>
+                        <EntryPointPicker featureMarkdown={selectedFeatureRecord?.markdown ?? ""} parameterFile={matchedParameterFile} pending={isEntryPointUpdatePending} daemonError={entryPointUpdateError} onSave={(operation, entryPoint) => requestEntryPointUpdate({ projectPath: selectedFeatureSession.projectPath, featureFilePath: selectedFeatureSession.filePath, operation, entryPoint })} />
+                        <ParameterVariableSelector
+                          key={`${selectedFeatureSession.projectPath}:${matchedParameterFile.path}`}
+                          projectPath={selectedFeatureSession.projectPath}
+                          parameterFilePath={matchedParameterFile.path}
+                          parameterFile={matchedParameterFile}
+                          onRequestSave={requestParameterFileUpdate}
+                        />
+                      </>
                     ) : (
                       <div className="rounded-[1.25rem] border border-dashed border-white/10 bg-slate-900/40 px-4 py-3 text-sm text-slate-400">
                         No matching parameter file has been loaded for this feature yet.
@@ -4732,7 +4787,7 @@ async function fetchLatestAgentChat(
   }
 }
 
-function parseParameterUpdateRowMessage(message: string): { state?: string } | null {
+function parseParameterUpdateRowMessage(message: string): { state?: string; error?: string } | null {
   const trimmedMessage = message.trim();
 
   if (!trimmedMessage) {
@@ -4740,7 +4795,7 @@ function parseParameterUpdateRowMessage(message: string): { state?: string } | n
   }
 
   try {
-    const parsedMessage = JSON.parse(trimmedMessage) as { state?: unknown };
+    const parsedMessage = JSON.parse(trimmedMessage) as { state?: unknown; error?: unknown };
 
     if (typeof parsedMessage !== "object" || parsedMessage === null) {
       return null;
@@ -4750,6 +4805,10 @@ function parseParameterUpdateRowMessage(message: string): { state?: string } | n
       state:
         typeof parsedMessage.state === "string"
           ? parsedMessage.state
+          : undefined,
+      error:
+        typeof parsedMessage.error === "string"
+          ? parsedMessage.error
           : undefined,
     };
   } catch {

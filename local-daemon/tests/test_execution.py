@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from daedalus_daemon.execution import (
     paired_parameter_file_path,
     resolve_inside_project,
-    validate_execution_command,
+    validate_execution_entry_point,
     validate_execution_request,
 )
 
@@ -29,18 +29,22 @@ class ExecutionContractTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 resolve_inside_project(Path(directory), "feature_files/../../outside.md")
 
-    def test_accepts_valid_execution_command(self):
+    def test_accepts_valid_execution_entry_point(self):
         with tempfile.TemporaryDirectory() as directory:
             parameter_file = Path(directory) / "feature.toml"
-            parameter_file.write_text('[execution]\ncommand = ["python", "src/example.py"]\n')
-            self.assertEqual(validate_execution_command(parameter_file), ["python", "src/example.py"])
+            Path(directory, "src").mkdir()
+            Path(directory, "src/example.py").write_text("print('ok')\n")
+            parameter_file.write_text('[execution]\nentry_point = "src/example.py"\n')
+            entry_point, command = validate_execution_entry_point(Path(directory), parameter_file)
+            self.assertEqual(entry_point, Path(directory, "src/example.py"))
+            self.assertEqual(command, ["python", "src/example.py"])
 
-    def test_rejects_malformed_execution_command(self):
+    def test_rejects_malformed_execution_entry_point(self):
         with tempfile.TemporaryDirectory() as directory:
             parameter_file = Path(directory) / "feature.toml"
-            parameter_file.write_text('[execution]\ncommand = "python src/example.py"\n')
+            parameter_file.write_text('[execution]\nentry_point = "../outside.py"\n')
             with self.assertRaises(ValueError):
-                validate_execution_command(parameter_file)
+                validate_execution_entry_point(Path(directory), parameter_file)
 
     def test_rejects_unscanned_project(self):
         with tempfile.TemporaryDirectory() as directory:
