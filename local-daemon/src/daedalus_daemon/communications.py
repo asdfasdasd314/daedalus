@@ -27,6 +27,7 @@ FEATURE_FILE_LOAD_PURPOSE = "feature_file_load"
 PARAMETER_FILES_PAYLOAD_KIND = "parameter_files"
 PARAMETER_FILE_LOAD_PURPOSE = "parameter_file_load"
 PARAMETER_FILE_UPDATE_PURPOSE = "parameter_file_update"
+ENTRY_POINT_UPDATE_PURPOSE = "entry_point_update"
 
 
 class SupabaseUnavailableError(Exception):

@@ -24,28 +24,20 @@ export type ParsedParameterFile = {
   variables: ParameterVariable[];
 };
 
-export type ExecutionCommandMetadata =
-  | { runnable: true; command: string[]; preview: string }
+export type ExecutionEntryPointMetadata =
+  | { runnable: true; entryPoint: string; preview: string }
   | { runnable: false; reason: string };
 
-export function getExecutionCommandMetadata(toml: string): ExecutionCommandMetadata {
-  const executionCommand = parseParameterFile(toml).variables.find(
-    (variable) => variable.name === "execution.command",
+export function getExecutionEntryPointMetadata(toml: string): ExecutionEntryPointMetadata {
+  const entryPoint = parseParameterFile(toml).variables.find(
+    (variable) => variable.name === "execution.entry_point",
   );
 
-  if (!executionCommand) {
-    return { runnable: false, reason: "No [execution] command declaration." };
+  if (!entryPoint || entryPoint.kind !== "string" || !entryPoint.displayValue.trim()) {
+    return { runnable: false, reason: "No [execution] entry_point declaration." };
   }
 
-  const command = parseStringArray(executionCommand.rawValue);
-  if (!command || command.length === 0 || command.some((item) => !item.trim())) {
-    return {
-      runnable: false,
-      reason: "execution.command must be a non-empty TOML array of strings.",
-    };
-  }
-
-  return { runnable: true, command, preview: command.join(" ") };
+  return { runnable: true, entryPoint: entryPoint.displayValue.trim(), preview: `python ${entryPoint.displayValue.trim()}` };
 }
 
 type ParsedTomlValue = {

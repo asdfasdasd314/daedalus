@@ -40,7 +40,9 @@ export default function ParameterVariableSelector({
     () => parseParameterFile(parameterFile.toml),
     [parameterFile.toml],
   );
-  const variables = parsedFile.variables;
+  const variables = parsedFile.variables.filter(
+    (variable) => variable.name !== "execution.entry_point",
+  );
   const selectedVariable =
     variables.find((variable) => variable.name === selectedVariableName) ??
     variables[0] ??

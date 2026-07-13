@@ -15,6 +15,7 @@ from .communications import (
     GIT_SYNC_PURPOSE,
     PARAMETER_FILE_LOAD_PURPOSE,
     PARAMETER_FILE_UPDATE_PURPOSE,
+    ENTRY_POINT_UPDATE_PURPOSE,
     post_git_sync_result,
 )
 from .config import load_daemon_config
@@ -25,6 +26,7 @@ from .main import (
     run_git_sync_cycle,
     run_parameter_file_poll_cycle,
     run_parameter_file_update_cycle,
+    run_entry_point_update_cycle,
     run_poll_cycle,
 )
 from .scanner import scan_feature_file_projects, scan_parameter_file_projects
@@ -50,6 +52,7 @@ __all__ = [
     "FeatureExecutionSupervisor",
     "PARAMETER_FILE_LOAD_PURPOSE",
     "PARAMETER_FILE_UPDATE_PURPOSE",
+    "ENTRY_POINT_UPDATE_PURPOSE",
     "load_daemon_config",
     "post_git_sync_result",
     "run_agent_prompt_cycle",
@@ -58,6 +61,7 @@ __all__ = [
     "run_cursor_exec",
     "run_parameter_file_poll_cycle",
     "run_parameter_file_update_cycle",
+    "run_entry_point_update_cycle",
     "run_poll_cycle",
     "scan_feature_file_projects",
     "scan_parameter_file_projects",
