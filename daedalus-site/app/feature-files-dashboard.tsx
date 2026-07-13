@@ -21,6 +21,12 @@ import type {
   TargetedFeature,
 } from "@/lib/agent-chat-cache";
 import type { AgentModelsConfig } from "@/lib/agent-models";
+import {
+  buildImplementationPrompt,
+  parsePlanningReply,
+  type PlanningAnswer,
+  type PlanningSession,
+} from "@/lib/planning-questionnaire";
 import type { FeatureFileProjects } from "@/lib/feature-file-cache";
 import type {
   ParameterFileProjects,
@@ -63,6 +69,7 @@ const GIT_SYNC_PAYLOAD_KIND = "git_sync_result";
 const DEFAULT_PROJECT_DIRECTORY = "/Users/jameshollingsworth/Projects/daedalus";
 const AGENT_PROMPT_QUEUE_STORAGE_KEY = "agent-prompt-queue-v1";
 const AGENT_CHAT_STORAGE_KEY = "agent-chat-snapshot-v1";
+const PLANNING_SESSION_STORAGE_KEY = "planning-questionnaire-session-v1";
 const AGENT_PROMPT_TIMEOUT_MS = 5 * 60 * 1000;
 const VENTURE_PROGRESS_STATES = ["idle", "in progress", "completed"] as const;
 const DEFAULT_DESKTOP_MIN_ZOOM = 0.42;
@@ -140,6 +147,8 @@ type AgentPromptPayload = {
   reasoning: string;
   planningMode: boolean;
   targetedFeaturePaths: string[];
+  planningContext?: string;
+  planningAnswers?: PlanningAnswer[];
 };
 
 type AgentPromptQueueEntry = AgentPromptPayload & {
@@ -227,6 +236,7 @@ export default function FeatureFilesDashboard({
   const [lastIntegratedBatchStatus, setLastIntegratedBatchStatus] =
     useState("");
   const [latestChat, setLatestChat] = useState<AgentChatExchange | null>(null);
+  const [planningSession, setPlanningSession] = useState<PlanningSession | null>(null);
   const [isAgentChatCleared, setIsAgentChatCleared] = useState(false);
   const [agentPromptQueue, setAgentPromptQueue] = useState<
     AgentPromptQueueEntry[]
@@ -419,6 +429,17 @@ export default function FeatureFilesDashboard({
         const parsedChat = JSON.parse(storedChat) as AgentChatExchange;
         setLatestChat(parsedChat);
       }
+
+      const storedPlanningSession = window.localStorage.getItem(
+        PLANNING_SESSION_STORAGE_KEY,
+      );
+
+      if (storedPlanningSession) {
+        const parsedPlanningSession = JSON.parse(
+          storedPlanningSession,
+        ) as PlanningSession;
+        setPlanningSession(parsedPlanningSession);
+      }
     } catch {
       return;
     } finally {
@@ -452,6 +473,22 @@ export default function FeatureFilesDashboard({
 
     window.localStorage.removeItem(AGENT_CHAT_STORAGE_KEY);
   }, [isAgentPromptQueueHydrated, latestChat]);
+
+  useEffect(() => {
+    if (!isAgentPromptQueueHydrated) {
+      return;
+    }
+
+    if (planningSession) {
+      window.localStorage.setItem(
+        PLANNING_SESSION_STORAGE_KEY,
+        JSON.stringify(planningSession),
+      );
+      return;
+    }
+
+    window.localStorage.removeItem(PLANNING_SESSION_STORAGE_KEY);
+  }, [isAgentPromptQueueHydrated, planningSession]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -1264,17 +1301,31 @@ export default function FeatureFilesDashboard({
         }
 
         const currentPromptId = activePromptId.current;
+        const isActivePlanningSession = Boolean(
+          nextChat.planningMode &&
+            planningSession?.activePlanningPromptId === nextChat.promptId,
+        );
 
         if (currentPromptId && nextChat.promptId !== currentPromptId) {
           return;
         }
 
-        setLatestChat(nextChat);
+        const visibleChat = nextChat.planningMode
+          ? {
+              ...nextChat,
+              reply: parsePlanningReply(nextChat.reply).plan,
+            }
+          : nextChat;
 
-        if (nextChat.promptId === currentPromptId) {
+        setLatestChat(visibleChat);
+
+        if (nextChat.promptId === currentPromptId || isActivePlanningSession) {
+          if (nextChat.planningMode) {
+            recordPlanningReply(nextChat);
+          }
           setPromptStatus("Reply received.");
           // eslint-disable-next-line react-hooks/immutability
-          finalizeQueuedAgentPrompt(nextChat.promptId, nextChat);
+          finalizeQueuedAgentPrompt(nextChat.promptId, visibleChat);
         }
         await completeDaemonPayloadReview(
           supabaseUrl, supabasePublishableKey, accessToken, currentUserId,
@@ -1298,6 +1349,7 @@ export default function FeatureFilesDashboard({
     currentUserId,
     isAgentPromptQueueHydrated,
     pollIntervalMs,
+    planningSession,
     supabasePublishableKey,
     supabaseUrl,
   ]);
@@ -1553,6 +1605,19 @@ export default function FeatureFilesDashboard({
     setIsAgentChatCleared(false);
     clearedAgentChatPrompt.current = "";
     if (isPlanningMode) {
+      setPlanningSession({
+        originalPrompt: nextPrompt,
+        directory: selectedProjectDirectory,
+        provider: selectedProvider,
+        model: selectedModelId,
+        reasoning: selectedReasoning,
+        targetedFeatures,
+        currentPlan: "",
+        pendingQuestions: [],
+        questionIndex: 0,
+        answers: [],
+        activePlanningPromptId: promptId,
+      });
       setAgentPromptQueue((currentQueue) => [...currentQueue, nextPromptPayload]);
       return;
     }
@@ -1583,11 +1648,140 @@ export default function FeatureFilesDashboard({
     }
   }
 
+  function recordPlanningReply(replyExchange: AgentChatExchange) {
+    const parsedReply = parsePlanningReply(replyExchange.reply);
+
+    setPlanningSession((currentSession) => {
+      if (
+        !currentSession ||
+        currentSession.activePlanningPromptId !== replyExchange.promptId
+      ) {
+        return currentSession;
+      }
+
+      return {
+        ...currentSession,
+        currentPlan: parsedReply.plan,
+        pendingQuestions: parsedReply.questions,
+        questionIndex: 0,
+        activePlanningPromptId: "",
+      };
+    });
+  }
+
+  function answerPlanningQuestion(answer: string) {
+    const normalizedAnswer = answer.trim();
+
+    if (!normalizedAnswer || !planningSession) {
+      return;
+    }
+
+    const question = planningSession.pendingQuestions[planningSession.questionIndex];
+
+    if (!question) {
+      return;
+    }
+
+    const answers = [
+      ...planningSession.answers,
+      { question: question.question, answer: normalizedAnswer },
+    ];
+    const nextQuestionIndex = planningSession.questionIndex + 1;
+
+    if (nextQuestionIndex < planningSession.pendingQuestions.length) {
+      setPlanningSession({
+        ...planningSession,
+        answers,
+        questionIndex: nextQuestionIndex,
+      });
+      return;
+    }
+
+    const promptId = createPromptId();
+    const nextPromptPayload: AgentPromptQueueEntry = {
+      promptId,
+      directory: planningSession.directory,
+      prompt: planningSession.originalPrompt,
+      provider: planningSession.provider,
+      model: planningSession.model,
+      reasoning: planningSession.reasoning,
+      planningMode: true,
+      targetedFeaturePaths: planningSession.targetedFeatures.map(
+        (feature) => feature.filePath,
+      ),
+      planningContext: planningSession.currentPlan,
+      planningAnswers: answers,
+      status: "queued",
+      enqueuedAt: Date.now(),
+    };
+
+    setPlanningSession({
+      ...planningSession,
+      answers,
+      pendingQuestions: [],
+      questionIndex: 0,
+      activePlanningPromptId: promptId,
+    });
+    setPromptStatus("Answers saved. Refining the plan.");
+    setAgentPromptQueue((currentQueue) => [...currentQueue, nextPromptPayload]);
+  }
+
+  async function implementPlanningSession() {
+    if (!planningSession || !currentUser || !accessToken) {
+      return;
+    }
+
+    const promptId = createPromptId();
+    const implementationPrompt = buildImplementationPrompt(
+      planningSession.currentPlan,
+      planningSession.answers,
+    );
+    const task: AgentPromptPayload = {
+      promptId,
+      directory: planningSession.directory,
+      prompt: implementationPrompt,
+      provider: planningSession.provider,
+      model: planningSession.model,
+      reasoning: planningSession.reasoning,
+      planningMode: false,
+      targetedFeaturePaths: planningSession.targetedFeatures.map(
+        (feature) => feature.filePath,
+      ),
+    };
+
+    try {
+      await insertAgentTask(
+        supabaseUrl,
+        supabasePublishableKey,
+        accessToken,
+        currentUserId,
+        task,
+      );
+      activePromptId.current = promptId;
+      setPlanningSession(null);
+      setLatestChat({
+        promptId,
+        directory: task.directory,
+        prompt: task.prompt,
+        reply: "",
+        provider: task.provider,
+        model: task.model,
+        reasoning: task.reasoning,
+        planningMode: false,
+        targetedFeaturePaths: task.targetedFeaturePaths,
+      });
+      setPromptStatus("Plan implementation task durably queued.");
+    } catch {
+      setPromptStatus("Unable to queue the plan implementation right now.");
+    }
+  }
+
   function clearAgentChat() {
     clearedAgentChatPrompt.current = latestChat?.promptId ?? activePromptId.current;
     setLatestChat(null);
     setPromptStatus("");
     setAgentPromptMessage("");
+    setPlanningSession(null);
     setIsAgentChatCleared(true);
   }
 
@@ -1693,6 +1887,8 @@ export default function FeatureFilesDashboard({
           reasoning: queueEntry.reasoning,
           planningMode: queueEntry.planningMode,
           targetedFeaturePaths: queueEntry.targetedFeaturePaths,
+          planningContext: queueEntry.planningContext,
+          planningAnswers: queueEntry.planningAnswers,
           prompt: queueEntry.prompt,
         }),
       );
@@ -3303,6 +3499,7 @@ export default function FeatureFilesDashboard({
                 isPlanningMode={isPlanningMode}
                 latestChat={latestChat}
                 onAbandonQueuedAgentPrompt={abandonQueuedAgentPrompt}
+                onAnswerPlanningQuestion={answerPlanningQuestion}
                 onClearDurableTasks={() => setIsConfirmingClearDurableTasks(true)}
                 onConfirmClearDurableTasks={() => void clearDurableTasks()}
                 onUndoClearDurableTasks={() => setIsConfirmingClearDurableTasks(false)}
@@ -3317,6 +3514,7 @@ export default function FeatureFilesDashboard({
                 onSelectModel={selectModel}
                 onSendPrompt={sendAgentPrompt}
                 onOpenFeatureTagSearch={openFeatureTagSearch}
+                onImplementPlan={() => void implementPlanningSession()}
                 durableTasks={durableAgentTasks.map(
                   ({ promptId, prompt, status }) => ({
                     promptId,
@@ -3329,6 +3527,7 @@ export default function FeatureFilesDashboard({
                 isClearingDurableTasks={isClearingDurableTasks}
                 promptQueueStatusText={promptQueueStatusText}
                 promptText={promptText}
+                planningSession={planningSession}
                 selectedModelId={selectedModelId}
                 selectedProvider={selectedProvider}
                 selectedProjectDirectory={selectedProjectDirectory}
@@ -3412,6 +3611,7 @@ export default function FeatureFilesDashboard({
                   isPlanningMode={isPlanningMode}
                   latestChat={latestChat}
                   onAbandonQueuedAgentPrompt={abandonQueuedAgentPrompt}
+                  onAnswerPlanningQuestion={answerPlanningQuestion}
                   onClearDurableTasks={() => setIsConfirmingClearDurableTasks(true)}
                   onConfirmClearDurableTasks={() => void clearDurableTasks()}
                   onUndoClearDurableTasks={() => setIsConfirmingClearDurableTasks(false)}
@@ -3426,6 +3626,7 @@ export default function FeatureFilesDashboard({
                   onSelectModel={selectModel}
                   onSendPrompt={sendAgentPrompt}
                   onOpenFeatureTagSearch={openFeatureTagSearch}
+                  onImplementPlan={() => void implementPlanningSession()}
                   durableTasks={durableAgentTasks.map(
                     ({ promptId, prompt, status }) => ({
                       promptId,
@@ -3438,6 +3639,7 @@ export default function FeatureFilesDashboard({
                   isClearingDurableTasks={isClearingDurableTasks}
                   promptQueueStatusText={promptQueueStatusText}
                   promptText={promptText}
+                  planningSession={planningSession}
                   selectedModelId={selectedModelId}
                   selectedProvider={selectedProvider}
                   selectedProjectDirectory={selectedProjectDirectory}

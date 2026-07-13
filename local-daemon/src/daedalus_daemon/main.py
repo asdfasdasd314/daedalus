@@ -22,13 +22,28 @@ Just give me a markdown file that outlines your plan to implement my request.
 This is NOT the same as a feature file. Feature files may be updated/created as part of the plan, but are not the plan itself.
 
 """
-CURSOR_PLANNING_PROMPT_PREFIX = """You are in Cursor planning mode inside Daedalus.
+PLANNING_PROMPT_SUFFIX = f"""Before finalizing the plan, ask the user only about important implementation details that you cannot reasonably infer from the request or repository context.
 
-Explore and reason through the repository as needed, but do not create, edit, or save a planning document or any other workspace file. Use Cursor's native planning tool to produce the complete implementation plan; Daedalus will extract that plan and display it in chat.
+Questions are optional. Do not ask questions for their own sake; omit them when the plan can proceed with well-reasoned assumptions.
 
-Do not end after an exploration update. Complete the native plan after your investigation.
+If questions are needed, add this Markdown section at the very bottom of the plan:
+
+```md
+## Questions
+
+1. **[question]**:
+   - a. [potential answer]
+   - b. [potential answer]
+   - c. [potential answer]
+```
+
+Try to ask at most three questions and never suggest more than three potential answers.
 
 """
+CURSOR_PLANNING_PROMPT_PREFIX = (
+    f"{PLANNING_PROMPT_PREFIX.rstrip()}\n\n"
+    "Do not try to output the plan to a file.\n\n"
+)
 TARGETED_FEATURE_PATH_REGEX = re.compile(r"^feature_files/[A-Za-z0-9._/-]+\.md$")
 TARGETED_FEATURES_PROMPT_PREFIX = (
     "The following prompt reqeusts changes relevant to the following feature files: {paths}"
@@ -205,13 +220,27 @@ def run_agent_prompt_cycle(
     model = prompt_request.get("model", DEFAULT_CODEX_MODEL)
     reasoning = prompt_request.get("reasoning", DEFAULT_CODEX_REASONING)
     planning_mode = prompt_request.get("planningMode", False)
+    planning_context = prompt_request.get("planningContext", "")
+    planning_answers = prompt_request.get("planningAnswers", [])
     targeted_feature_paths = filter_targeted_feature_paths(
         prompt_request.get("targetedFeaturePaths", []),
     )
     final_prompt = (
-        build_cursor_prompt(prompt, planning_mode, targeted_feature_paths)
+        build_cursor_prompt(
+            prompt,
+            planning_mode,
+            targeted_feature_paths,
+            planning_context,
+            planning_answers,
+        )
         if provider == CURSOR_PROVIDER
-        else build_codex_prompt(prompt, planning_mode, targeted_feature_paths)
+        else build_codex_prompt(
+            prompt,
+            planning_mode,
+            targeted_feature_paths,
+            planning_context,
+            planning_answers,
+        )
     )
     if provider == CURSOR_PROVIDER:
         reply = (
@@ -638,11 +667,20 @@ def build_codex_prompt(
     prompt: str,
     planning_mode: bool,
     targeted_feature_paths: list[str] | None = None,
+    planning_context: str = "",
+    planning_answers: list[dict[str, str]] | None = None,
 ) -> str:
     prompt_sections: list[str] = []
 
     if planning_mode:
         prompt_sections.append(PLANNING_PROMPT_PREFIX.rstrip())
+        prompt_sections.append(PLANNING_PROMPT_SUFFIX.rstrip())
+        refinement_context = build_planning_refinement_context(
+            planning_context,
+            planning_answers,
+        )
+        if refinement_context:
+            prompt_sections.append(refinement_context)
 
     if targeted_feature_paths:
         prompt_sections.append(
@@ -662,11 +700,20 @@ def build_cursor_prompt(
     prompt: str,
     planning_mode: bool,
     targeted_feature_paths: list[str] | None = None,
+    planning_context: str = "",
+    planning_answers: list[dict[str, str]] | None = None,
 ) -> str:
     prompt_sections: list[str] = []
 
     if planning_mode:
         prompt_sections.append(CURSOR_PLANNING_PROMPT_PREFIX.rstrip())
+        prompt_sections.append(PLANNING_PROMPT_SUFFIX.rstrip())
+        refinement_context = build_planning_refinement_context(
+            planning_context,
+            planning_answers,
+        )
+        if refinement_context:
+            prompt_sections.append(refinement_context)
 
     if targeted_feature_paths:
         prompt_sections.append(
@@ -680,6 +727,37 @@ def build_cursor_prompt(
 
     prompt_prefix = "\n\n".join(prompt_sections)
     return f"{prompt_prefix}\n\n{prompt}"
+
+
+def build_planning_refinement_context(
+    planning_context: object,
+    planning_answers: object,
+) -> str:
+    sections: list[str] = []
+
+    if isinstance(planning_context, str) and planning_context.strip():
+        sections.append(
+            "Refine the following current implementation plan using the answers below:\n\n"
+            f"{planning_context.strip()}",
+        )
+
+    answers: list[str] = []
+    if isinstance(planning_answers, list):
+        for item in planning_answers:
+            if not isinstance(item, dict):
+                continue
+            question = item.get("question")
+            answer = item.get("answer")
+            if isinstance(question, str) and isinstance(answer, str):
+                answers.append(f"{len(answers) + 1}. {question} — {answer}")
+
+    if answers:
+        sections.append(
+            "The following questions have been asked alongside their answers:\n\n"
+            + "\n".join(answers),
+        )
+
+    return "\n\n".join(sections)
 
 
 def map_reasoning_for_codex(reasoning: str) -> str:

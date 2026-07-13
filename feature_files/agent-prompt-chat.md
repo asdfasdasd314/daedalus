@@ -91,3 +91,6 @@ HACKING
 - 2026-07-12: Pinned the most recent successful durable-batch integration confirmation above transient chat and task statuses, reloading it independently so it cannot flicker away during polling or after a page reload.
 - 2026-07-12: Replaced the chat feature-scope dropdown with the shared fuzzy finder in tag mode so operators can search and add targeted feature chips.
 - 2026-07-12: Cross-linked agent-task-notifications as the bell inbox that consumes durable-task poll completion signals without owning the poll transport.
+- 2026-07-13: Unified Cursor planning's instruction body with the standard planning prompt while retaining its explicit no-file-output constraint.
+- 2026-07-13: Added a shared optional-questions planning suffix with a Markdown question-and-answer-options template for unresolved critical details.
+- 2026-07-13: Routed planning refinements through the existing direct queue with their current plan and accumulated questionnaire answers.

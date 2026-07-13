@@ -8,6 +8,7 @@ import type {
   TargetedFeature,
 } from "@/lib/agent-chat-cache";
 import type { AgentModelsConfig } from "@/lib/agent-models";
+import type { PlanningSession } from "@/lib/planning-questionnaire";
 import {
   getCompactProjectLabel,
   getProjectLabel,
@@ -42,6 +43,7 @@ type AgentSessionPanelProps = {
   isPlanningMode: boolean;
   latestChat: AgentChatExchange | null;
   onAbandonQueuedAgentPrompt: (promptId: string) => void;
+  onAnswerPlanningQuestion: (answer: string) => void;
   onClearDurableTasks: () => void;
   onClearAgentChat: () => void;
   onConfirmClearDurableTasks: () => void;
@@ -53,6 +55,7 @@ type AgentSessionPanelProps = {
   onSelectedProjectDirectoryChange: (projectDirectory: string) => void;
   onSelectedReasoningChange: (reasoning: string) => void;
   onOpenFeatureTagSearch: () => void;
+  onImplementPlan: () => void;
   onSelectModel: (modelId: string) => void;
   onSendPrompt: () => void;
   onUndoClearDurableTasks: () => void;
@@ -66,6 +69,7 @@ type AgentSessionPanelProps = {
   }>;
   promptQueueStatusText: string;
   promptText: string;
+  planningSession: PlanningSession | null;
   selectedModelId: string;
   selectedProvider: string;
   selectedProjectDirectory: string;
@@ -85,6 +89,7 @@ export default function AgentSessionPanel({
   isPlanningMode,
   latestChat,
   onAbandonQueuedAgentPrompt,
+  onAnswerPlanningQuestion,
   onClearDurableTasks,
   onClearAgentChat,
   onConfirmClearDurableTasks,
@@ -96,6 +101,7 @@ export default function AgentSessionPanel({
   onSelectedProjectDirectoryChange,
   onSelectedReasoningChange,
   onOpenFeatureTagSearch,
+  onImplementPlan,
   onSelectModel,
   onSendPrompt,
   onUndoClearDurableTasks,
@@ -105,6 +111,7 @@ export default function AgentSessionPanel({
   durableTasks,
   promptQueueStatusText,
   promptText,
+  planningSession,
   selectedModelId,
   selectedProvider,
   selectedProjectDirectory,
@@ -128,12 +135,32 @@ export default function AgentSessionPanel({
   const [isMarkdownReplyView, setIsMarkdownReplyView] = useState(true);
   const [copyPromptButtonLabel, setCopyPromptButtonLabel] = useState("Copy");
   const [copyReplyButtonLabel, setCopyReplyButtonLabel] = useState("Copy");
+  const [otherAnswer, setOtherAnswer] = useState("");
+  const [isOtherAnswerOpen, setIsOtherAnswerOpen] = useState(false);
+  const planningQuestion =
+    planningSession?.pendingQuestions[planningSession.questionIndex] ?? null;
+  const planningQuestionIndex = planningSession?.questionIndex ?? 0;
+  const planningQuestionCount = planningSession?.pendingQuestions.length ?? 0;
+  const canImplementPlan = Boolean(
+    latestChat?.planningMode &&
+      latestChat.reply &&
+      planningSession?.currentPlan === latestChat.reply &&
+      !planningQuestion &&
+      !currentPromptQueueItem,
+  );
 
   useEffect(() => {
     setIsMarkdownReplyView(true);
     setCopyPromptButtonLabel("Copy");
     setCopyReplyButtonLabel("Copy");
+    setOtherAnswer("");
+    setIsOtherAnswerOpen(false);
   }, [latestChat?.prompt, latestChat?.reply, isAgentChatCleared]);
+
+  useEffect(() => {
+    setOtherAnswer("");
+    setIsOtherAnswerOpen(false);
+  }, [planningSession?.questionIndex]);
 
   function copyUserPrompt() {
     if (!latestChat?.prompt) {
@@ -558,6 +585,62 @@ export default function AgentSessionPanel({
                 </button>
               ) : null}
             </div>
+            {planningQuestion ? (
+              <div className="w-full max-w-[19rem] rounded-[1.5rem] border border-cyan-300/25 bg-cyan-300/10 p-4 text-sm text-slate-100 sm:max-w-[85%]">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan-100">
+                  Question {planningQuestionIndex + 1} of {planningQuestionCount}
+                </p>
+                <p className="mt-2 text-base font-semibold text-white">
+                  {planningQuestion.question}
+                </p>
+                <div className="mt-3 grid gap-2">
+                  {planningQuestion.options.map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      onClick={() => onAnswerPlanningQuestion(option)}
+                      className="rounded-xl border border-white/15 bg-slate-950/60 px-3 py-2 text-left transition hover:border-cyan-200/60 hover:bg-slate-900"
+                    >
+                      {option}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setIsOtherAnswerOpen(true)}
+                    className="rounded-xl border border-dashed border-cyan-200/45 px-3 py-2 text-left text-cyan-100 transition hover:bg-cyan-200/10"
+                  >
+                    Other
+                  </button>
+                </div>
+                {isOtherAnswerOpen ? (
+                  <div className="mt-3 grid gap-2">
+                    <input
+                      value={otherAnswer}
+                      onChange={(event) => setOtherAnswer(event.target.value)}
+                      placeholder="Enter your answer"
+                      className="rounded-xl border border-white/15 bg-slate-950/70 px-3 py-2 text-sm text-white outline-none placeholder:text-slate-500"
+                    />
+                    <button
+                      type="button"
+                      disabled={!otherAnswer.trim()}
+                      onClick={() => onAnswerPlanningQuestion(otherAnswer)}
+                      className="justify-self-start rounded-full bg-cyan-300 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
+                    >
+                      Continue
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+            {canImplementPlan ? (
+              <button
+                type="button"
+                onClick={onImplementPlan}
+                className="rounded-full bg-cyan-300 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-200"
+              >
+                Implement Plan
+              </button>
+            ) : null}
           </div>
         </div>
       ) : null}

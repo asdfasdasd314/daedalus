@@ -27,6 +27,7 @@ from daedalus_daemon import (
 from daedalus_daemon.main import (
     CURSOR_PLANNING_PROMPT_PREFIX,
     PLANNING_PROMPT_PREFIX,
+    PLANNING_PROMPT_SUFFIX,
     TARGETED_FEATURES_PROMPT_PREFIX,
     apply_parameter_file_update,
     build_agent_prompt_state_message,
@@ -34,6 +35,7 @@ from daedalus_daemon.main import (
     build_parameter_file_update_state_message,
     build_codex_prompt,
     build_cursor_prompt,
+    build_planning_refinement_context,
     filter_targeted_feature_paths,
     update_parameter_variable_in_toml,
 )
@@ -318,7 +320,11 @@ class BuildCodexPromptTests(unittest.TestCase):
     def test_builds_planning_only_prompt(self):
         self.assertEqual(
             build_codex_prompt("Build the feature", True, []),
-            f"{PLANNING_PROMPT_PREFIX}Build the feature",
+            (
+                f"{PLANNING_PROMPT_PREFIX.rstrip()}\n\n"
+                f"{PLANNING_PROMPT_SUFFIX.rstrip()}\n\n"
+                "Build the feature"
+            ),
         )
 
     def test_builds_targeted_only_prompt(self):
@@ -344,10 +350,26 @@ class BuildCodexPromptTests(unittest.TestCase):
             build_codex_prompt("Build the feature", True, targeted_paths),
             (
                 f"{PLANNING_PROMPT_PREFIX.rstrip()}\n\n"
+                f"{PLANNING_PROMPT_SUFFIX.rstrip()}\n\n"
                 f"{TARGETED_FEATURES_PROMPT_PREFIX.format(paths=targeted_paths[0])}\n\n"
                 "Build the feature"
             ),
         )
+
+    def test_adds_planning_refinement_context_for_codex(self):
+        prompt = build_codex_prompt(
+            "Build the feature",
+            True,
+            planning_context="# Existing plan",
+            planning_answers=[{"question": "Use cache?", "answer": "Yes"}],
+        )
+
+        self.assertIn("Refine the following current implementation plan", prompt)
+        self.assertIn("# Existing plan", prompt)
+        self.assertIn("1. Use cache? — Yes", prompt)
+
+    def test_omits_empty_planning_refinement_context(self):
+        self.assertEqual(build_planning_refinement_context("", []), "")
 
 
 class FilterTargetedFeaturePathsTests(unittest.TestCase):
@@ -908,12 +930,23 @@ class RunCursorExecTests(unittest.TestCase):
         )
         self.assertEqual(reply, "# Fallback plan")
 
-    def test_builds_cursor_only_plan_prompt_with_native_plan_instruction(self):
-        prompt = build_cursor_prompt("Build the feature", True)
+    def test_builds_cursor_plan_prompt_from_shared_prefix_with_file_restriction(self):
+        prompt = build_cursor_prompt(
+            "Build the feature",
+            True,
+            planning_context="# Existing plan",
+            planning_answers=[{"question": "Use cache?", "answer": "Yes"}],
+        )
 
-        self.assertTrue(prompt.startswith(CURSOR_PLANNING_PROMPT_PREFIX.rstrip()))
-        self.assertIn("do not create, edit, or save a planning document", prompt)
-        self.assertIn("native planning tool", prompt)
+        self.assertEqual(
+            CURSOR_PLANNING_PROMPT_PREFIX,
+            f"{PLANNING_PROMPT_PREFIX.rstrip()}\n\n"
+            "Do not try to output the plan to a file.\n\n",
+        )
+        self.assertTrue(prompt.startswith(PLANNING_PROMPT_PREFIX.rstrip()))
+        self.assertIn(PLANNING_PROMPT_SUFFIX.rstrip(), prompt)
+        self.assertIn("# Existing plan", prompt)
+        self.assertIn("1. Use cache? — Yes", prompt)
         self.assertTrue(prompt.endswith("Build the feature"))
 
     def test_returns_actionable_response_for_invalid_cursor_json(self):

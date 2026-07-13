@@ -31,3 +31,6 @@ HACKING
 - 2026-07-11: Switched Cursor-only planning to full stream-json delivery while preserving raw stdout in daemon diagnostics.
 - 2026-07-11: Extracted Cursor native plans from `createPlanToolCall` events so Daedalus chat receives the actual Markdown plan instead of progress narration.
 - 2026-07-11: Returned to HACKING mode and removed Cursor stdout logging after confirming native-plan extraction.
+- 2026-07-13: Made Cursor planning reuse the standard planning instruction body and limited its provider-specific addition to forbidding plan-file output.
+- 2026-07-13: Applied the shared optional-questions planning suffix to Cursor plans so clarifications use the same Markdown format as Codex plans.
+- 2026-07-13: Added shared refinement context so Cursor planning receives the prior plan and cumulative questionnaire answers.
