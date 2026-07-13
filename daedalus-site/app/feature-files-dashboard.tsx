@@ -3,6 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient, type Session } from "@supabase/supabase-js";
 import AgentSessionPanel from "./agent-session-panel";
+import AgentTaskNotifications, {
+  type AgentTaskNotification,
+} from "./agent-task-notifications";
 import GitSyncPanel from "./git-sync-panel";
 import type { GitSyncResult } from "./git-sync-types";
 import { parseGitSyncRowMessage } from "./git-sync-utils";
@@ -125,6 +128,7 @@ const FINALIZED_AGENT_TASK_STATUSES: AgentPromptQueueStatus[] = [
   "failed",
   "blocked",
 ];
+const MAX_AGENT_TASK_NOTIFICATIONS = 50;
 
 type AgentPromptPayload = {
   promptId: string;
@@ -257,6 +261,11 @@ export default function FeatureFilesDashboard({
     useState<SelectedFeatureSession | null>(null);
   const [venturesDrawerOpen, setVenturesDrawerOpen] = useState(false);
   const [isWorkspaceMenuOpen, setIsWorkspaceMenuOpen] = useState(false);
+  const [isAgentTaskNotificationsOpen, setIsAgentTaskNotificationsOpen] =
+    useState(false);
+  const [agentTaskNotifications, setAgentTaskNotifications] = useState<
+    AgentTaskNotification[]
+  >([]);
   const [gitSyncCommitMessage, setGitSyncCommitMessage] = useState("");
   const [gitSyncProjectDirectory, setGitSyncProjectDirectory] = useState(
     DEFAULT_PROJECT_DIRECTORY,
@@ -313,6 +322,10 @@ export default function FeatureFilesDashboard({
   const durableTaskPollUserIdRef = useRef("");
   const graphZoomProfileRef = useRef("");
   const workspaceMenuRef = useRef<HTMLDivElement | null>(null);
+  const previousDurableTaskStatusesRef = useRef<
+    Map<string, AgentPromptQueueStatus>
+  >(new Map());
+  const hasSeededDurableTaskStatusesRef = useRef(false);
   const latestChatRef = useRef<AgentChatExchange | null>(null);
   const currentUser = session?.user ?? null;
   const currentUserId = currentUser?.id ?? "";
@@ -585,6 +598,10 @@ export default function FeatureFilesDashboard({
     setDurableTaskUserId("");
     setFinalizedDurableTaskCount(0);
     setLastIntegratedBatchStatus("");
+    setAgentTaskNotifications([]);
+    setIsAgentTaskNotificationsOpen(false);
+    previousDurableTaskStatusesRef.current = new Map();
+    hasSeededDurableTaskStatusesRef.current = false;
   }, [currentUserId]);
 
   useEffect(() => {
@@ -636,6 +653,57 @@ export default function FeatureFilesDashboard({
         }
 
         const durableQueue = rows.map(mapAgentTaskRowToQueueEntry);
+
+        if (!hasSeededDurableTaskStatusesRef.current) {
+          for (const entry of durableQueue) {
+            previousDurableTaskStatusesRef.current.set(
+              entry.promptId,
+              entry.status,
+            );
+          }
+          hasSeededDurableTaskStatusesRef.current = true;
+        } else {
+          const nextNotifications: AgentTaskNotification[] = [];
+
+          for (const entry of durableQueue) {
+            const previousStatus = previousDurableTaskStatusesRef.current.get(
+              entry.promptId,
+            );
+
+            if (
+              isFinalizedAgentTaskStatus(entry.status) &&
+              previousStatus !== entry.status &&
+              (previousStatus === undefined ||
+                !isFinalizedAgentTaskStatus(previousStatus))
+            ) {
+              nextNotifications.push({
+                id: crypto.randomUUID(),
+                taskId: entry.promptId,
+                status: entry.status as AgentTaskNotification["status"],
+                prompt: entry.prompt,
+                repository: entry.directory,
+                error: entry.error,
+                createdAt: Date.now(),
+                read: false,
+              });
+            }
+
+            previousDurableTaskStatusesRef.current.set(
+              entry.promptId,
+              entry.status,
+            );
+          }
+
+          if (nextNotifications.length > 0) {
+            setAgentTaskNotifications((currentNotifications) =>
+              [...nextNotifications.reverse(), ...currentNotifications].slice(
+                0,
+                MAX_AGENT_TASK_NOTIFICATIONS,
+              ),
+            );
+          }
+        }
+
         setFinalizedDurableTaskCount(
           rows.filter((row) => isFinalizedAgentTaskStatus(row.status)).length,
         );
@@ -1730,11 +1798,32 @@ export default function FeatureFilesDashboard({
   }
 
   function toggleWorkspaceMenu() {
+    setIsAgentTaskNotificationsOpen(false);
     setIsWorkspaceMenuOpen((currentValue) => !currentValue);
   }
 
   function closeWorkspaceMenu() {
     setIsWorkspaceMenuOpen(false);
+  }
+
+  function handleAgentTaskNotificationsOpenChange(open: boolean) {
+    if (open) {
+      setIsWorkspaceMenuOpen(false);
+    }
+
+    setIsAgentTaskNotificationsOpen(open);
+  }
+
+  function markAgentTaskNotificationsRead() {
+    setAgentTaskNotifications((currentNotifications) =>
+      currentNotifications.map((item) =>
+        item.read ? item : { ...item, read: true },
+      ),
+    );
+  }
+
+  function clearAgentTaskNotifications() {
+    setAgentTaskNotifications([]);
   }
 
   function openFeatureSearch() {
@@ -2316,117 +2405,126 @@ export default function FeatureFilesDashboard({
 
       <div className="pointer-events-none absolute inset-0">
         <div className="pointer-events-auto absolute right-4 top-4 z-20 flex flex-col items-end gap-2">
-          <div ref={workspaceMenuRef} className="relative">
-            <button
-              type="button"
-              onClick={toggleWorkspaceMenu}
-              aria-expanded={isWorkspaceMenuOpen}
-              aria-haspopup="menu"
-              aria-label="Workspace menu"
-              title="Workspace menu"
-              className={`inline-flex h-11 w-11 items-center justify-center rounded-full border shadow-[0_20px_60px_rgba(2,6,23,0.32)] transition sm:h-12 sm:w-12 ${
-                isWorkspaceMenuOpen
-                  ? "border-cyan-300/30 bg-cyan-200 text-slate-950 hover:bg-cyan-100"
-                  : "border-white/10 bg-white text-slate-950 hover:bg-slate-200"
-              }`}
-            >
-              <svg
-                aria-hidden="true"
-                className="h-5 w-5"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
+          <div className="flex items-center gap-2">
+            <AgentTaskNotifications
+              notifications={agentTaskNotifications}
+              isOpen={isAgentTaskNotificationsOpen}
+              onOpenChange={handleAgentTaskNotificationsOpenChange}
+              onMarkAllRead={markAgentTaskNotificationsRead}
+              onClearAll={clearAgentTaskNotifications}
+            />
+            <div ref={workspaceMenuRef} className="relative">
+              <button
+                type="button"
+                onClick={toggleWorkspaceMenu}
+                aria-expanded={isWorkspaceMenuOpen}
+                aria-haspopup="menu"
+                aria-label="Workspace menu"
+                title="Workspace menu"
+                className={`inline-flex h-11 w-11 items-center justify-center rounded-full border shadow-[0_20px_60px_rgba(2,6,23,0.32)] transition sm:h-12 sm:w-12 ${
+                  isWorkspaceMenuOpen
+                    ? "border-cyan-300/30 bg-cyan-200 text-slate-950 hover:bg-cyan-100"
+                    : "border-white/10 bg-white text-slate-950 hover:bg-slate-200"
+                }`}
               >
-                <path d="M5 7h14" />
-                <path d="M5 12h14" />
-                <path d="M5 17h14" />
-              </svg>
-            </button>
+                <svg
+                  aria-hidden="true"
+                  className="h-5 w-5"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                >
+                  <path d="M5 7h14" />
+                  <path d="M5 12h14" />
+                  <path d="M5 17h14" />
+                </svg>
+              </button>
 
-            {isWorkspaceMenuOpen ? (
-              <div
-                role="menu"
-                aria-label="Workspace controls"
-                className="absolute right-0 top-full mt-2 w-[min(16rem,calc(100vw-2rem))] overflow-hidden rounded-[1.35rem] border border-white/10 bg-slate-950/96 shadow-[0_24px_80px_rgba(2,6,23,0.55)] backdrop-blur"
-              >
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={openFeatureSearch}
-                  className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-semibold text-slate-100 transition hover:bg-white/6"
+              {isWorkspaceMenuOpen ? (
+                <div
+                  role="menu"
+                  aria-label="Workspace controls"
+                  className="absolute right-0 top-full mt-2 w-[min(16rem,calc(100vw-2rem))] overflow-hidden rounded-[1.35rem] border border-white/10 bg-slate-950/96 shadow-[0_24px_80px_rgba(2,6,23,0.55)] backdrop-blur"
                 >
-                  <span>Search features</span>
-                  <span className="text-[11px] uppercase tracking-[0.2em] text-slate-400">
-                    ⌘K
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={handleRefreshDevEnvironment}
-                  disabled={isLoadingFeatureFiles || isLoadingParameterFiles}
-                  className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-semibold text-slate-100 transition hover:bg-white/6 disabled:cursor-not-allowed disabled:text-slate-500"
-                >
-                  <span>Refresh dev environment</span>
-                  {isLoadingFeatureFiles || isLoadingParameterFiles ? (
-                    <span className="text-[11px] uppercase tracking-[0.2em] text-cyan-200">
-                      Loading
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={openFeatureSearch}
+                    className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-semibold text-slate-100 transition hover:bg-white/6"
+                  >
+                    <span>Search features</span>
+                    <span className="text-[11px] uppercase tracking-[0.2em] text-slate-400">
+                      ⌘K
                     </span>
-                  ) : null}
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={handleToggleGraphPhysics}
-                  className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-semibold text-slate-100 transition hover:bg-white/6"
-                >
-                  <span>{isGraphPhysicsEnabled ? "Physics on" : "Physics off"}</span>
-                  <span className="text-[11px] uppercase tracking-[0.2em] text-slate-400">
-                    Toggle
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  role="menuitemcheckbox"
-                  aria-checked={isGraphZoomSliderVisible}
-                  onClick={handleToggleGraphZoomSlider}
-                  className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-semibold text-slate-100 transition hover:bg-white/6"
-                >
-                  <span>
-                    {isGraphZoomSliderVisible
-                      ? "Zoom slider on"
-                      : "Zoom slider off"}
-                  </span>
-                  <span className="text-[11px] uppercase tracking-[0.2em] text-slate-400">
-                    {isGraphZoomSliderVisible ? "Visible" : "Hidden"}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={openGitSyncOverlay}
-                  className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-semibold text-slate-100 transition hover:bg-white/6"
-                >
-                  <span>Git Sync</span>
-                  <span className="text-[11px] uppercase tracking-[0.2em] text-slate-400">
-                    Manual
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={handleSignOutRequest}
-                  className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-semibold text-slate-100 transition hover:bg-white/6"
-                >
-                  <span>Sign out</span>
-                  <span className="text-[11px] uppercase tracking-[0.2em] text-slate-400">
-                    Session
-                  </span>
-                </button>
-              </div>
-            ) : null}
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={handleRefreshDevEnvironment}
+                    disabled={isLoadingFeatureFiles || isLoadingParameterFiles}
+                    className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-semibold text-slate-100 transition hover:bg-white/6 disabled:cursor-not-allowed disabled:text-slate-500"
+                  >
+                    <span>Refresh dev environment</span>
+                    {isLoadingFeatureFiles || isLoadingParameterFiles ? (
+                      <span className="text-[11px] uppercase tracking-[0.2em] text-cyan-200">
+                        Loading
+                      </span>
+                    ) : null}
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={handleToggleGraphPhysics}
+                    className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-semibold text-slate-100 transition hover:bg-white/6"
+                  >
+                    <span>{isGraphPhysicsEnabled ? "Physics on" : "Physics off"}</span>
+                    <span className="text-[11px] uppercase tracking-[0.2em] text-slate-400">
+                      Toggle
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitemcheckbox"
+                    aria-checked={isGraphZoomSliderVisible}
+                    onClick={handleToggleGraphZoomSlider}
+                    className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-semibold text-slate-100 transition hover:bg-white/6"
+                  >
+                    <span>
+                      {isGraphZoomSliderVisible
+                        ? "Zoom slider on"
+                        : "Zoom slider off"}
+                    </span>
+                    <span className="text-[11px] uppercase tracking-[0.2em] text-slate-400">
+                      {isGraphZoomSliderVisible ? "Visible" : "Hidden"}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={openGitSyncOverlay}
+                    className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-semibold text-slate-100 transition hover:bg-white/6"
+                  >
+                    <span>Git Sync</span>
+                    <span className="text-[11px] uppercase tracking-[0.2em] text-slate-400">
+                      Manual
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={handleSignOutRequest}
+                    className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-semibold text-slate-100 transition hover:bg-white/6"
+                  >
+                    <span>Sign out</span>
+                    <span className="text-[11px] uppercase tracking-[0.2em] text-slate-400">
+                      Session
+                    </span>
+                  </button>
+                </div>
+              ) : null}
+            </div>
           </div>
 
           {error ? (
