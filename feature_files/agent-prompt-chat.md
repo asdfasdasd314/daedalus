@@ -11,6 +11,7 @@ The agent prompt chat adds a reusable prompt composer to the existing dashboard 
 - **Model Controls**: Codex model and reasoning options are stored in frontend-local JSON, then sent with each prompt payload.
 - **Planning Mode**: Planning mode wraps the user prompt with a fixed instruction preamble before daemon execution.
 - **Targeted Feature Scope**: The chat panel keeps a separate `Targeted Features` chip row for the next outbound prompt only, and each prompt now carries a `targetedFeaturePaths` list of project-relative `feature_files/*.md` paths.
+- **Feature Tag Fuzzy Finder**: The feature-scope control opens the shared FeatureSearchDialog in tag mode (defaulting to the selected project, excluding already tagged paths) instead of a plain dropdown.
 - **Execution Loop**: Planning prompts keep the direct `agent_prompt` message path, while agent-mode prompts become durable `agent_tasks` consumed by the Git worktree orchestrator; both return the latest prompt/reply pair through `daemon_payloads`.
 - **Chat Progress**: The dashboard watches the `agent_prompt` row so it can show daemon pickup and completion updates while the reply is still being generated.
 - **Pinned Orchestrator Completion**: The dashboard independently loads the latest successful-integration event from `daemon_events` and gives that confirmation priority over transient prompt, task, and warning statuses, so the last integrated batch stays visible across polls and reloads.
@@ -29,7 +30,9 @@ The agent prompt chat adds a reusable prompt composer to the existing dashboard 
 
 ## Relevant Files
 - `daedalus-site/app/feature-files-dashboard.tsx`: Workspace shell that mounts the shared chat session inside the new-feature and feature-detail overlays.
-- `daedalus-site/app/agent-session-panel.tsx`: Shared prompt composer UI with project/model/planning controls, feature tagging, durable-task clear confirmation, retry actions, and the latest chat transcript.
+- `daedalus-site/app/agent-session-panel.tsx`: Shared prompt composer UI with project/model/planning controls, fuzzy feature tagging, durable-task clear confirmation, retry actions, and the latest chat transcript.
+- `daedalus-site/app/feature-search-dialog.tsx`: Shared fuzzy finder opened in tag mode from the chat feature-scope control.
+- `feature_files/feature-search-fuzzy-finder.md`: Owns the Fuse-backed search dialog reused for chat feature tagging.
 - `daedalus-site/package.json`: Declares the safe Markdown renderer and GitHub-flavored Markdown plugin used by the shared reply visualizer.
 - `shared/database/migrations/008_auth_scoped_daedalus.sql`: Adds the user-owned daemon payload row used for latest chat replies.
 - `daedalus-site/lib/agent-models.ts`: Server helper that loads the frontend-owned model configuration for the dashboard.
@@ -85,3 +88,4 @@ HACKING
 - 2026-07-12: Delayed durable-task window rendering until its current-user query completes, retained completed rows in the full task list, and made GPT-5.6 Terra with medium reasoning the default Codex selection.
 - 2026-07-12: Split durable agent tasks into dedicated poll state with single-flight stale-response guarding so overlapping Supabase polls can no longer blink the task panel.
 - 2026-07-12: Pinned the most recent successful durable-batch integration confirmation above transient chat and task statuses, reloading it independently so it cannot flicker away during polling or after a page reload.
+- 2026-07-12: Replaced the chat feature-scope dropdown with the shared fuzzy finder in tag mode so operators can search and add targeted feature chips.
