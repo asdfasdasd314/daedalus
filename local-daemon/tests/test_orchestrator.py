@@ -13,7 +13,9 @@ from daedalus_daemon.orchestrator import (
     build_task_prompt,
     commit_worktree_changes,
     create_task_worktree,
+    is_clean_worktree,
     load_worktree_settings,
+    remove_empty_worktree_directories,
     run_verification,
     verification_commands_for_worktree,
 )
@@ -81,6 +83,23 @@ class WorktreeTests(unittest.TestCase):
 
         self.assertTrue(committed)
         self.assertEqual(mock_process.call_count, 2)
+
+    @patch("daedalus_daemon.orchestrator.git_output", return_value="")
+    def test_clean_failed_worktree_is_reclaimable(self, _mock_git_output):
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertTrue(is_clean_worktree(directory))
+
+    def test_removes_empty_daedalus_worktree_directories(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Path(directory) / "project"
+            repository.mkdir()
+            root = Path(directory) / ".daedalus-worktrees" / "project"
+            root.mkdir(parents=True)
+
+            remove_empty_worktree_directories(str(repository))
+
+            self.assertFalse(root.exists())
+            self.assertFalse(root.parent.exists())
 
 
 class VerificationTests(unittest.TestCase):

@@ -49,6 +49,7 @@ class GitWorktreeOrchestrator:
 
         tasks = list_agent_tasks(self.config)
         batches = list_orchestration_batches(self.config)
+        self._cleanup_reclaimable_worktrees(tasks, batches)
         repositories = sorted({str(task["repository"]) for task in tasks})
 
         for repository in repositories:
@@ -83,6 +84,34 @@ class GitWorktreeOrchestrator:
                         str(error),
                         task_id=str(first["id"]),
                     )
+
+    def _cleanup_reclaimable_worktrees(
+        self, tasks: list[dict], batches: list[dict]
+    ) -> None:
+        repositories = {str(task["repository"]) for task in tasks}
+        repositories.update(str(batch["repository"]) for batch in batches)
+
+        for task in tasks:
+            worktree_path = str(task.get("worktree_path") or "")
+            if not worktree_path:
+                continue
+            if task["status"] == "completed" and Path(worktree_path).is_dir():
+                remove_worktree(str(task["repository"]), worktree_path)
+            elif task["status"] == "failed" and is_clean_worktree(worktree_path):
+                remove_worktree(str(task["repository"]), worktree_path)
+
+        for batch in batches:
+            worktree_path = str(batch.get("integration_worktree_path") or "")
+            if (
+                batch["status"] == "completed"
+                and worktree_path
+                and Path(worktree_path).is_dir()
+            ):
+                remove_worktree(str(batch["repository"]), worktree_path)
+
+        for repository in repositories:
+            prune_worktrees(repository)
+            remove_empty_worktree_directories(repository)
 
     def _recover_interrupted_work(self, tasks: list[dict], batches: list[dict]) -> None:
         interrupted_task_ids: set[str] = set()
@@ -685,15 +714,38 @@ def validate_primary_worktree(repository: str, primary_branch: str) -> None:
 
 
 def worktree_root(repository: str) -> Path:
-    root = Path(repository).resolve().parent / ".daedalus-worktrees" / Path(repository).name
+    root = worktree_root_path(repository)
     root.mkdir(parents=True, exist_ok=True)
     return root
+
+
+def worktree_root_path(repository: str) -> Path:
+    return Path(repository).resolve().parent / ".daedalus-worktrees" / Path(repository).name
 
 
 def remove_worktree(repository: str, worktree_path: str) -> None:
     if not worktree_path:
         return
     run_process(repository, ["git", "worktree", "remove", worktree_path])
+
+
+def is_clean_worktree(worktree_path: str) -> bool:
+    return Path(worktree_path).is_dir() and not git_output(
+        worktree_path, ["status", "--porcelain"]
+    )
+
+
+def prune_worktrees(repository: str) -> None:
+    run_process(repository, ["git", "worktree", "prune"])
+
+
+def remove_empty_worktree_directories(repository: str) -> None:
+    root = worktree_root_path(repository)
+    if root.is_dir() and not any(root.iterdir()):
+        root.rmdir()
+    parent = root.parent
+    if parent.is_dir() and not any(parent.iterdir()):
+        parent.rmdir()
 
 
 def commit_worktree_changes(directory: str, message: str) -> bool:

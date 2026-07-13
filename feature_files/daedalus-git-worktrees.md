@@ -8,6 +8,7 @@ Daedalus Git Worktrees isolates agent-mode prompts on task branches and uses a d
 - **Central Configuration**: Scheduler, resolver, branch, and verification settings are loaded once from Daedalus's feature-owned parameter file rather than requiring configuration files in managed repositories.
 - **Durable Progress**: The daemon records task claim, agent-start, and verification events so agent-mode work is observable without relying on the legacy single-prompt channel.
 - **Daemon-Owned Commits**: When an agent sandbox cannot reach Git's shared worktree metadata, the daemon stages and commits the completed isolated changes before verification.
+- **Reclaimable Workspaces**: Completed worktrees and clean failed worktrees are removed on later daemon cycles; dirty failures and blocked integrations remain available for recovery.
 - **Task Repair Loop**: Individual verification suites receive up to three total attempts in the same isolated worktree, with later agent repairs informed by the captured failure before a durable terminal error is reported.
 - **Base-State Cohorts**: Tasks admitted from the same `main` commit are verified independently and integrated in submission order after the cohort fills or its quiet window expires.
 - **Safe Promotion**: Combined work is tested on an integration branch and local `main` advances only by a verified fast-forward; no remote push occurs.
@@ -37,3 +38,4 @@ HACKING
 - 2026-07-12: Added a final info event after successful batch promotion so the UI receives a durable orchestrator-completed notification.
 - 2026-07-12: Delivered the dashboard Git Sync workflow with daemon-side commit and pull/push execution, structured step output, and request-scoped frontend polling.
 - 2026-07-12: Moved manual Git Sync ownership into its own feature record so worktree orchestration remains scoped to durable agent scheduling and integration.
+- 2026-07-12: Reclaimed completed and clean failed worktrees after daemon interruptions while excluding the Daedalus workspace root from project scans.

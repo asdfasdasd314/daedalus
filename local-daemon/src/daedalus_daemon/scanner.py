@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 
@@ -19,7 +20,7 @@ def scan_project_files(
     projects: dict[str, list[dict[str, str]]] = {}
 
     project_dirs = sorted(
-        (path for path in scan_root.rglob(directory_name) if path.is_dir()),
+        find_project_directories(scan_root, directory_name),
         key=lambda path: str(path),
     )
 
@@ -48,6 +49,19 @@ def scan_project_files(
             projects[project_root] = file_records
 
     return projects
+
+
+def find_project_directories(scan_root: Path, directory_name: str) -> list[Path]:
+    project_dirs: list[Path] = []
+
+    for current_root, directory_names, _file_names in os.walk(scan_root):
+        directory_names[:] = sorted(
+            name for name in directory_names if name != ".daedalus-worktrees"
+        )
+        if directory_name in directory_names:
+            project_dirs.append(Path(current_root) / directory_name)
+
+    return project_dirs
 
 
 def is_linked_git_worktree(project_root: Path) -> bool:
