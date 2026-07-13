@@ -29,3 +29,5 @@ HACKING
 - 2026-07-13: Updated daemon configuration fixtures to include the required execution-system parameters and its exposed runtime settings.
 - 2026-07-13: Aligned the feature execution supervisor cycle signature with the daemon's shared config-passing cycle runner to prevent repeated invocation errors.
 - 2026-07-13: Replaced configurable execution commands with daemon-validated Python entry points and a parameter-file-backed picker.
+- 2026-07-13: Normalized execution project roots before containment checks so valid entry points resolve correctly in temporary and symlinked workspaces.
+- 2026-07-13: Preserved the configured project-relative entry-point spelling after canonical containment validation for stable Python command previews.

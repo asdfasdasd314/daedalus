@@ -20,6 +20,7 @@ def paired_parameter_file_path(feature_file_path: str) -> str:
 
 
 def resolve_inside_project(project_root: Path, relative_path: str) -> Path:
+    project_root = project_root.resolve()
     normalized = relative_path.replace("\\", "/").removeprefix("./")
     candidate = (project_root / normalized).resolve()
     if candidate == project_root or project_root not in candidate.parents:
@@ -34,10 +35,11 @@ def validate_execution_entry_point(project_root: Path, parameter_file: Path) -> 
     entry_point = execution.get("entry_point") if isinstance(execution, dict) else None
     if not isinstance(entry_point, str) or not entry_point.strip():
         raise ValueError("Parameter file must declare a nonblank [execution] entry_point.")
-    entry_point_file = resolve_inside_project(project_root, entry_point.replace("\\", "/").removeprefix("./"))
-    if not entry_point_file.is_file():
+    normalized_entry_point = entry_point.replace("\\", "/").removeprefix("./")
+    resolved_entry_point_file = resolve_inside_project(project_root, normalized_entry_point)
+    if not resolved_entry_point_file.is_file():
         raise ValueError("execution.entry_point must name an existing regular file inside the project.")
-    return entry_point_file, ["python", str(entry_point_file.relative_to(project_root))]
+    return project_root / normalized_entry_point, ["python", normalized_entry_point]
 
 
 def validate_execution_request(run: dict, scanned_projects: dict[str, list[dict[str, str]]]) -> tuple[Path, Path, Path, list[str]]:
