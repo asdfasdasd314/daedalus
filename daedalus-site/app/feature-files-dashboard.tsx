@@ -129,12 +129,14 @@ type AgentPromptQueueStatus =
   | "blocked"
   | "completed"
   | "failed"
+  | "cancelled"
   | "stalled";
 
 const FINALIZED_AGENT_TASK_STATUSES: AgentPromptQueueStatus[] = [
   "completed",
   "failed",
   "blocked",
+  "cancelled",
 ];
 const MAX_AGENT_TASK_NOTIFICATIONS = 50;
 
@@ -158,6 +160,7 @@ type AgentPromptQueueEntry = AgentPromptPayload & {
   completedAt?: number;
   error?: string;
   verificationAttempts?: number;
+  cancelRequested?: boolean;
 };
 
 type AgentTaskRow = {
@@ -176,6 +179,8 @@ type AgentTaskRow = {
   completed_at: string | null;
   error: string;
   verification_attempts: number;
+  cancel_requested?: boolean;
+  message?: string;
 };
 
 type DaemonEventRow = {
@@ -715,6 +720,7 @@ export default function FeatureFilesDashboard({
         }
 
         const durableQueue = rows.map(mapAgentTaskRowToQueueEntry);
+        const reviewRows = rows.filter((row) => row.message === CLIENT_REVIEW);
 
         if (!hasSeededDurableTaskStatusesRef.current) {
           for (const entry of durableQueue) {
@@ -784,7 +790,7 @@ export default function FeatureFilesDashboard({
           setPromptStatus(`Daemon: ${latestEvent.content}`);
         }
         await Promise.all([
-          ...rows.map((row) => completeAgentTaskReview(
+          ...reviewRows.map((row) => completeAgentTaskReview(
             supabaseUrl, supabasePublishableKey, accessToken, pollUserId, row.id,
           )),
           ...(latestEvent ? [completeDaemonEventReview(
@@ -1631,6 +1637,10 @@ export default function FeatureFilesDashboard({
         nextPromptPayload,
       );
       activePromptId.current = promptId;
+      setDurableAgentTasks((currentTasks) => [
+        ...currentTasks,
+        nextPromptPayload,
+      ]);
       setLatestChat({
         promptId,
         directory: nextPromptPayload.directory,
@@ -1759,6 +1769,14 @@ export default function FeatureFilesDashboard({
       );
       activePromptId.current = promptId;
       setPlanningSession(null);
+      setDurableAgentTasks((currentTasks) => [
+        ...currentTasks,
+        {
+          ...task,
+          status: "queued",
+          enqueuedAt: Date.now(),
+        },
+      ]);
       setLatestChat({
         promptId,
         directory: task.directory,
@@ -2592,6 +2610,40 @@ export default function FeatureFilesDashboard({
       setPromptStatus("Unable to clear durable agent tasks right now.");
     } finally {
       setIsClearingDurableTasks(false);
+    }
+  }
+
+  async function cancelDurableTask(promptId: string) {
+    if (!currentUser || !accessToken) {
+      return;
+    }
+
+    setDurableAgentTasks((currentTasks) =>
+      currentTasks.map((task) =>
+        task.promptId === promptId
+          ? { ...task, cancelRequested: true }
+          : task,
+      ),
+    );
+    setPromptStatus("Cancel requested.");
+
+    try {
+      await requestAgentTaskCancel(
+        supabaseUrl,
+        supabasePublishableKey,
+        accessToken,
+        currentUserId,
+        promptId,
+      );
+    } catch {
+      setDurableAgentTasks((currentTasks) =>
+        currentTasks.map((task) =>
+          task.promptId === promptId
+            ? { ...task, cancelRequested: false }
+            : task,
+        ),
+      );
+      setPromptStatus("Unable to cancel the agent task right now.");
     }
   }
 
@@ -3499,6 +3551,7 @@ export default function FeatureFilesDashboard({
                 isPlanningMode={isPlanningMode}
                 latestChat={latestChat}
                 onAbandonQueuedAgentPrompt={abandonQueuedAgentPrompt}
+                onCancelDurableTask={(promptId) => void cancelDurableTask(promptId)}
                 onAnswerPlanningQuestion={answerPlanningQuestion}
                 onClearDurableTasks={() => setIsConfirmingClearDurableTasks(true)}
                 onConfirmClearDurableTasks={() => void clearDurableTasks()}
@@ -3516,10 +3569,11 @@ export default function FeatureFilesDashboard({
                 onOpenFeatureTagSearch={openFeatureTagSearch}
                 onImplementPlan={() => void implementPlanningSession()}
                 durableTasks={durableAgentTasks.map(
-                  ({ promptId, prompt, status }) => ({
+                  ({ promptId, prompt, status, cancelRequested }) => ({
                     promptId,
                     prompt,
                     status,
+                    cancelRequested,
                   }),
                 )}
                 finalizedDurableTaskCount={finalizedDurableTaskCount}
@@ -3611,6 +3665,7 @@ export default function FeatureFilesDashboard({
                   isPlanningMode={isPlanningMode}
                   latestChat={latestChat}
                   onAbandonQueuedAgentPrompt={abandonQueuedAgentPrompt}
+                  onCancelDurableTask={(promptId) => void cancelDurableTask(promptId)}
                   onAnswerPlanningQuestion={answerPlanningQuestion}
                   onClearDurableTasks={() => setIsConfirmingClearDurableTasks(true)}
                   onConfirmClearDurableTasks={() => void clearDurableTasks()}
@@ -3628,10 +3683,11 @@ export default function FeatureFilesDashboard({
                   onOpenFeatureTagSearch={openFeatureTagSearch}
                   onImplementPlan={() => void implementPlanningSession()}
                   durableTasks={durableAgentTasks.map(
-                    ({ promptId, prompt, status }) => ({
+                    ({ promptId, prompt, status, cancelRequested }) => ({
                       promptId,
                       prompt,
                       status,
+                      cancelRequested,
                     }),
                   )}
                   finalizedDurableTaskCount={finalizedDurableTaskCount}
@@ -4139,6 +4195,11 @@ function formatDurableTaskStatus(task: AgentPromptQueueEntry) {
   if (task.status === "resolving") return "Resolver agent is repairing the integration batch.";
   if (task.status === "blocked") return `Repository blocked: ${task.error || "integration failed"}`;
   if (task.status === "failed") return `Agent task failed: ${task.error || "unknown failure"}`;
+  if (task.status === "cancelled") {
+    return task.cancelRequested
+      ? "Agent task cancelled by user."
+      : "Agent task cancelled.";
+  }
   return "Agent task completed.";
 }
 
@@ -4158,6 +4219,7 @@ function mapAgentTaskRowToQueueEntry(row: AgentTaskRow): AgentPromptQueueEntry {
     completedAt: row.completed_at ? Date.parse(row.completed_at) : undefined,
     error: row.error || undefined,
     verificationAttempts: row.verification_attempts,
+    cancelRequested: Boolean(row.cancel_requested),
   };
 }
 
@@ -4329,7 +4391,6 @@ async function fetchAgentTasks(
 ) {
   const url = new URL("/rest/v1/agent_tasks", supabaseUrl);
   url.searchParams.set("user_id", `eq.${userId}`);
-  url.searchParams.set("message", `eq.${CLIENT_REVIEW}`);
   url.searchParams.set("order", "queue_sequence.asc");
   const response = await fetch(url, {
     headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
@@ -4368,7 +4429,7 @@ async function deleteAgentTaskRows(
 ) {
   const url = new URL("/rest/v1/agent_tasks", supabaseUrl);
   url.searchParams.set("user_id", `eq.${userId}`);
-  url.searchParams.set("status", "in.(completed,failed,blocked)");
+  url.searchParams.set("status", "in.(completed,failed,blocked,cancelled)");
   const response = await fetch(url, {
     method: "DELETE",
     headers: {
@@ -4378,6 +4439,31 @@ async function deleteAgentTaskRows(
   });
   if (!response.ok) {
     throw new Error("agent task delete failed");
+  }
+}
+
+async function requestAgentTaskCancel(
+  supabaseUrl: string,
+  supabasePublishableKey: string,
+  accessToken: string,
+  userId: string,
+  taskId: string,
+) {
+  const url = new URL("/rest/v1/agent_tasks", supabaseUrl);
+  url.searchParams.set("id", `eq.${taskId}`);
+  url.searchParams.set("user_id", `eq.${userId}`);
+  url.searchParams.set("cancel_requested", "eq.false");
+  url.searchParams.set(
+    "status",
+    "in.(queued,running,verifying,ready,integrating,resolving)",
+  );
+  const response = await fetch(url, {
+    method: "PATCH",
+    headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
+    body: JSON.stringify({ cancel_requested: true }),
+  });
+  if (!response.ok) {
+    throw new Error("agent task cancel request failed");
   }
 }
 

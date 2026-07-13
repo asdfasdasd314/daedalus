@@ -37,6 +37,9 @@ from daedalus_daemon.main import (
     build_cursor_prompt,
     build_planning_refinement_context,
     filter_targeted_feature_paths,
+    kill_agent_process,
+    register_agent_process,
+    unregister_agent_process,
     update_parameter_variable_in_toml,
 )
 
@@ -592,6 +595,7 @@ class RunAgentPromptCycleTests(unittest.TestCase):
         message_reads = [prompt_payload]
         expected_prompt = (
             f"{PLANNING_PROMPT_PREFIX.rstrip()}\n\n"
+            f"{PLANNING_PROMPT_SUFFIX.rstrip()}\n\n"
             "The following prompt reqeusts changes relevant to the following feature files: "
             "feature_files/agent-prompt-chat.md, feature_files/feature-file-graph-display.md\n\n"
             "Build the feature"
@@ -1008,6 +1012,63 @@ class RunCursorExecTests(unittest.TestCase):
         self.assertIn("exit code 1", reply)
         self.assertIn("partial", reply)
         self.assertIn("boom", reply)
+
+    def test_kill_agent_process_sends_term_then_kill(self):
+        class FakeProcess:
+            pid = 4242
+            def __init__(self):
+                self._alive = True
+                self.poll_calls = 0
+
+            def poll(self):
+                self.poll_calls += 1
+                return None if self._alive else 0
+
+        process = FakeProcess()
+        register_agent_process("task-kill", process)
+        signals = []
+
+        def fake_killpg(pid, sig):
+            signals.append((pid, sig))
+            if len(signals) >= 2:
+                process._alive = False
+
+        with (
+            patch("daedalus_daemon.main.os.killpg", side_effect=fake_killpg),
+            patch("daedalus_daemon.main.time.sleep"),
+            patch("daedalus_daemon.main.time.time", side_effect=[0, 0.1, 0.2, 3.0]),
+        ):
+            killed = kill_agent_process("task-kill", grace_seconds=1)
+
+        unregister_agent_process("task-kill", process)
+        self.assertTrue(killed)
+        self.assertEqual(signals[0][0], 4242)
+        self.assertEqual(len(signals), 2)
+
+    def test_tracked_cursor_exec_uses_task_id_registry(self):
+        class FakePopen:
+            returncode = -15
+            def __init__(self, *args, **kwargs):
+                self.args = args
+                self.kwargs = kwargs
+
+            def communicate(self):
+                return ("partial", "terminated")
+
+            def poll(self):
+                return self.returncode
+
+        with (
+            patch("daedalus_daemon.main.shutil.which", return_value="/usr/local/bin/agent"),
+            patch("daedalus_daemon.main.subprocess.Popen", FakePopen),
+        ):
+            reply = run_cursor_exec(
+                "/workspace/project",
+                "Build the feature",
+                task_id="task-tracked",
+            )
+
+        self.assertIn("Cursor was cancelled", reply)
 
 
 class FakeGitProcess:

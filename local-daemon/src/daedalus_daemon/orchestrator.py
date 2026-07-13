@@ -22,18 +22,27 @@ WORKTREE_PARAMETER_FILE = (
 )
 
 
-TASK_TERMINAL_STATES = {"completed", "failed", "blocked"}
+TASK_TERMINAL_STATES = {"completed", "failed", "blocked", "cancelled"}
 BATCH_ACTIVE_STATES = {"collecting", "integrating", "resolving"}
+CANCEL_REPLY_PREFIXES = (
+    "Codex failed",
+    "Codex was cancelled",
+    "Cursor failed",
+    "Cursor was cancelled",
+)
+CANCELLED_BY_USER = "Cancelled by user"
 
 
 class GitWorktreeOrchestrator:
-    def __init__(self, config: dict, run_codex, run_cursor):
+    def __init__(self, config: dict, run_codex, run_cursor, kill_agent=None):
         self.config = config
         self.run_codex = run_codex
         self.run_cursor = run_cursor
+        self.kill_agent = kill_agent or (lambda _task_id, grace_seconds=2.0: False)
         self.executor = ThreadPoolExecutor(max_workers=32)
         self.task_futures: dict[str, Future] = {}
         self.batch_futures: dict[str, Future] = {}
+        self.cancelled_batch_ids: set[str] = set()
         self.recovered_persisted_work = False
 
     def run_cycle(self, _config: dict | None = None) -> None:
@@ -44,6 +53,7 @@ class GitWorktreeOrchestrator:
             self.recovered_persisted_work = True
             tasks = list_agent_tasks(self.config)
             batches = list_orchestration_batches(self.config)
+        self._handle_cancel_requests(tasks, batches)
         self._finish_tasks(tasks)
         self._finish_batches(batches)
 
@@ -69,7 +79,11 @@ class GitWorktreeOrchestrator:
                 self._admit_tasks(repository, repository_tasks)
                 self._collect_and_maybe_integrate(repository, repository_tasks, repository_batches)
             except Exception as error:
-                queued = [task for task in repository_tasks if task["status"] == "queued"]
+                queued = [
+                    task
+                    for task in repository_tasks
+                    if task["status"] == "queued" and not task.get("cancel_requested")
+                ]
                 if queued:
                     first = min(queued, key=lambda task: task["queue_sequence"])
                     update_agent_task(self.config, str(first["id"]), "queued", {
@@ -95,8 +109,8 @@ class GitWorktreeOrchestrator:
             worktree_path = str(task.get("worktree_path") or "")
             if not worktree_path:
                 continue
-            if task["status"] == "completed" and Path(worktree_path).is_dir():
-                remove_worktree(str(task["repository"]), worktree_path)
+            if task["status"] in {"completed", "cancelled"} and Path(worktree_path).is_dir():
+                remove_worktree(str(task["repository"]), worktree_path, force=True)
             elif task["status"] == "failed" and is_clean_worktree(worktree_path):
                 remove_worktree(str(task["repository"]), worktree_path)
 
@@ -135,23 +149,148 @@ class GitWorktreeOrchestrator:
         for task in tasks:
             task_id = str(task["id"])
             if task_id in interrupted_task_ids and task["status"] == "integrating":
-                update_agent_task(self.config, task_id, "integrating", {
-                    "status": "blocked",
-                    "error": "Daemon restarted during integration.",
-                })
+                if task.get("cancel_requested"):
+                    self._mark_task_cancelled(task, "integrating")
+                else:
+                    update_agent_task(self.config, task_id, "integrating", {
+                        "status": "blocked",
+                        "error": "Daemon restarted during integration.",
+                    })
             elif task["status"] in {"running", "verifying"}:
-                update_agent_task(self.config, task_id, str(task["status"]), {
-                    "status": "failed",
-                    "error": "Daemon restarted during agent execution; worktree preserved.",
-                    "completed_at": utc_now(),
-                })
-                record_daemon_event(
-                    self.config,
-                    str(task["repository"]),
-                    "error",
-                    "Daemon restarted during agent execution; worktree preserved.",
-                    task_id=task_id,
-                )
+                if task.get("cancel_requested"):
+                    self._mark_task_cancelled(task, str(task["status"]), force_remove=True)
+                else:
+                    update_agent_task(self.config, task_id, str(task["status"]), {
+                        "status": "failed",
+                        "error": "Daemon restarted during agent execution; worktree preserved.",
+                        "completed_at": utc_now(),
+                    })
+                    record_daemon_event(
+                        self.config,
+                        str(task["repository"]),
+                        "error",
+                        "Daemon restarted during agent execution; worktree preserved.",
+                        task_id=task_id,
+                    )
+            elif task["status"] == "queued" and task.get("cancel_requested"):
+                self._mark_task_cancelled(task, "queued")
+            elif task["status"] == "ready" and task.get("cancel_requested"):
+                self._mark_task_cancelled(task, "ready", force_remove=True)
+
+    def _handle_cancel_requests(self, tasks: list[dict], batches: list[dict]) -> None:
+        pending = [
+            task
+            for task in tasks
+            if task.get("cancel_requested")
+            and str(task["status"]) not in TASK_TERMINAL_STATES
+        ]
+        if not pending:
+            return
+        settings = load_worktree_settings()
+        grace = settings["cancelKillGraceSeconds"]
+        batches_by_id = {str(batch["id"]): batch for batch in batches}
+
+        for task in pending:
+            status = str(task["status"])
+            if status == "queued":
+                self._mark_task_cancelled(task, "queued")
+            elif status in {"running", "verifying"}:
+                task_id = str(task["id"])
+                self.kill_agent(task_id, grace)
+                if task_id not in self.task_futures:
+                    self._mark_task_cancelled(task, status, force_remove=True)
+            elif status == "ready":
+                self._cancel_ready_task(task, batches_by_id)
+            elif status in {"integrating", "resolving"}:
+                self._cancel_batch_task(task, batches_by_id, grace)
+
+    def _cancel_ready_task(self, task: dict, batches_by_id: dict[str, dict]) -> None:
+        batch_id = str(task.get("batch_id") or "")
+        batch = batches_by_id.get(batch_id)
+        if batch and batch["status"] == "collecting":
+            remaining = [
+                str(task_id)
+                for task_id in batch.get("task_ids") or []
+                if str(task_id) != str(task["id"])
+            ]
+            batch["task_ids"] = remaining
+            if not remaining:
+                batch["status"] = "completed"
+                batch["completed_at"] = utc_now()
+            upsert_orchestration_batch(self.config, batch)
+        self._mark_task_cancelled(task, "ready", force_remove=True)
+
+    def _cancel_batch_task(
+        self, task: dict, batches_by_id: dict[str, dict], grace: float
+    ) -> None:
+        batch_id = str(task.get("batch_id") or "")
+        batch = batches_by_id.get(batch_id)
+        self.cancelled_batch_ids.add(batch_id)
+        if batch_id in self.batch_futures:
+            # In-flight integration is not separable; abort the whole batch.
+            pass
+        self.kill_agent(str(task["id"]), grace)
+        expected = str(task["status"])
+        self._mark_task_cancelled(task, expected, force_remove=True)
+        if batch is None:
+            return
+        sibling_ids = [
+            str(task_id)
+            for task_id in batch.get("task_ids") or []
+            if str(task_id) != str(task["id"])
+        ]
+        for sibling_id in sibling_ids:
+            update_agent_task(self.config, sibling_id, expected, {
+                "status": "blocked",
+                "error": "Sibling task cancelled; integration batch aborted.",
+            })
+        batch["status"] = "blocked"
+        batch["verification_output"] = CANCELLED_BY_USER
+        upsert_orchestration_batch(self.config, batch)
+        worktree_path = str(batch.get("integration_worktree_path") or "")
+        if worktree_path:
+            remove_worktree(str(batch["repository"]), worktree_path, force=True)
+        record_daemon_event(
+            self.config,
+            str(batch["repository"]),
+            "warning",
+            "Integration batch aborted after user cancel.",
+            batch_id=batch_id,
+            task_id=str(task["id"]),
+        )
+
+    def _mark_task_cancelled(
+        self, task: dict, expected_status: str, force_remove: bool = False
+    ) -> bool:
+        task_id = str(task["id"])
+        claimed = update_agent_task(self.config, task_id, expected_status, {
+            "status": "cancelled",
+            "error": CANCELLED_BY_USER,
+            "completed_at": utc_now(),
+        })
+        if not claimed:
+            return False
+        worktree_path = str(task.get("worktree_path") or "")
+        if force_remove and worktree_path:
+            remove_worktree(str(task["repository"]), worktree_path, force=True)
+        self.task_futures.pop(task_id, None)
+        record_daemon_event(
+            self.config,
+            str(task["repository"]),
+            "info",
+            CANCELLED_BY_USER,
+            task_id=task_id,
+        )
+        return True
+
+    def _refresh_cancel_requested(self, task: dict) -> bool:
+        task_id = str(task["id"])
+        for current in list_agent_tasks(self.config):
+            if str(current["id"]) == task_id:
+                requested = bool(current.get("cancel_requested"))
+                task["cancel_requested"] = requested
+                return requested
+        return bool(task.get("cancel_requested"))
 
     def _admit_tasks(self, repository: str, tasks: list[dict]) -> None:
         settings = load_worktree_settings()
@@ -161,7 +300,11 @@ class GitWorktreeOrchestrator:
         if capacity <= 0:
             return
 
-        queued = [task for task in tasks if task["status"] == "queued"]
+        queued = [
+            task
+            for task in tasks
+            if task["status"] == "queued" and not task.get("cancel_requested")
+        ]
         queued.sort(key=lambda task: task["queue_sequence"])
         for task in queued[:capacity]:
             try:
@@ -222,8 +365,23 @@ class GitWorktreeOrchestrator:
         )
         reply = self._run_task_agent(worktree_path, task, build_task_prompt(task))
 
-        if reply.startswith(("Codex failed", "Cursor failed", "Cursor was cancelled")):
-            return {"ok": False, "reply": reply, "error": reply}
+        if reply_indicates_failure(reply):
+            cancelled = reply_indicates_cancel(reply) or self._refresh_cancel_requested(task)
+            return {
+                "ok": False,
+                "reply": reply,
+                "error": CANCELLED_BY_USER if cancelled else reply,
+                "cancelled": cancelled,
+            }
+
+        if self._refresh_cancel_requested(task):
+            return {
+                "ok": False,
+                "reply": reply,
+                "error": CANCELLED_BY_USER,
+                "cancelled": True,
+                "expected_status": "running",
+            }
 
         update_agent_task(self.config, task_id, "running", {"status": "verifying"})
         try:
@@ -277,6 +435,14 @@ class GitWorktreeOrchestrator:
         verification_attempts = int(task.get("verification_attempts") or 0)
         verification = run_verification(worktree_path, commands)
         while not verification["ok"]:
+            if self._refresh_cancel_requested(task):
+                return {
+                    "ok": False,
+                    "reply": reply,
+                    "error": CANCELLED_BY_USER,
+                    "cancelled": True,
+                    "expected_status": "verifying",
+                }
             verification_attempts += 1
             update_agent_task(self.config, task_id, "verifying", {
                 "verification_attempts": verification_attempts,
@@ -314,11 +480,24 @@ class GitWorktreeOrchestrator:
                     settings["taskVerificationAttemptLimit"],
                 ),
             )
-            if repair_reply.startswith(("Codex failed", "Cursor failed", "Cursor was cancelled")):
+            if reply_indicates_failure(repair_reply):
+                cancelled = (
+                    reply_indicates_cancel(repair_reply)
+                    or self._refresh_cancel_requested(task)
+                )
                 return {
                     "ok": False,
                     "reply": repair_reply,
-                    "error": repair_reply,
+                    "error": CANCELLED_BY_USER if cancelled else repair_reply,
+                    "cancelled": cancelled,
+                    "expected_status": "verifying",
+                }
+            if self._refresh_cancel_requested(task):
+                return {
+                    "ok": False,
+                    "reply": repair_reply,
+                    "error": CANCELLED_BY_USER,
+                    "cancelled": True,
                     "expected_status": "verifying",
                 }
             reply = repair_reply
@@ -350,10 +529,15 @@ class GitWorktreeOrchestrator:
         }
 
     def _run_task_agent(self, worktree_path: str, task: dict, prompt: str) -> str:
+        task_id = str(task["id"])
         if task["provider"] == "cursor":
-            return self.run_cursor(worktree_path, prompt)
+            return self.run_cursor(worktree_path, prompt, False, task_id)
         return self.run_codex(
-            worktree_path, prompt, str(task["model"]), str(task["reasoning"])
+            worktree_path,
+            prompt,
+            str(task["model"]),
+            str(task["reasoning"]),
+            task_id,
         )
 
     def _finish_tasks(self, tasks: list[dict]) -> None:
@@ -371,6 +555,33 @@ class GitWorktreeOrchestrator:
                 outcome = {"ok": False, "reply": "", "error": str(error)}
 
             expected = outcome.get("expected_status", task["status"])
+            cancelled = bool(
+                outcome.get("cancelled")
+                or task.get("cancel_requested")
+                or reply_indicates_cancel(str(outcome.get("error") or ""))
+                or reply_indicates_cancel(str(outcome.get("reply") or ""))
+            )
+            if cancelled:
+                update_agent_task(self.config, task_id, expected, {
+                    "status": "cancelled",
+                    "result": outcome.get("reply", ""),
+                    "error": CANCELLED_BY_USER,
+                    "completed_at": utc_now(),
+                })
+                remove_worktree(
+                    str(task["repository"]),
+                    str(task.get("worktree_path") or ""),
+                    force=True,
+                )
+                record_daemon_event(
+                    self.config,
+                    str(task["repository"]),
+                    "info",
+                    CANCELLED_BY_USER,
+                    task_id=task_id,
+                )
+                continue
+
             next_status = "ready" if outcome["ok"] else "failed"
             update_agent_task(self.config, task_id, expected, {
                 "status": next_status,
@@ -405,7 +616,11 @@ class GitWorktreeOrchestrator:
         settings = load_worktree_settings()
         collecting = next((batch for batch in batches if batch["status"] == "collecting"), None)
         ready = sorted(
-            [task for task in tasks if task["status"] == "ready"],
+            [
+                task
+                for task in tasks
+                if task["status"] == "ready" and not task.get("cancel_requested")
+            ],
             key=lambda task: task["queue_sequence"],
         )
         if not ready:
@@ -474,6 +689,14 @@ class GitWorktreeOrchestrator:
     def _integrate_batch(self, batch: dict, tasks: list[dict], settings: dict) -> dict:
         repository = str(batch["repository"])
         batch_id = str(batch["id"])
+        if batch_id in self.cancelled_batch_ids:
+            return {
+                "ok": False,
+                "error": CANCELLED_BY_USER,
+                "cancelled": True,
+                "attempts": 0,
+                "worktree": "",
+            }
         worktree_path = create_integration_worktree(
             repository,
             batch_id,
@@ -485,6 +708,14 @@ class GitWorktreeOrchestrator:
 
         attempts = 0
         for task in tasks:
+            if batch_id in self.cancelled_batch_ids:
+                return {
+                    "ok": False,
+                    "error": CANCELLED_BY_USER,
+                    "cancelled": True,
+                    "attempts": attempts,
+                    "worktree": worktree_path,
+                }
             merge = run_process(
                 worktree_path,
                 ["git", "merge", "--no-ff", "--no-edit", str(task["branch_name"])],
@@ -495,7 +726,22 @@ class GitWorktreeOrchestrator:
                     batch, tasks, settings, worktree_path, failure, attempts
                 )
                 if failure:
-                    return {"ok": False, "error": failure, "attempts": attempts, "worktree": worktree_path}
+                    return {
+                        "ok": False,
+                        "error": failure,
+                        "attempts": attempts,
+                        "worktree": worktree_path,
+                        "cancelled": batch_id in self.cancelled_batch_ids,
+                    }
+
+        if batch_id in self.cancelled_batch_ids:
+            return {
+                "ok": False,
+                "error": CANCELLED_BY_USER,
+                "cancelled": True,
+                "attempts": attempts,
+                "worktree": worktree_path,
+            }
 
         commands = verification_commands_for_worktree(
             worktree_path, settings["verificationCommands"]
@@ -507,7 +753,22 @@ class GitWorktreeOrchestrator:
                 batch, tasks, settings, worktree_path, failure, attempts
             )
             if failure:
-                return {"ok": False, "error": failure, "attempts": attempts, "worktree": worktree_path}
+                return {
+                    "ok": False,
+                    "error": failure,
+                    "attempts": attempts,
+                    "worktree": worktree_path,
+                    "cancelled": batch_id in self.cancelled_batch_ids,
+                }
+
+        if batch_id in self.cancelled_batch_ids:
+            return {
+                "ok": False,
+                "error": CANCELLED_BY_USER,
+                "cancelled": True,
+                "attempts": attempts,
+                "worktree": worktree_path,
+            }
 
         primary = settings["primaryBranch"]
         if git_output(repository, ["status", "--porcelain"]):
@@ -532,6 +793,8 @@ class GitWorktreeOrchestrator:
     ) -> tuple[str, int]:
         limit = settings["resolverAttemptLimit"]
         while failure and attempts < limit:
+            if str(batch["id"]) in self.cancelled_batch_ids:
+                return CANCELLED_BY_USER, attempts
             attempts += 1
             batch["status"] = "resolving"
             batch["resolver_attempts"] = attempts
@@ -550,9 +813,11 @@ class GitWorktreeOrchestrator:
                 str(tasks[0]["model"]),
                 str(tasks[0]["reasoning"]),
             )
-            if resolver_reply.startswith("Codex failed"):
+            if resolver_reply.startswith(("Codex failed", "Codex was cancelled")):
                 failure = resolver_reply
                 continue
+            if str(batch["id"]) in self.cancelled_batch_ids:
+                return CANCELLED_BY_USER, attempts
             try:
                 commit_worktree_changes(
                     worktree_path, f"Daedalus resolver attempt {attempts}"
@@ -575,12 +840,30 @@ class GitWorktreeOrchestrator:
             del self.batch_futures[batch_id]
             batch = batches_by_id.get(batch_id)
             if batch is None:
+                self.cancelled_batch_ids.discard(batch_id)
                 continue
             try:
                 outcome = future.result()
             except Exception as error:
                 outcome = {"ok": False, "error": str(error), "attempts": batch["resolver_attempts"]}
             task_ids = [str(task_id) for task_id in batch["task_ids"]]
+            if outcome.get("cancelled") or batch_id in self.cancelled_batch_ids:
+                self.cancelled_batch_ids.discard(batch_id)
+                if batch.get("status") not in {"blocked", "completed"}:
+                    batch.update({
+                        "status": "blocked",
+                        "resolver_attempts": outcome.get("attempts", 0),
+                        "verification_output": CANCELLED_BY_USER,
+                    })
+                    upsert_orchestration_batch(self.config, batch)
+                worktree = str(
+                    outcome.get("worktree")
+                    or batch.get("integration_worktree_path")
+                    or ""
+                )
+                if worktree:
+                    remove_worktree(str(batch["repository"]), worktree, force=True)
+                continue
             if not outcome["ok"]:
                 batch.update({
                     "status": "blocked",
@@ -639,6 +922,9 @@ def load_worktree_settings() -> dict:
         "taskVerificationAttemptLimit": positive_int(
             values, "task_verification_attempt_limit"
         ),
+        "cancelKillGraceSeconds": non_negative_number(
+            values, "cancel_kill_grace_seconds", 2
+        ),
         "primaryBranch": str(values.get("primary_branch", "main")),
         "verificationCommands": commands,
     }
@@ -685,6 +971,15 @@ def positive_int(values: dict, key: str) -> int:
     return value
 
 
+def non_negative_number(values: dict, key: str, default: float) -> float:
+    if key not in values:
+        return float(default)
+    value = values.get(key)
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+        raise RuntimeError(f"{key} must be a non-negative number.")
+    return float(value)
+
+
 def create_task_worktree(repository: str, task_id: str, primary_branch: str) -> tuple[str, str, str]:
     validate_primary_worktree(repository, primary_branch)
     base_commit = git_output(repository, ["rev-parse", primary_branch])
@@ -723,10 +1018,14 @@ def worktree_root_path(repository: str) -> Path:
     return Path(repository).resolve().parent / ".daedalus-worktrees" / Path(repository).name
 
 
-def remove_worktree(repository: str, worktree_path: str) -> None:
+def remove_worktree(repository: str, worktree_path: str, force: bool = False) -> None:
     if not worktree_path:
         return
-    run_process(repository, ["git", "worktree", "remove", worktree_path])
+    arguments = ["git", "worktree", "remove"]
+    if force:
+        arguments.append("--force")
+    arguments.append(worktree_path)
+    run_process(repository, arguments)
 
 
 def is_clean_worktree(worktree_path: str) -> bool:
@@ -825,3 +1124,11 @@ def build_resolver_prompt(batch: dict, tasks: list[dict], failure: str) -> str:
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def reply_indicates_failure(reply: str) -> bool:
+    return reply.startswith(CANCEL_REPLY_PREFIXES)
+
+
+def reply_indicates_cancel(reply: str) -> bool:
+    return reply.startswith(("Codex was cancelled", "Cursor was cancelled"))
