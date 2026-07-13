@@ -23,3 +23,4 @@ HACKING
 ## State Log
 - 2026-07-03: Implemented the recursive scanner, wired the daemon entrypoint to it, and verified deterministic project aggregation with unit tests.
 - 2026-07-13: Added one-time authenticated frontend startup requests for feature-file and parameter-file payloads.
+- 2026-07-13: Restored daemon package exports and aligned protocol assertions so startup-loading verification covers the current review/complete message flow.
