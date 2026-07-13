@@ -84,3 +84,4 @@ HACKING
 - 2026-07-12: Restricted the durable-task clear action to finalized completed, failed, and blocked task states while preserving active tasks in the dashboard queue.
 - 2026-07-12: Delayed durable-task window rendering until its current-user query completes, retained completed rows in the full task list, and made GPT-5.6 Terra with medium reasoning the default Codex selection.
 - 2026-07-12: Split durable agent tasks into dedicated poll state with single-flight stale-response guarding so overlapping Supabase polls can no longer blink the task panel.
+- 2026-07-12: Kept the latest durable daemon event visible across task polls so a successful integration notice is not replaced by a transient generic task status.

@@ -635,8 +635,6 @@ export default function FeatureFilesDashboard({
           setPromptStatus(`Daemon error: ${latestEvent.message}`);
         } else if (latestEvent?.severity === "info") {
           setPromptStatus(`Daemon: ${latestEvent.message}`);
-        } else if (durableQueue[0]) {
-          setPromptStatus(formatDurableTaskStatus(durableQueue[0]));
         }
       } catch {
         return;
