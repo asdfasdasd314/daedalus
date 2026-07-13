@@ -25,6 +25,10 @@ def scan_project_files(
 
     for project_dir in project_dirs:
         project_root_path = project_dir.parent.resolve()
+
+        if is_linked_git_worktree(project_root_path):
+            continue
+
         project_root = str(project_root_path)
         matched_files = sorted(
             project_dir.rglob(pattern),
@@ -44,3 +48,7 @@ def scan_project_files(
             projects[project_root] = file_records
 
     return projects
+
+
+def is_linked_git_worktree(project_root: Path) -> bool:
+    return (project_root / ".git").is_file()

@@ -24,6 +24,7 @@ The feature-file graph display turns loaded feature files into a full-screen 2D 
 - **Touch Sessions**: Mobile one-finger gestures always start as graph-surface pans, only resolve into node opens on clean tap release, and derive inertia from recent gesture samples instead of noisy last-frame deltas.
 - **Node Selection Callback**: Clicking or tapping a node now hands feature identity back to the workspace shell through a dedicated selection path so touch sessions do not rely on inconsistent browser click timing.
 - **Render Performance**: The graph culls off-screen nodes and edges, scopes collision checks per project, and uses simplified coarse-pointer node rendering without SVG blur filters while hiding inline labels until mobile zoom crosses `mobile_label_min_zoom`.
+- **Canonical Project Discovery**: The daemon skips Git linked worktrees during filesystem scanning, so the graph receives one current project copy rather than stale task-worktree duplicates.
 
 ## Relevant Files
 - `daedalus-site/app/feature-files-dashboard.tsx`: Workspace shell that loads the feature-file payload and responds to graph callbacks with overlays and drawers.
@@ -67,3 +68,4 @@ HACKING
 - 2026-07-09: Hardened the physics-off path so nodes can no longer be repositioned by pointer drag while hover and click-to-open selection remain available.
 - 2026-07-09: Added shell-driven zoom-rail visibility so the graph's right-side slider can move offscreen without changing pinch, wheel, or keyboard zoom.
 - 2026-07-10: Added separate desktop and mobile node-size parameters so phone nodes start smaller, and lowered the mobile inline-label threshold to 1.0x so labels remain visible at the default phone zoom.
+- 2026-07-12: Excluded Git linked worktrees from daemon filesystem discovery so the graph shows only the canonical project copies.

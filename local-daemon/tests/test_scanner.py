@@ -107,6 +107,34 @@ class ScanFeatureFileProjectsTests(unittest.TestCase):
                 }],
             )
 
+    def test_ignores_linked_git_worktree_feature_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = root / "project"
+            worktree = root / ".project-worktrees" / "project" / "task"
+            (project / "feature_files").mkdir(parents=True)
+            (worktree / "feature_files").mkdir(parents=True)
+
+            (project / "feature_files" / "current.md").write_text(
+                "current", encoding="utf-8"
+            )
+            (worktree / ".git").write_text(
+                "gitdir: /example/git/worktrees/task\n", encoding="utf-8"
+            )
+            (worktree / "feature_files" / "stale.md").write_text(
+                "stale", encoding="utf-8"
+            )
+
+            self.assertEqual(
+                scan_feature_file_projects(root),
+                {
+                    str(project.resolve()): [{
+                        "path": "feature_files/current.md",
+                        "markdown": "current",
+                    }],
+                },
+            )
+
 
 class ScanParameterFileProjectsTests(unittest.TestCase):
     def test_returns_two_projects_with_parameter_files(self):
