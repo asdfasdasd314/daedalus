@@ -15,6 +15,7 @@ from daedalus_daemon import (
     FEATURE_FILE_LOAD_PURPOSE,
     GIT_SYNC_PURPOSE,
     PARAMETER_FILE_LOAD_PURPOSE,
+    PARAMETER_FILE_UPDATE_PURPOSE,
     run_agent_prompt_cycle,
     run_codex_exec,
     run_cursor_exec,
@@ -47,7 +48,7 @@ class RunPollCycleTests(unittest.TestCase):
             self.assertEqual(purpose, FEATURE_FILE_LOAD_PURPOSE)
             return CLIENT_REVIEW
 
-        def fake_write_message(_config, purpose, message):
+        def fake_write_message(_config, purpose, message, _content=None):
             writes.append((purpose, message))
 
         def fake_scan_projects():
@@ -173,7 +174,7 @@ class RunParameterFilePollCycleTests(unittest.TestCase):
             self.assertEqual(purpose, PARAMETER_FILE_LOAD_PURPOSE)
             return None
 
-        def fake_write_message(_config, purpose, message):
+        def fake_write_message(_config, purpose, message, _content=None):
             writes.append((purpose, message))
 
         def fake_scan_projects():
@@ -278,7 +279,7 @@ class RunParameterFileUpdateCycleTests(unittest.TestCase):
 
         self.assertEqual(
             writes,
-            [("parameter_file_update", DAEMON_COMPLETE)],
+            [(PARAMETER_FILE_UPDATE_PURPOSE, DAEMON_COMPLETE)],
         )
         self.assertEqual(
             deliveries,
