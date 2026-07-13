@@ -28,3 +28,4 @@ HACKING
 - 2026-07-13: Added one-time authenticated frontend startup requests for feature-file and parameter-file payloads.
 - 2026-07-13: Restored daemon package exports and aligned protocol assertions so startup-loading verification covers the current review/complete message flow.
 - 2026-07-13: Resolved the integration by retaining both per-directory timing logs and authenticated startup loading with compatible daemon protocol tests.
+- 2026-07-13: Configured the daemon entrypoint's root logger at INFO so feature-file scan timing benchmarks reach the daemon terminal.
