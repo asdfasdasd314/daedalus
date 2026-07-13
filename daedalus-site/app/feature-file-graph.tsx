@@ -462,6 +462,7 @@ export default function FeatureFileGraph({
   const pinchSessionRef = useRef<PinchSession | null>(null);
   const sliderDragRef = useRef<SliderDragState | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const initialViewportRef = useRef<GraphViewport | null>(null);
   const viewportSizeRef = useRef<ViewportSize>(viewportSize);
   const hasMeasuredViewportRef = useRef(false);
   const canDragNodes = physicsEnabled && !isCoarsePointer;
@@ -483,6 +484,10 @@ export default function FeatureFileGraph({
     activePointersRef.current.clear();
     pinchSessionRef.current = null;
     sliderDragRef.current = null;
+    initialViewportRef.current =
+      viewportSizeRef.current.width > 1 && viewportSizeRef.current.height > 1
+        ? nextViewport
+        : null;
     setViewport(nextViewport);
   }, [graphData]);
 
@@ -525,6 +530,7 @@ export default function FeatureFileGraph({
 
       hasMeasuredViewportRef.current = true;
       viewportRef.current = nextViewport;
+      initialViewportRef.current ??= nextViewport;
       setViewport(nextViewport);
     }
 
@@ -625,6 +631,22 @@ export default function FeatureFileGraph({
   function updateViewport(nextViewport: GraphViewport) {
     viewportRef.current = nextViewport;
     setViewport(nextViewport);
+  }
+
+  function resetViewportToContent() {
+    const initialViewport = initialViewportRef.current;
+
+    if (!initialViewport) {
+      return;
+    }
+
+    updateViewport({
+      ...initialViewport,
+      velocityX: 0,
+      velocityY: 0,
+      isDragging: false,
+      dragMoved: false,
+    });
   }
 
   function updateZoom(nextZoom: number, viewX: number, viewY: number) {
@@ -1290,6 +1312,14 @@ export default function FeatureFileGraph({
         }),
     [isCoarsePointer, nodes, selectedFeatureFilePath, visibleBounds],
   );
+  const hasVisibleNodes = nodes.some((node) =>
+    isCircleInBounds(
+      node.x,
+      node.y,
+      node.radius + getNodeGlowRadius(node, isCoarsePointer),
+      visibleBounds,
+    ),
+  );
   const zoomRatio = getZoomRatio(zoom, minZoom, maxZoom);
 
   return (
@@ -1495,6 +1525,16 @@ export default function FeatureFileGraph({
       >
         +
       </button>
+
+      {!hasVisibleNodes ? (
+        <button
+          type="button"
+          onClick={resetViewportToContent}
+          className="pointer-events-auto absolute left-1/2 top-6 -translate-x-1/2 rounded-full border border-amber-100/30 bg-slate-950/90 px-5 py-3 text-sm font-semibold text-amber-100 shadow-[0_20px_60px_rgba(2,6,23,0.5)] backdrop-blur transition hover:bg-slate-900"
+        >
+          Scroll back to content
+        </button>
+      ) : null}
 
       <div
         aria-hidden={!showZoomSlider}
