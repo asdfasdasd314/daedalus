@@ -9,12 +9,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from daedalus_daemon import (
     AGENT_PROMPT_PURPOSE,
-    CLIENT_LOAD_FEATURE_FILES,
-    CLIENT_LOAD_PARAMETER_FILES,
+    CLIENT_REVIEW,
+    DAEMON_COMPLETE,
     DAEMON_RECEIVED_MESSAGE,
-    DAEMON_SENT_FEATURE_FILES,
-    DAEMON_SENT_PARAMETER_FILES,
-    DAEMON_SENT_RESPONSE,
     FEATURE_FILE_LOAD_PURPOSE,
     GIT_SYNC_PURPOSE,
     PARAMETER_FILE_LOAD_PURPOSE,
@@ -48,7 +45,7 @@ class RunPollCycleTests(unittest.TestCase):
 
         def fake_read_message(_config, purpose):
             self.assertEqual(purpose, FEATURE_FILE_LOAD_PURPOSE)
-            return CLIENT_LOAD_FEATURE_FILES
+            return CLIENT_REVIEW
 
         def fake_write_message(_config, purpose, message):
             writes.append((purpose, message))
@@ -76,10 +73,7 @@ class RunPollCycleTests(unittest.TestCase):
 
         self.assertEqual(
             writes,
-            [
-                (FEATURE_FILE_LOAD_PURPOSE, DAEMON_RECEIVED_MESSAGE),
-                (FEATURE_FILE_LOAD_PURPOSE, DAEMON_SENT_FEATURE_FILES),
-            ],
+            [(FEATURE_FILE_LOAD_PURPOSE, DAEMON_COMPLETE)],
         )
         self.assertEqual(
             deliveries,
@@ -99,7 +93,7 @@ class RunPollCycleTests(unittest.TestCase):
 
         def fake_read_message(_config, purpose):
             self.assertEqual(purpose, FEATURE_FILE_LOAD_PURPOSE)
-            return DAEMON_RECEIVED_MESSAGE
+            return None
 
         def fake_write_message(_config, purpose, message):
             writes.append((purpose, message))
@@ -129,7 +123,7 @@ class RunParameterFilePollCycleTests(unittest.TestCase):
 
         def fake_read_message(_config, purpose):
             self.assertEqual(purpose, PARAMETER_FILE_LOAD_PURPOSE)
-            return CLIENT_LOAD_PARAMETER_FILES
+            return CLIENT_REVIEW
 
         def fake_write_message(_config, purpose, message):
             writes.append((purpose, message))
@@ -157,10 +151,7 @@ class RunParameterFilePollCycleTests(unittest.TestCase):
 
         self.assertEqual(
             writes,
-            [
-                (PARAMETER_FILE_LOAD_PURPOSE, DAEMON_RECEIVED_MESSAGE),
-                (PARAMETER_FILE_LOAD_PURPOSE, DAEMON_SENT_PARAMETER_FILES),
-            ],
+            [(PARAMETER_FILE_LOAD_PURPOSE, DAEMON_COMPLETE)],
         )
         self.assertEqual(
             deliveries,
@@ -180,7 +171,7 @@ class RunParameterFilePollCycleTests(unittest.TestCase):
 
         def fake_read_message(_config, purpose):
             self.assertEqual(purpose, PARAMETER_FILE_LOAD_PURPOSE)
-            return DAEMON_RECEIVED_MESSAGE
+            return None
 
         def fake_write_message(_config, purpose, message):
             writes.append((purpose, message))
@@ -203,14 +194,14 @@ class RunParameterFilePollCycleTests(unittest.TestCase):
         self.assertEqual(deliveries, [])
 
     def test_keeps_running_when_delivery_fails(self):
-        writes: list[tuple[str, str]] = []
+        writes: list[tuple[str, str, str | None]] = []
 
         def fake_read_message(_config, purpose):
             self.assertEqual(purpose, PARAMETER_FILE_LOAD_PURPOSE)
-            return CLIENT_LOAD_PARAMETER_FILES
+            return CLIENT_REVIEW
 
-        def fake_write_message(_config, purpose, message):
-            writes.append((purpose, message))
+        def fake_write_message(_config, purpose, message, content=None):
+            writes.append((purpose, message, content))
 
         def fake_scan_projects():
             return {
@@ -236,7 +227,11 @@ class RunParameterFilePollCycleTests(unittest.TestCase):
         self.assertEqual(
             writes,
             [
-                (PARAMETER_FILE_LOAD_PURPOSE, DAEMON_RECEIVED_MESSAGE),
+                (
+                    PARAMETER_FILE_LOAD_PURPOSE,
+                    CLIENT_REVIEW,
+                    json.dumps({"error": "HTTP Error 404: Not Found"}),
+                ),
             ],
         )
 
@@ -281,10 +276,10 @@ class RunParameterFileUpdateCycleTests(unittest.TestCase):
                 deliver_projects=fake_deliver_projects,
             )
 
-        self.assertEqual(writes[0][0], "parameter_file_update")
-        self.assertIn("daemon_received_message", writes[0][1])
-        self.assertEqual(writes[1][0], "parameter_file_update")
-        self.assertIn("daemon_sent_parameter_files", writes[1][1])
+        self.assertEqual(
+            writes,
+            [("parameter_file_update", DAEMON_COMPLETE)],
+        )
         self.assertEqual(
             deliveries,
             [{
@@ -481,10 +476,7 @@ class RunAgentPromptCycleTests(unittest.TestCase):
             "directory": "/workspace/project",
             "prompt": "Build the feature",
         })
-        message_reads = [
-            prompt_payload,
-            build_agent_prompt_state_message("prompt-1", DAEMON_RECEIVED_MESSAGE),
-        ]
+        message_reads = [prompt_payload]
 
         def fake_read_message(_config, purpose):
             self.assertEqual(purpose, AGENT_PROMPT_PURPOSE)
@@ -533,16 +525,7 @@ class RunAgentPromptCycleTests(unittest.TestCase):
 
         self.assertEqual(
             writes,
-            [
-                (
-                    AGENT_PROMPT_PURPOSE,
-                    build_agent_prompt_state_message("prompt-1", DAEMON_RECEIVED_MESSAGE),
-                ),
-                (
-                    AGENT_PROMPT_PURPOSE,
-                    build_agent_prompt_state_message("prompt-1", DAEMON_SENT_RESPONSE),
-                ),
-            ],
+            [(AGENT_PROMPT_PURPOSE, DAEMON_COMPLETE)],
         )
         self.assertEqual(
             runs,
@@ -583,10 +566,7 @@ class RunAgentPromptCycleTests(unittest.TestCase):
             ],
             "prompt": "Build the feature",
         })
-        message_reads = [
-            prompt_payload,
-            build_agent_prompt_state_message("prompt-2", DAEMON_RECEIVED_MESSAGE),
-        ]
+        message_reads = [prompt_payload]
         expected_prompt = (
             f"{PLANNING_PROMPT_PREFIX.rstrip()}\n\n"
             "The following prompt reqeusts changes relevant to the following feature files: "
@@ -641,16 +621,7 @@ class RunAgentPromptCycleTests(unittest.TestCase):
 
         self.assertEqual(
             writes,
-            [
-                (
-                    AGENT_PROMPT_PURPOSE,
-                    build_agent_prompt_state_message("prompt-2", DAEMON_RECEIVED_MESSAGE),
-                ),
-                (
-                    AGENT_PROMPT_PURPOSE,
-                    build_agent_prompt_state_message("prompt-2", DAEMON_SENT_RESPONSE),
-                ),
-            ],
+            [(AGENT_PROMPT_PURPOSE, DAEMON_COMPLETE)],
         )
         self.assertEqual(
             runs,
@@ -690,7 +661,7 @@ class RunAgentPromptCycleTests(unittest.TestCase):
             "directory": "/workspace/project",
             "prompt": "Build the second feature",
         })
-        message_reads = [first_prompt_payload, queued_prompt_payload]
+        message_reads = [first_prompt_payload]
 
         def fake_read_message(_config, purpose):
             self.assertEqual(purpose, AGENT_PROMPT_PURPOSE)
@@ -739,12 +710,7 @@ class RunAgentPromptCycleTests(unittest.TestCase):
 
         self.assertEqual(
             writes,
-            [
-                (
-                    AGENT_PROMPT_PURPOSE,
-                    build_agent_prompt_state_message("prompt-1", DAEMON_RECEIVED_MESSAGE),
-                ),
-            ],
+            [(AGENT_PROMPT_PURPOSE, DAEMON_COMPLETE)],
         )
         self.assertEqual(
             runs,
@@ -779,7 +745,6 @@ class CursorProviderRoutingTests(unittest.TestCase):
                 "prompt": "Build the feature",
                 "provider": "cursor",
             }),
-            build_agent_prompt_state_message("cursor-1", DAEMON_RECEIVED_MESSAGE),
         ]
 
         def fake_read_message(_config, _purpose):
@@ -806,7 +771,7 @@ class CursorProviderRoutingTests(unittest.TestCase):
         )
 
         self.assertEqual(deliveries, [("cursor-1", "Cursor completed", "cursor")])
-        self.assertEqual(len(writes), 2)
+        self.assertEqual(writes, [(AGENT_PROMPT_PURPOSE, DAEMON_COMPLETE)])
 
 
 class RunCodexExecTests(unittest.TestCase):
@@ -1029,10 +994,7 @@ class RunGitSyncCycleTests(unittest.TestCase):
             "operation": "commit",
             "message": "Save work",
         })
-        message_reads = [
-            request_payload,
-            build_git_sync_state_message("git-sync-1", DAEMON_RECEIVED_MESSAGE),
-        ]
+        message_reads = [request_payload]
 
         def fake_read_message(_config, purpose):
             self.assertEqual(purpose, GIT_SYNC_PURPOSE)
@@ -1068,16 +1030,7 @@ class RunGitSyncCycleTests(unittest.TestCase):
         )
         self.assertEqual(
             writes,
-            [
-                (
-                    GIT_SYNC_PURPOSE,
-                    build_git_sync_state_message("git-sync-1", DAEMON_RECEIVED_MESSAGE),
-                ),
-                (
-                    GIT_SYNC_PURPOSE,
-                    build_git_sync_state_message("git-sync-1", DAEMON_SENT_RESPONSE),
-                ),
-            ],
+            [(GIT_SYNC_PURPOSE, DAEMON_COMPLETE)],
         )
         self.assertEqual(
             deliveries,

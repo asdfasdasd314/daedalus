@@ -9,6 +9,7 @@ The local daemon feature scanner starts at `Path.cwd()`, finds every descendant 
 - **Stable Keys**: Project keys use full resolved paths so duplicate folder names do not collide.
 - **Markdown Loading**: Every `.md` file under each `feature_files` directory is read recursively and returned as raw UTF-8 text.
 - **Deterministic Order**: File paths are sorted before reading so the output stays stable across runs.
+- **Directory Timing Logs**: Every visited directory logs its feature-file scan duration, including directories that do not contain a `feature_files` directory.
 
 ## Relevant Files
 - `local-daemon/src/daedalus_daemon/scanner.py`: Recursive filesystem scanner for compatible projects and markdown loading.
@@ -20,3 +21,5 @@ HACKING
 
 ## State Log
 - 2026-07-03: Implemented the recursive scanner, wired the daemon entrypoint to it, and verified deterministic project aggregation with unit tests.
+- 2026-07-13: Added an info-level timing log for each directory visited while locating feature-file directories.
+- 2026-07-13: Restored legacy daemon protocol exports so the scanner verification suite can import its existing public interface.
