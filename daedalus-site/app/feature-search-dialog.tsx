@@ -19,25 +19,39 @@ import {
 const ALL_PROJECTS_SCOPE = "all";
 const MAX_SEARCH_RESULTS = 20;
 
+export type FeatureSearchMode = "navigate" | "tag";
+
 type FeatureSearchDialogProps = {
+  excludedFilePaths?: string[];
+  initialScope?: string;
   isMobile: boolean;
   isOpen: boolean;
+  mode?: FeatureSearchMode;
   onClose: () => void;
   onSelect: (selection: FeatureGraphSelection) => void;
   projects: FeatureFileProjects;
 };
 
 export default function FeatureSearchDialog({
+  excludedFilePaths = [],
+  initialScope = ALL_PROJECTS_SCOPE,
   isMobile,
   isOpen,
+  mode = "navigate",
   onClose,
   onSelect,
   projects,
 }: FeatureSearchDialogProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [query, setQuery] = useState("");
-  const [scope, setScope] = useState(ALL_PROJECTS_SCOPE);
+  const [scope, setScope] = useState(initialScope);
   const [activeIndex, setActiveIndex] = useState(0);
+  const isTagMode = mode === "tag";
+  const selectVerb = isTagMode ? "Add" : "Open";
+  const excludedPaths = useMemo(
+    () => new Set(excludedFilePaths),
+    [excludedFilePaths],
+  );
 
   const searchRecords = useMemo(
     () => buildFeatureSearchRecords(projects),
@@ -73,17 +87,26 @@ export default function FeatureSearchDialog({
       scope === ALL_PROJECTS_SCOPE
         ? matchedRecords
         : matchedRecords.filter((record) => record.projectPath === scope);
+    const availableMatches = scopedMatches.filter(
+      (record) => !excludedPaths.has(record.filePath),
+    );
 
-    return scopedMatches.slice(0, MAX_SEARCH_RESULTS);
-  }, [fuse, query, scope, searchRecords]);
+    return availableMatches.slice(0, MAX_SEARCH_RESULTS);
+  }, [excludedPaths, fuse, query, scope, searchRecords]);
 
   useEffect(() => {
     if (!isOpen) {
       return;
     }
 
+    const nextScope =
+      initialScope === ALL_PROJECTS_SCOPE ||
+      projectDirectories.includes(initialScope)
+        ? initialScope
+        : ALL_PROJECTS_SCOPE;
+
     setQuery("");
-    setScope(ALL_PROJECTS_SCOPE);
+    setScope(nextScope);
     setActiveIndex(0);
 
     const focusTimer = window.setTimeout(() => {
@@ -93,7 +116,7 @@ export default function FeatureSearchDialog({
     return () => {
       window.clearTimeout(focusTimer);
     };
-  }, [isOpen]);
+  }, [initialScope, isOpen, projectDirectories]);
 
   useEffect(() => {
     setActiveIndex(0);
@@ -202,7 +225,7 @@ export default function FeatureSearchDialog({
               id="feature-search-title"
               className="mt-2 text-xl font-semibold text-white"
             >
-              Find a feature
+              {isTagMode ? "Tag a feature" : "Find a feature"}
             </h2>
           </div>
           <button
@@ -295,7 +318,7 @@ export default function FeatureSearchDialog({
         </div>
 
         <div className="border-t border-white/10 px-4 py-3 text-[11px] uppercase tracking-[0.18em] text-slate-500 sm:px-5">
-          ↑↓ Navigate · Enter Open · Esc Close
+          ↑↓ Navigate · Enter {selectVerb} · Esc Close
         </div>
       </div>
     </div>

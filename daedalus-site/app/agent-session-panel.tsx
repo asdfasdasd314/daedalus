@@ -8,10 +8,8 @@ import type {
   TargetedFeature,
 } from "@/lib/agent-chat-cache";
 import type { AgentModelsConfig } from "@/lib/agent-models";
-import type { FeatureFileProjects } from "@/lib/feature-file-cache";
 import {
   getCompactProjectLabel,
-  getFeatureOptionsForProject,
   getProjectLabel,
 } from "./feature-workspace-utils";
 
@@ -54,9 +52,9 @@ type AgentSessionPanelProps = {
   onRetryQueuedAgentPrompt: (promptId: string) => void;
   onSelectedProjectDirectoryChange: (projectDirectory: string) => void;
   onSelectedReasoningChange: (reasoning: string) => void;
+  onOpenFeatureTagSearch: () => void;
   onSelectModel: (modelId: string) => void;
   onSendPrompt: () => void;
-  onTargetedFeatureAdd: (feature: TargetedFeature) => void;
   onUndoClearDurableTasks: () => void;
   isConfirmingClearDurableTasks: boolean;
   isClearingDurableTasks: boolean;
@@ -66,7 +64,6 @@ type AgentSessionPanelProps = {
     prompt: string;
     status: AgentPromptQueueStatus;
   }>;
-  projects: FeatureFileProjects;
   promptQueueStatusText: string;
   promptText: string;
   selectedModelId: string;
@@ -98,15 +95,14 @@ export default function AgentSessionPanel({
   onRetryQueuedAgentPrompt,
   onSelectedProjectDirectoryChange,
   onSelectedReasoningChange,
+  onOpenFeatureTagSearch,
   onSelectModel,
   onSendPrompt,
-  onTargetedFeatureAdd,
   onUndoClearDurableTasks,
   isConfirmingClearDurableTasks,
   isClearingDurableTasks,
   finalizedDurableTaskCount,
   durableTasks,
-  projects,
   promptQueueStatusText,
   promptText,
   selectedModelId,
@@ -121,10 +117,6 @@ export default function AgentSessionPanel({
     providerModels.find((model) => model.id === selectedModelId) ??
     defaultModel;
   const reasoningOptions = selectedModel.reasoning;
-  const availableFeatures = getFeatureOptionsForProject(
-    projects,
-    selectedProjectDirectory,
-  );
   const compactProjectLabel = getCompactProjectLabel(
     selectedProjectDirectory,
     availableProjectDirectories,
@@ -133,21 +125,9 @@ export default function AgentSessionPanel({
     selectedProjectDirectory,
     availableProjectDirectories,
   );
-  const selectableFeatures = availableFeatures.filter(
-    (feature) =>
-      !targetedFeatures.some(
-        (targetedFeature) => targetedFeature.filePath === feature.filePath,
-      ),
-  );
-  const [selectedFeaturePath, setSelectedFeaturePath] = useState("");
   const [isMarkdownReplyView, setIsMarkdownReplyView] = useState(true);
   const [copyPromptButtonLabel, setCopyPromptButtonLabel] = useState("Copy");
   const [copyReplyButtonLabel, setCopyReplyButtonLabel] = useState("Copy");
-  const effectiveSelectedFeaturePath = selectableFeatures.some(
-    (feature) => feature.filePath === selectedFeaturePath,
-  )
-    ? selectedFeaturePath
-    : "";
 
   useEffect(() => {
     setIsMarkdownReplyView(true);
@@ -175,27 +155,6 @@ export default function AgentSessionPanel({
       setCopyReplyButtonLabel("Copied");
       window.setTimeout(() => setCopyReplyButtonLabel("Copy"), 1500);
     });
-  }
-
-  function addFeatureTag() {
-    if (!selectedFeaturePath) {
-      return;
-    }
-
-    const featureToAdd = selectableFeatures.find(
-      (feature) => feature.filePath === selectedFeaturePath,
-    );
-
-    if (!featureToAdd) {
-      return;
-    }
-
-    onTargetedFeatureAdd({
-      featureName: featureToAdd.featureName,
-      filePath: featureToAdd.filePath,
-      projectPath: selectedProjectDirectory,
-    });
-    setSelectedFeaturePath("");
   }
 
   return (
@@ -312,28 +271,13 @@ export default function AgentSessionPanel({
         <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">
           Feature scope
         </p>
-        <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
-          <select
-            value={effectiveSelectedFeaturePath}
-            onChange={(event) => setSelectedFeaturePath(event.target.value)}
-            className="agent-chat-scrollbar min-w-0 rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none"
-          >
-            <option value="">Select a feature</option>
-            {selectableFeatures.map((feature) => (
-              <option key={feature.filePath} value={feature.filePath}>
-                {feature.featureName}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={addFeatureTag}
-            disabled={!effectiveSelectedFeaturePath}
-            className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
-          >
-            Add feature
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={onOpenFeatureTagSearch}
+          className="rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-left text-sm font-semibold text-slate-100 transition hover:bg-slate-800"
+        >
+          Search features to tag
+        </button>
         {targetedFeatures.length > 0 ? (
           <div className="flex flex-wrap gap-2 rounded-[1.25rem] border border-white/10 bg-slate-900/50 p-3">
             {targetedFeatures.map((feature) => (

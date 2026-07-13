@@ -9,7 +9,9 @@ import { parseGitSyncRowMessage } from "./git-sync-utils";
 import FeatureFileGraph, {
   type FeatureGraphSelection,
 } from "./feature-file-graph";
-import FeatureSearchDialog from "./feature-search-dialog";
+import FeatureSearchDialog, {
+  type FeatureSearchMode,
+} from "./feature-search-dialog";
 import ParameterVariableSelector from "./parameter-variable-selector";
 import type {
   AgentChatExchange,
@@ -262,7 +264,8 @@ export default function FeatureFilesDashboard({
   const [gitSyncStatus, setGitSyncStatus] = useState("");
   const [gitSyncResult, setGitSyncResult] = useState<GitSyncResult | null>(null);
   const [isGitSyncRequestInFlight, setIsGitSyncRequestInFlight] = useState(false);
-  const [isFeatureSearchOpen, setIsFeatureSearchOpen] = useState(false);
+  const [featureSearchMode, setFeatureSearchMode] =
+    useState<FeatureSearchMode | null>(null);
   const [isGraphPhysicsEnabled, setIsGraphPhysicsEnabled] = useState(true);
   const [isGraphZoomSliderVisible, setIsGraphZoomSliderVisible] =
     useState(true);
@@ -483,7 +486,7 @@ export default function FeatureFilesDashboard({
 
       event.preventDefault();
       setIsWorkspaceMenuOpen(false);
-      setIsFeatureSearchOpen(true);
+      setFeatureSearchMode("navigate");
     }
 
     document.addEventListener("keydown", handleFeatureSearchShortcut);
@@ -1736,15 +1739,30 @@ export default function FeatureFilesDashboard({
 
   function openFeatureSearch() {
     closeWorkspaceMenu();
-    setIsFeatureSearchOpen(true);
+    setFeatureSearchMode("navigate");
+  }
+
+  function openFeatureTagSearch() {
+    setFeatureSearchMode("tag");
   }
 
   function closeFeatureSearch() {
-    setIsFeatureSearchOpen(false);
+    setFeatureSearchMode(null);
   }
 
   function handleFeatureSearchSelect(selection: FeatureGraphSelection) {
+    const activeSearchMode = featureSearchMode;
     closeFeatureSearch();
+
+    if (activeSearchMode === "tag") {
+      addTargetedFeature({
+        featureName: selection.featureName,
+        filePath: selection.filePath,
+        projectPath: selection.projectPath,
+      });
+      return;
+    }
+
     handleFeatureNodeSelect(selection);
   }
 
@@ -3092,7 +3110,7 @@ export default function FeatureFilesDashboard({
                 onSelectedReasoningChange={setSelectedReasoning}
                 onSelectModel={selectModel}
                 onSendPrompt={sendAgentPrompt}
-                onTargetedFeatureAdd={addTargetedFeature}
+                onOpenFeatureTagSearch={openFeatureTagSearch}
                 durableTasks={durableAgentTasks.map(
                   ({ promptId, prompt, status }) => ({
                     promptId,
@@ -3103,7 +3121,6 @@ export default function FeatureFilesDashboard({
                 finalizedDurableTaskCount={finalizedDurableTaskCount}
                 isConfirmingClearDurableTasks={isConfirmingClearDurableTasks}
                 isClearingDurableTasks={isClearingDurableTasks}
-                projects={projects ?? {}}
                 promptQueueStatusText={promptQueueStatusText}
                 promptText={promptText}
                 selectedModelId={selectedModelId}
@@ -3202,7 +3219,7 @@ export default function FeatureFilesDashboard({
                   onSelectedReasoningChange={setSelectedReasoning}
                   onSelectModel={selectModel}
                   onSendPrompt={sendAgentPrompt}
-                  onTargetedFeatureAdd={addTargetedFeature}
+                  onOpenFeatureTagSearch={openFeatureTagSearch}
                   durableTasks={durableAgentTasks.map(
                     ({ promptId, prompt, status }) => ({
                       promptId,
@@ -3213,7 +3230,6 @@ export default function FeatureFilesDashboard({
                   finalizedDurableTaskCount={finalizedDurableTaskCount}
                   isConfirmingClearDurableTasks={isConfirmingClearDurableTasks}
                   isClearingDurableTasks={isClearingDurableTasks}
-                  projects={projects ?? {}}
                   promptQueueStatusText={promptQueueStatusText}
                   promptText={promptText}
                   selectedModelId={selectedModelId}
@@ -3277,8 +3293,17 @@ export default function FeatureFilesDashboard({
       </div>
 
       <FeatureSearchDialog
+        excludedFilePaths={
+          featureSearchMode === "tag"
+            ? targetedFeatures.map((feature) => feature.filePath)
+            : []
+        }
+        initialScope={
+          featureSearchMode === "tag" ? selectedProjectDirectory : "all"
+        }
         isMobile={isMobileLayout}
-        isOpen={isFeatureSearchOpen}
+        isOpen={featureSearchMode !== null}
+        mode={featureSearchMode ?? "navigate"}
         onClose={closeFeatureSearch}
         onSelect={handleFeatureSearchSelect}
         projects={projects ?? {}}
