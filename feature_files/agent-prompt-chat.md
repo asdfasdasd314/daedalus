@@ -13,7 +13,7 @@ The agent prompt chat adds a reusable prompt composer to the existing dashboard 
 - **Targeted Feature Scope**: The chat panel keeps a separate `Targeted Features` chip row for the next outbound prompt only, and each prompt now carries a `targetedFeaturePaths` list of project-relative `feature_files/*.md` paths.
 - **Execution Loop**: Planning prompts keep the direct `agent_prompt` message path, while agent-mode prompts become durable `agent_tasks` consumed by the Git worktree orchestrator; both return the latest prompt/reply pair through `daemon_payloads`.
 - **Chat Progress**: The dashboard watches the `agent_prompt` row so it can show daemon pickup and completion updates while the reply is still being generated.
-- **Orchestrator Completion**: The dashboard polls the durable `daemon_events` stream, including the orchestrator's final successful-integration event, so resolver warnings are replaced by a visible completion notification after promotion.
+- **Pinned Orchestrator Completion**: The dashboard independently loads the latest successful-integration event from `daemon_events` and gives that confirmation priority over transient prompt, task, and warning statuses, so the last integrated batch stays visible across polls and reloads.
 - **Queued Prompt Safety**: If a newer prompt arrives while an older one is still running, the daemon leaves the newer row in place instead of overwriting it with `daemon_sent_response`.
 - **Latest Pair Only**: The UI keeps only the newest submitted prompt and daemon reply instead of a full transcript.
 - **Clear Control**: The chat panel now includes a local clear action that hides the current prompt/reply block and suppresses the cached exchange until a new prompt is sent.
@@ -84,4 +84,4 @@ HACKING
 - 2026-07-12: Restricted the durable-task clear action to finalized completed, failed, and blocked task states while preserving active tasks in the dashboard queue.
 - 2026-07-12: Delayed durable-task window rendering until its current-user query completes, retained completed rows in the full task list, and made GPT-5.6 Terra with medium reasoning the default Codex selection.
 - 2026-07-12: Split durable agent tasks into dedicated poll state with single-flight stale-response guarding so overlapping Supabase polls can no longer blink the task panel.
-- 2026-07-12: Kept the latest durable daemon event visible across task polls so a successful integration notice is not replaced by a transient generic task status.
+- 2026-07-12: Pinned the most recent successful durable-batch integration confirmation above transient chat and task statuses, reloading it independently so it cannot flicker away during polling or after a page reload.

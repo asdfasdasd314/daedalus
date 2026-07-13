@@ -216,6 +216,8 @@ export default function FeatureFilesDashboard({
   const [parameterUpdateMessage, setParameterUpdateMessage] = useState("");
   const [promptText, setPromptText] = useState("");
   const [promptStatus, setPromptStatus] = useState("");
+  const [lastIntegratedBatchStatus, setLastIntegratedBatchStatus] =
+    useState("");
   const [latestChat, setLatestChat] = useState<AgentChatExchange | null>(null);
   const [isAgentChatCleared, setIsAgentChatCleared] = useState(false);
   const [agentPromptQueue, setAgentPromptQueue] = useState<
@@ -579,6 +581,7 @@ export default function FeatureFilesDashboard({
     setDurableAgentTasks([]);
     setDurableTaskUserId("");
     setFinalizedDurableTaskCount(0);
+    setLastIntegratedBatchStatus("");
   }, [currentUserId]);
 
   useEffect(() => {
@@ -600,7 +603,7 @@ export default function FeatureFilesDashboard({
       const acceptedGeneration = ++requestGeneration;
 
       try {
-        const [rows, latestEvent] = await Promise.all([
+        const [rows, latestEvent, latestIntegrationEvent] = await Promise.all([
           fetchAgentTasks(
             supabaseUrl,
             supabasePublishableKey,
@@ -608,6 +611,12 @@ export default function FeatureFilesDashboard({
             pollUserId,
           ),
           fetchLatestDaemonEvent(
+            supabaseUrl,
+            supabasePublishableKey,
+            accessToken,
+            pollUserId,
+          ).catch(() => null),
+          fetchLatestSuccessfulIntegrationEvent(
             supabaseUrl,
             supabasePublishableKey,
             accessToken,
@@ -629,6 +638,11 @@ export default function FeatureFilesDashboard({
         );
         setDurableAgentTasks(durableQueue);
         setDurableTaskUserId(pollUserId);
+        if (latestIntegrationEvent) {
+          setLastIntegratedBatchStatus(
+            `Daemon: ${latestIntegrationEvent.message}`,
+          );
+        }
         if (latestEvent?.severity === "warning") {
           setPromptStatus(`Daemon warning: ${latestEvent.message}`);
         } else if (latestEvent?.severity === "error") {
@@ -1579,6 +1593,7 @@ export default function FeatureFilesDashboard({
   );
   const currentPromptQueueItem = agentPromptQueue[0] ?? null;
   const promptQueueStatusText =
+    lastIntegratedBatchStatus ||
     promptStatus ||
     getAgentPromptQueueStatusText(agentPromptQueue) ||
     (durableAgentTasks[0]
@@ -3886,6 +3901,33 @@ async function fetchLatestDaemonEvent(
   });
   if (!response.ok) {
     throw new Error("daemon event query failed");
+  }
+  const rows = (await response.json()) as DaemonEventRow[];
+  return rows[0] ?? null;
+}
+
+async function fetchLatestSuccessfulIntegrationEvent(
+  supabaseUrl: string,
+  supabasePublishableKey: string,
+  accessToken: string,
+  userId: string,
+) {
+  const url = new URL("/rest/v1/daemon_events", supabaseUrl);
+  url.searchParams.set("select", "severity,message");
+  url.searchParams.set("user_id", `eq.${userId}`);
+  url.searchParams.set("severity", "eq.info");
+  url.searchParams.set(
+    "message",
+    "like.*integrated successfully into the repository.*",
+  );
+  url.searchParams.set("order", "created_at.desc");
+  url.searchParams.set("limit", "1");
+
+  const response = await fetch(url, {
+    headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
+  });
+  if (!response.ok) {
+    throw new Error("successful integration event query failed");
   }
   const rows = (await response.json()) as DaemonEventRow[];
   return rows[0] ?? null;
