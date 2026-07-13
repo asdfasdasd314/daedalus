@@ -160,6 +160,31 @@ class ScanFeatureFileProjectsTests(unittest.TestCase):
                 },
             )
 
+    def test_stops_searching_inside_discovered_project(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = root / "project"
+            nested_project = project / "data" / "nested-project"
+            (project / "feature_files").mkdir(parents=True)
+            (nested_project / "feature_files").mkdir(parents=True)
+
+            (project / "feature_files" / "current.md").write_text(
+                "current", encoding="utf-8"
+            )
+            (nested_project / "feature_files" / "ignored.md").write_text(
+                "ignored", encoding="utf-8"
+            )
+
+            self.assertEqual(
+                scan_feature_file_projects(root),
+                {
+                    str(project.resolve()): [{
+                        "path": "feature_files/current.md",
+                        "markdown": "current",
+                    }],
+                },
+            )
+
 
 class ScanParameterFileProjectsTests(unittest.TestCase):
     def test_returns_two_projects_with_parameter_files(self):
@@ -229,6 +254,32 @@ class ScanParameterFileProjectsTests(unittest.TestCase):
                         "toml": "charlie = 3",
                     },
                 ],
+            )
+
+    def test_reads_project_parameter_files_without_searching_inside_project(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = root / "project"
+            nested_project = project / "data" / "nested-project"
+            (project / "feature_files").mkdir(parents=True)
+            (project / "parameter_files").mkdir()
+            (nested_project / "parameter_files").mkdir(parents=True)
+
+            (project / "parameter_files" / "current.toml").write_text(
+                "current = true", encoding="utf-8"
+            )
+            (nested_project / "parameter_files" / "ignored.toml").write_text(
+                "ignored = true", encoding="utf-8"
+            )
+
+            self.assertEqual(
+                scan_parameter_file_projects(root),
+                {
+                    str(project.resolve()): [{
+                        "path": "parameter_files/current.toml",
+                        "toml": "current = true",
+                    }],
+                },
             )
 
     def test_same_named_projects_do_not_collide(self):

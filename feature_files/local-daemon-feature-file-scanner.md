@@ -9,7 +9,7 @@ The local daemon feature scanner starts at `Path.cwd()`, finds every descendant 
 - **Stable Keys**: Project keys use full resolved paths so duplicate folder names do not collide.
 - **Markdown Loading**: Every `.md` file under each `feature_files` directory is read recursively and returned as raw UTF-8 text.
 - **Deterministic Order**: File paths are sorted before reading so the output stays stable across runs.
-- **Directory Timing Logs**: Every visited directory logs its feature-file scan duration, including directories that do not contain a `feature_files` directory.
+- **Project Boundary**: Once a directory containing `feature_files` is found, the scanner records its requested sibling directory and does not descend into that project's children.
 - **Startup Loading**: The frontend sends the existing feature-file and parameter-file load requests once for each signed-in user, so the workspace populates without a manual refresh.
 
 ## Relevant Files
@@ -29,3 +29,4 @@ HACKING
 - 2026-07-13: Restored daemon package exports and aligned protocol assertions so startup-loading verification covers the current review/complete message flow.
 - 2026-07-13: Resolved the integration by retaining both per-directory timing logs and authenticated startup loading with compatible daemon protocol tests.
 - 2026-07-13: Configured the daemon entrypoint's root logger at INFO so feature-file scan timing benchmarks reach the daemon terminal.
+- 2026-07-13: Removed per-directory scan logging and made each discovered `feature_files` directory a traversal boundary, preventing scans of project internals.

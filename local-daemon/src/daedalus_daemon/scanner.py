@@ -1,10 +1,5 @@
-import logging
 import os
-import time
 from pathlib import Path
-
-
-logger = logging.getLogger(__name__)
 
 
 def scan_feature_file_projects(root: Path | None = None) -> dict[str, list[dict[str, str]]]:
@@ -60,20 +55,14 @@ def find_project_directories(scan_root: Path, directory_name: str) -> list[Path]
     project_dirs: list[Path] = []
 
     def scan_directory(current_directory: Path) -> None:
-        scan_started_at = time.perf_counter()
         entries = sorted(os.scandir(current_directory), key=lambda entry: entry.name)
         directory_names = [entry.name for entry in entries if entry.is_dir()]
 
         if directory_name in directory_names:
             project_dirs.append(current_directory / directory_name)
 
-        elapsed_ms = (time.perf_counter() - scan_started_at) * 1000
-        logger.info(
-            "Scanned directory %s for %s in %.2f ms",
-            current_directory,
-            directory_name,
-            elapsed_ms,
-        )
+        if "feature_files" in directory_names:
+            return
 
         child_directories = [
             Path(entry.path)
