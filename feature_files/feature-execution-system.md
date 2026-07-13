@@ -24,3 +24,4 @@ HACKING
 - 2026-07-13: Initialized the durable feature execution system ownership boundary.
 - 2026-07-13: Implemented daemon-owned feature command validation, durable run lifecycle protocol, and overlay Run/status/Cancel controls; test execution awaits standalone authorization.
 - 2026-07-13: Updated daemon configuration fixtures to include the required execution-system parameters and its exposed runtime settings.
+- 2026-07-13: Aligned the feature execution supervisor cycle signature with the daemon's shared config-passing cycle runner to prevent repeated invocation errors.

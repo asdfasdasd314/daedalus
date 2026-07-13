@@ -69,7 +69,7 @@ class FeatureExecutionSupervisor:
         self.processes: dict[str, dict] = {}
         self.reconciled = False
 
-    def run_cycle(self) -> None:
+    def run_cycle(self, _config: dict | None = None) -> None:
         active_rows = list_active_feature_execution_runs(self.config)
         if not self.reconciled:
             self._reconcile_restart(active_rows)
