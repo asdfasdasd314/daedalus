@@ -11,6 +11,7 @@ from daedalus_daemon.communications import (
     AGENT_CHAT_PAYLOAD_KIND,
     AGENT_PROMPT_PURPOSE,
     DAEMON_COMPLETE,
+    DAEMON_REVIEW,
     FEATURE_FILES_PAYLOAD_KIND,
     FEATURE_FILE_LOAD_PURPOSE,
     GIT_SYNC_PAYLOAD_KIND,
@@ -21,6 +22,7 @@ from daedalus_daemon.communications import (
     post_feature_files,
     post_git_sync_result,
     post_parameter_files,
+    upsert_orchestration_batch,
     update_current_message,
 )
 
@@ -129,6 +131,25 @@ class UpdateCurrentMessageTests(unittest.TestCase):
             request_bodies,
             [{"p_purpose": PARAMETER_FILE_LOAD_PURPOSE, "p_user_id": "user-1"}],
         )
+
+    def test_terminal_batch_overrides_stale_daemon_review_state(self):
+        request_bodies: list[dict] = []
+
+        def fake_urlopen(http_request, timeout=None):
+            request_bodies.append(json.loads(http_request.data.decode("utf-8")))
+            return FakeResponse({})
+
+        with patch("daedalus_daemon.communications.request.urlopen", side_effect=fake_urlopen):
+            upsert_orchestration_batch(
+                {
+                    "supabaseUrl": "https://example.supabase.co",
+                    "supabasePublishableKey": "publishable-key",
+                    "daemonUserId": "user-1",
+                },
+                {"id": "batch-1", "status": "completed", "message": DAEMON_REVIEW},
+            )
+
+        self.assertEqual(request_bodies[0]["p_batch"]["message"], DAEMON_COMPLETE)
 
     def test_posts_feature_files_to_daemon_payload_rpc(self):
         request_bodies: list[dict] = []

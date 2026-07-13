@@ -167,15 +167,14 @@ def list_orchestration_batches(config: dict) -> list[dict]:
 
 
 def upsert_orchestration_batch(config: dict, batch: dict) -> None:
-    if "message" not in batch:
-        batch = {
-            **batch,
-            "message": (
-                DAEMON_COMPLETE
-                if batch.get("status") in {"completed", "blocked"}
-                else DAEMON_REVIEW
-            ),
-        }
+    batch = {
+        **batch,
+        "message": (
+            DAEMON_COMPLETE
+            if batch.get("status") in {"completed", "blocked"}
+            else DAEMON_REVIEW
+        ),
+    }
     call_daemon_rpc(config, "daemon_upsert_orchestration_batch", {
         "p_user_id": config["daemonUserId"],
         "p_batch": batch,
