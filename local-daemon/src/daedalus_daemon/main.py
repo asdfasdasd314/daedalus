@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 from pathlib import Path
 import re
@@ -870,6 +871,7 @@ def run_cursor_exec(directory: str, prompt: str, planning_mode: bool = False) ->
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO)
     config = load_daemon_config()
     orchestrator = GitWorktreeOrchestrator(config, run_codex_exec, run_cursor_exec)
 
