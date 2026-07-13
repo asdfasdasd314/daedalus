@@ -44,3 +44,4 @@ HACKING
 - 2026-07-12: Moved manual Git Sync ownership into its own feature record so worktree orchestration remains scoped to durable agent scheduling and integration.
 - 2026-07-12: Reclaimed completed and clean failed worktrees after daemon interruptions while excluding the Daedalus workspace root from project scans.
 - 2026-07-13: Added hard cancel for agent-mode worktree tasks with process-group kill, cancel_requested signaling, cancelled terminal status, force worktree reclaim, and dashboard Cancel controls.
+- 2026-07-13: Fixed planning-mode Codex cycle test expectation to include PLANNING_PROMPT_SUFFIX so verification matches build_codex_prompt.

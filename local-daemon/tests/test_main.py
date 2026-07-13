@@ -595,6 +595,7 @@ class RunAgentPromptCycleTests(unittest.TestCase):
         message_reads = [prompt_payload]
         expected_prompt = (
             f"{PLANNING_PROMPT_PREFIX.rstrip()}\n\n"
+            f"{PLANNING_PROMPT_SUFFIX.rstrip()}\n\n"
             "The following prompt reqeusts changes relevant to the following feature files: "
             "feature_files/agent-prompt-chat.md, feature_files/feature-file-graph-display.md\n\n"
             "Build the feature"
