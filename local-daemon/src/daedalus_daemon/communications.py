@@ -39,7 +39,9 @@ def fetch_current_message(config: dict, purpose: str) -> str | None:
     if not rows:
         return None
 
-    return rows[0].get("content")
+    # A NULL content value is a valid, payload-free load request. Reserve None
+    # for no daemon-review row so project load cycles can distinguish the two.
+    return rows[0].get("content") or ""
 
 
 def fetch_communication_rows(config: dict, purpose: str) -> list[dict]:

@@ -124,7 +124,7 @@ class UpdateCurrentMessageTests(unittest.TestCase):
                 PARAMETER_FILE_LOAD_PURPOSE,
             )
 
-        self.assertIsNone(message)
+        self.assertEqual(message, "")
         self.assertEqual(
             request_bodies,
             [{"p_purpose": PARAMETER_FILE_LOAD_PURPOSE, "p_user_id": "user-1"}],
