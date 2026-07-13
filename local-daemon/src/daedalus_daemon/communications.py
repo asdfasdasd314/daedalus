@@ -149,7 +149,7 @@ def update_agent_task(
     expected_status: str,
     updates: dict,
 ) -> bool:
-    if updates.get("status") in {"completed", "failed", "blocked"}:
+    if updates.get("status") in {"completed", "failed", "blocked", "cancelled"}:
         updates = {**updates, "message": CLIENT_REVIEW}
     result = call_daemon_rpc(config, "daemon_update_agent_task", {
         "p_user_id": config["daemonUserId"],

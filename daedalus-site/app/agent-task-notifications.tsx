@@ -2,7 +2,11 @@
 
 import { useEffect, useRef } from "react";
 
-export type AgentTaskNotificationStatus = "completed" | "failed" | "blocked";
+export type AgentTaskNotificationStatus =
+  | "completed"
+  | "failed"
+  | "blocked"
+  | "cancelled";
 
 export type AgentTaskNotification = {
   id: string;
@@ -27,6 +31,7 @@ const STATUS_LABELS: Record<AgentTaskNotificationStatus, string> = {
   completed: "Completed",
   failed: "Failed",
   blocked: "Blocked",
+  cancelled: "Cancelled",
 };
 
 export default function AgentTaskNotifications({
@@ -153,7 +158,9 @@ export default function AgentTaskNotifications({
                           ? "text-emerald-300"
                           : item.status === "failed"
                             ? "text-rose-300"
-                            : "text-amber-300"
+                            : item.status === "cancelled"
+                              ? "text-slate-300"
+                              : "text-amber-300"
                       }`}
                     >
                       {STATUS_LABELS[item.status]}

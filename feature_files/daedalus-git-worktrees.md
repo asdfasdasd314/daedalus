@@ -8,21 +8,25 @@ Daedalus Git Worktrees isolates agent-mode prompts on task branches and uses a d
 - **Central Configuration**: Scheduler, resolver, branch, and verification settings are loaded once from Daedalus's feature-owned parameter file rather than requiring configuration files in managed repositories.
 - **Durable Progress**: The daemon records task claim, agent-start, and verification events so agent-mode work is observable without relying on the legacy single-prompt channel.
 - **Daemon-Owned Commits**: When an agent sandbox cannot reach Git's shared worktree metadata, the daemon stages and commits the completed isolated changes before verification.
-- **Reclaimable Workspaces**: Completed worktrees and clean failed worktrees are removed on later daemon cycles; dirty failures and blocked integrations remain available for recovery.
+- **Reclaimable Workspaces**: Completed, cancelled, and clean failed worktrees are removed on later daemon cycles; dirty failures and blocked integrations remain available for recovery.
 - **Task Repair Loop**: Individual verification suites receive up to three total attempts in the same isolated worktree, with later agent repairs informed by the captured failure before a durable terminal error is reported.
 - **Base-State Cohorts**: Tasks admitted from the same `main` commit are verified independently and integrated in submission order after the cohort fills or its quiet window expires.
 - **Safe Promotion**: Combined work is tested on an integration branch and local `main` advances only by a verified fast-forward; no remote push occurs.
 - **Resolver Loop**: Merge conflicts and combined-test failures launch a resolver agent up to three times, with daemon warnings for attempts and a blocking error after exhaustion.
 - **Integration Notification**: A successful promotion records an info event in `daemon_events` after the batch is completed, allowing the dashboard to report completion instead of leaving the last resolver warning visible.
+- **Hard Cancel**: Users can cancel agent-mode durable tasks (`queued` through `resolving`); the daemon kills the tracked process group, marks `cancelled`, force-removes the worktree, and records a durable cancel event. Planning-mode Abandon remains a local-queue-only path.
 - **Planning Bypass**: Planning-mode prompts retain the read-only direct execution path and consume no worktree capacity.
-- **Deferred Controls**: User cancellation, pruning, and post-integration revert controls are intentionally outside this first delivery.
+- **Deferred Controls**: Pruning and post-integration revert controls remain intentionally outside this delivery.
 
 ## Relevant Files
-- `local-daemon/src/daedalus_daemon/orchestrator.py`: Git worktree lifecycle, verification, batching, resolver attempts, and promotion.
+- `local-daemon/src/daedalus_daemon/orchestrator.py`: Git worktree lifecycle, verification, batching, resolver attempts, hard cancel, and promotion.
 - `local-daemon/src/daedalus_daemon/communications.py`: Durable task, batch, and event transport used by the daemon.
+- `local-daemon/src/daedalus_daemon/main.py`: Tracked agent subprocess registry and SIGTERM/SIGKILL cancel plumbing.
+- `shared/database/migrations/015_agent_task_cancel.sql`: Adds `cancelled` status, `cancel_requested`, cancel RLS, and terminal RPC handling.
 - `shared/database/migrations/009_git_worktree_orchestrator.sql`: Auth-scoped orchestration tables, policies, and daemon RPCs.
-- `daedalus-site/app/feature-files-dashboard.tsx`: Durable agent task submission and status polling.
-- `parameter_files/daedalus-git-worktrees.toml`: Daedalus-owned scheduler, resolver, branch, and verification configuration shared by managed repositories.
+- `daedalus-site/app/feature-files-dashboard.tsx`: Durable agent task submission, cancel requests, and status polling.
+- `daedalus-site/app/agent-session-panel.tsx`: Cancel control on in-flight durable tasks.
+- `parameter_files/daedalus-git-worktrees.toml`: Daedalus-owned scheduler, resolver, branch, cancel grace, and verification configuration shared by managed repositories.
 
 ## Dev Mode
 HACKING
@@ -39,3 +43,4 @@ HACKING
 - 2026-07-12: Delivered the dashboard Git Sync workflow with daemon-side commit and pull/push execution, structured step output, and request-scoped frontend polling.
 - 2026-07-12: Moved manual Git Sync ownership into its own feature record so worktree orchestration remains scoped to durable agent scheduling and integration.
 - 2026-07-12: Reclaimed completed and clean failed worktrees after daemon interruptions while excluding the Daedalus workspace root from project scans.
+- 2026-07-13: Added hard cancel for agent-mode worktree tasks with process-group kill, cancel_requested signaling, cancelled terminal status, force worktree reclaim, and dashboard Cancel controls.

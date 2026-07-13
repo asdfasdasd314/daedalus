@@ -97,7 +97,7 @@ create table agent_tasks (
   reasoning text not null default '',
   planning_mode boolean not null default false,
   targeted_feature_paths jsonb not null default '[]'::jsonb,
-  status text not null default 'queued' check (status in ('queued', 'running', 'verifying', 'ready', 'failed', 'integrating', 'resolving', 'completed', 'blocked')),
+  status text not null default 'queued' check (status in ('queued', 'running', 'verifying', 'ready', 'failed', 'integrating', 'resolving', 'completed', 'blocked', 'cancelled')),
   queue_sequence bigint generated always as identity,
   base_commit text,
   branch_name text,
@@ -106,6 +106,7 @@ create table agent_tasks (
   result text not null default '',
   error text not null default '',
   verification_attempts integer not null default 0,
+  cancel_requested boolean not null default false,
   created_at timestamptz not null default now(),
   started_at timestamptz,
   completed_at timestamptz,
@@ -169,6 +170,17 @@ create policy "authenticated users can acknowledge own agent tasks"
 on agent_tasks for update to authenticated
 using (user_id = auth.uid() and message = 'client_review')
 with check (user_id = auth.uid() and message = 'client_complete');
+create policy "authenticated users can request cancel on own agent tasks"
+on agent_tasks for update to authenticated
+using (
+  user_id = auth.uid()
+  and cancel_requested = false
+  and status in ('queued', 'running', 'verifying', 'ready', 'integrating', 'resolving')
+)
+with check (
+  user_id = auth.uid()
+  and cancel_requested = true
+);
 create policy "authenticated users can delete own agent tasks"
 on agent_tasks for delete to authenticated using (user_id = auth.uid());
 create policy "authenticated users can read own orchestration batches"
@@ -293,7 +305,7 @@ returns boolean language plpgsql security definer set search_path = public as $$
 begin
   update agent_tasks set
     status = coalesce(p_updates->>'status', status),
-    message = coalesce(p_updates->>'message', case when p_updates->>'status' in ('completed', 'failed', 'blocked') then 'client_review' else message end),
+    message = coalesce(p_updates->>'message', case when p_updates->>'status' in ('completed', 'failed', 'blocked', 'cancelled') then 'client_review' else message end),
     base_commit = coalesce(p_updates->>'base_commit', base_commit),
     branch_name = coalesce(p_updates->>'branch_name', branch_name),
     worktree_path = coalesce(p_updates->>'worktree_path', worktree_path),
@@ -301,6 +313,7 @@ begin
     result = coalesce(p_updates->>'result', result),
     error = coalesce(p_updates->>'error', error),
     verification_attempts = coalesce((p_updates->>'verification_attempts')::integer, verification_attempts),
+    cancel_requested = coalesce((p_updates->>'cancel_requested')::boolean, cancel_requested),
     started_at = case when p_updates ? 'started_at' then (p_updates->>'started_at')::timestamptz else started_at end,
     completed_at = case when p_updates ? 'completed_at' then (p_updates->>'completed_at')::timestamptz else completed_at end,
     updated_at = now()

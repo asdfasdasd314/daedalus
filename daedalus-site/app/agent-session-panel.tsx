@@ -25,6 +25,7 @@ type AgentPromptQueueStatus =
   | "blocked"
   | "completed"
   | "failed"
+  | "cancelled"
   | "stalled";
 
 type AgentSessionPanelProps = {
@@ -43,6 +44,7 @@ type AgentSessionPanelProps = {
   isPlanningMode: boolean;
   latestChat: AgentChatExchange | null;
   onAbandonQueuedAgentPrompt: (promptId: string) => void;
+  onCancelDurableTask: (promptId: string) => void;
   onAnswerPlanningQuestion: (answer: string) => void;
   onClearDurableTasks: () => void;
   onClearAgentChat: () => void;
@@ -66,6 +68,7 @@ type AgentSessionPanelProps = {
     promptId: string;
     prompt: string;
     status: AgentPromptQueueStatus;
+    cancelRequested?: boolean;
   }>;
   promptQueueStatusText: string;
   promptText: string;
@@ -89,6 +92,7 @@ export default function AgentSessionPanel({
   isPlanningMode,
   latestChat,
   onAbandonQueuedAgentPrompt,
+  onCancelDurableTask,
   onAnswerPlanningQuestion,
   onClearDurableTasks,
   onClearAgentChat,
@@ -443,16 +447,45 @@ export default function AgentSessionPanel({
               ) : null}
             </div>
           </div>
-          {durableTasks.map((task) => (
-            <div key={task.promptId} className="flex min-w-0 items-center gap-3 text-xs">
-              <span className="shrink-0 rounded-full bg-cyan-300/10 px-2 py-1 font-semibold uppercase tracking-[0.12em] text-cyan-100">
-                {task.status}
-              </span>
-              <span className="min-w-0 truncate text-slate-300" title={task.prompt}>
-                {task.prompt}
-              </span>
-            </div>
-          ))}
+          {durableTasks.map((task) => {
+            const canCancel =
+              !task.cancelRequested &&
+              (task.status === "queued" ||
+                task.status === "running" ||
+                task.status === "verifying" ||
+                task.status === "ready" ||
+                task.status === "integrating" ||
+                task.status === "resolving");
+
+            return (
+              <div key={task.promptId} className="flex min-w-0 items-center gap-3 text-xs">
+                <span className="shrink-0 rounded-full bg-cyan-300/10 px-2 py-1 font-semibold uppercase tracking-[0.12em] text-cyan-100">
+                  {task.status}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-slate-300" title={task.prompt}>
+                  {task.prompt}
+                </span>
+                {canCancel ? (
+                  <button
+                    type="button"
+                    onClick={() => onCancelDurableTask(task.promptId)}
+                    className="shrink-0 rounded-full border border-rose-400/20 bg-rose-500/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-rose-100 transition hover:bg-rose-500/15"
+                  >
+                    Cancel
+                  </button>
+                ) : null}
+                {task.cancelRequested &&
+                task.status !== "completed" &&
+                task.status !== "failed" &&
+                task.status !== "blocked" &&
+                task.status !== "cancelled" ? (
+                  <span className="shrink-0 text-[10px] uppercase tracking-[0.14em] text-amber-200/80">
+                    Cancelling
+                  </span>
+                ) : null}
+              </div>
+            );
+          })}
         </div>
       ) : null}
 

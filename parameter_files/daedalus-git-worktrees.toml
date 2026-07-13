@@ -2,6 +2,7 @@ max_agents_per_repository = 4
 cohort_idle_window_seconds = 30
 resolver_attempt_limit = 3
 task_verification_attempt_limit = 3
+cancel_kill_grace_seconds = 2
 primary_branch = "main"
 
 # An empty list discovers root and one-level nested npm/pytest suites in each

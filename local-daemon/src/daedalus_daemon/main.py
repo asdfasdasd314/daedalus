@@ -4,8 +4,10 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import subprocess
 import sys
+import threading
 import time
 
 DEFAULT_CODEX_MODEL = "gpt-5.5"
@@ -97,6 +99,69 @@ else:
     from .config import get_env_config_value, load_daemon_config, load_env_files
     from .scanner import scan_feature_file_projects, scan_parameter_file_projects
     from .orchestrator import GitWorktreeOrchestrator
+
+
+ACTIVE_AGENT_PROCESSES: dict[str, subprocess.Popen] = {}
+ACTIVE_AGENT_LOCK = threading.Lock()
+
+
+def register_agent_process(task_id: str, process: subprocess.Popen) -> None:
+    with ACTIVE_AGENT_LOCK:
+        ACTIVE_AGENT_PROCESSES[task_id] = process
+
+
+def unregister_agent_process(task_id: str, process: subprocess.Popen) -> None:
+    with ACTIVE_AGENT_LOCK:
+        current = ACTIVE_AGENT_PROCESSES.get(task_id)
+        if current is process:
+            ACTIVE_AGENT_PROCESSES.pop(task_id, None)
+
+
+def kill_agent_process(task_id: str, grace_seconds: float = 2.0) -> bool:
+    with ACTIVE_AGENT_LOCK:
+        process = ACTIVE_AGENT_PROCESSES.get(task_id)
+    if process is None or process.poll() is not None:
+        return False
+
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return True
+
+    deadline = time.time() + max(0.0, grace_seconds)
+    while time.time() < deadline:
+        if process.poll() is not None:
+            return True
+        time.sleep(0.05)
+
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    return True
+
+
+def run_tracked_agent_command(
+    task_id: str,
+    command: list[str],
+    directory: str,
+    env: dict[str, str] | None = None,
+) -> tuple[int, str, str]:
+    process = subprocess.Popen(
+        command,
+        cwd=directory,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env,
+        start_new_session=True,
+    )
+    register_agent_process(task_id, process)
+    try:
+        stdout, stderr = process.communicate()
+    finally:
+        unregister_agent_process(task_id, process)
+    return process.returncode, stdout or "", stderr or ""
 
 
 def run_poll_cycle(
@@ -777,34 +842,51 @@ def run_codex_exec(
     prompt: str,
     model: str = DEFAULT_CODEX_MODEL,
     reasoning: str = DEFAULT_CODEX_REASONING,
+    task_id: str | None = None,
 ) -> str:
     codex_reasoning = map_reasoning_for_codex(reasoning)
+    command = [
+        "codex",
+        "exec",
+        "-m",
+        model,
+        "-c",
+        f'model_reasoning_effort="{codex_reasoning}"',
+        prompt,
+    ]
 
     try:
-        process = subprocess.run(
-            [
-                "codex",
-                "exec",
-                "-m",
-                model,
-                "-c",
-                f'model_reasoning_effort="{codex_reasoning}"',
-                prompt,
-            ],
-            cwd=directory,
-            capture_output=True,
-            text=True,
-        )
+        if task_id:
+            returncode, stdout, stderr = run_tracked_agent_command(
+                task_id, command, directory
+            )
+        else:
+            process = subprocess.run(
+                command,
+                cwd=directory,
+                capture_output=True,
+                text=True,
+            )
+            returncode = process.returncode
+            stdout = process.stdout
+            stderr = process.stderr
     except Exception as error:
         return f"Codex failed before execution completed.\n\n{error}"
 
-    if process.returncode == 0:
-        return process.stdout
+    if returncode == 0:
+        return stdout
+
+    if returncode < 0:
+        return (
+            "Codex was cancelled before execution completed.\n\n"
+            f"STDOUT:\n{stdout}\n\n"
+            f"STDERR:\n{stderr}"
+        )
 
     return (
-        f"Codex failed with exit code {process.returncode}\n\n"
-        f"STDOUT:\n{process.stdout}\n\n"
-        f"STDERR:\n{process.stderr}"
+        f"Codex failed with exit code {returncode}\n\n"
+        f"STDOUT:\n{stdout}\n\n"
+        f"STDERR:\n{stderr}"
     )
 
 
@@ -880,7 +962,12 @@ def parse_cursor_plan_stream(stdout: str, stderr: str) -> str:
     )
 
 
-def run_cursor_exec(directory: str, prompt: str, planning_mode: bool = False) -> str:
+def run_cursor_exec(
+    directory: str,
+    prompt: str,
+    planning_mode: bool = False,
+    task_id: str | None = None,
+) -> str:
     if shutil.which("agent") is None:
         return (
             "Cursor CLI is unavailable. Install Cursor CLI so the `agent` "
@@ -901,57 +988,77 @@ def run_cursor_exec(directory: str, prompt: str, planning_mode: bool = False) ->
     command.append(prompt)
 
     try:
-        process = subprocess.run(
-            command,
-            cwd=directory,
-            capture_output=True,
-            text=True,
-            env=env,
-        )
-    except Exception as error:
-        return f"Cursor failed before execution completed.\n\n{error}"
-
-    if process.returncode == 0:
-        if planning_mode:
-            return parse_cursor_plan_stream(process.stdout, process.stderr)
-        return parse_cursor_result(process.stdout, process.stderr)
-
-    if planning_mode and is_cursor_plan_mode_unsupported(process.stderr):
-        fallback_command = ["agent", "-p", "--output-format", output_format, "--trust", prompt]
-        try:
+        if task_id:
+            returncode, stdout, stderr = run_tracked_agent_command(
+                task_id, command, directory, env
+            )
+        else:
             process = subprocess.run(
-                fallback_command,
+                command,
                 cwd=directory,
                 capture_output=True,
                 text=True,
                 env=env,
             )
+            returncode = process.returncode
+            stdout = process.stdout
+            stderr = process.stderr
+    except Exception as error:
+        return f"Cursor failed before execution completed.\n\n{error}"
+
+    if returncode == 0:
+        if planning_mode:
+            return parse_cursor_plan_stream(stdout, stderr)
+        return parse_cursor_result(stdout, stderr)
+
+    if planning_mode and is_cursor_plan_mode_unsupported(stderr):
+        fallback_command = [
+            "agent", "-p", "--output-format", output_format, "--trust", prompt
+        ]
+        try:
+            if task_id:
+                returncode, stdout, stderr = run_tracked_agent_command(
+                    task_id, fallback_command, directory, env
+                )
+            else:
+                process = subprocess.run(
+                    fallback_command,
+                    cwd=directory,
+                    capture_output=True,
+                    text=True,
+                    env=env,
+                )
+                returncode = process.returncode
+                stdout = process.stdout
+                stderr = process.stderr
         except Exception as error:
             return f"Cursor failed before execution completed.\n\n{error}"
 
-        if process.returncode == 0:
+        if returncode == 0:
             if planning_mode:
-                return parse_cursor_plan_stream(process.stdout, process.stderr)
-            return parse_cursor_result(process.stdout, process.stderr)
+                return parse_cursor_plan_stream(stdout, stderr)
+            return parse_cursor_result(stdout, stderr)
 
-    if process.returncode < 0:
+    if returncode < 0:
         return (
             "Cursor was cancelled before execution completed.\n\n"
-            f"STDOUT:\n{process.stdout}\n\n"
-            f"STDERR:\n{process.stderr}"
+            f"STDOUT:\n{stdout}\n\n"
+            f"STDERR:\n{stderr}"
         )
 
     return (
-        f"Cursor failed with exit code {process.returncode}\n\n"
-        f"STDOUT:\n{process.stdout}\n\n"
-        f"STDERR:\n{process.stderr}"
+        f"Cursor failed with exit code {returncode}\n\n"
+        f"STDOUT:\n{stdout}\n\n"
+        f"STDERR:\n{stderr}"
     )
 
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO)
     config = load_daemon_config()
-    orchestrator = GitWorktreeOrchestrator(config, run_codex_exec, run_cursor_exec)
+    orchestrator = GitWorktreeOrchestrator(
+        config, run_codex_exec, run_cursor_exec, kill_agent_process
+    )
 
     while True:
         # Durable agent tasks must not wait behind the legacy communications polls.

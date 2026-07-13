@@ -25,7 +25,7 @@ The agent prompt chat adds a reusable prompt composer to the existing dashboard 
 - **Reply Copy Control**: A bottom-right Copy button on the agent reply bubble writes the raw daemon response text to the clipboard, independent of Formatted vs Raw view.
 - **Prompt Copy Control**: A bottom-right Copy button on the user prompt bubble writes the submitted prompt text to the clipboard so it can be reused or edited elsewhere.
 - **Durable Task Clear**: The durable agent-task list includes an inline clear action that requires `Confirm` or `Undo` before deleting the authenticated user's persisted task rows.
-- **Finalized Task Clear**: The durable-task clear action deletes only finalized `completed`, `failed`, or `blocked` rows; queued, running, verifying, ready, integrating, and resolving tasks remain untouched.
+- **Finalized Task Clear**: The durable-task clear action deletes only finalized `completed`, `failed`, `blocked`, or `cancelled` rows; queued, running, verifying, ready, integrating, and resolving tasks remain untouched.
 - **Stable Durable Task Visibility**: This feature owns stable durable-task visibility in the shared chat panel: durable `agent_tasks` rows stay in dedicated authenticated-user state (separate from the local planning-prompt queue), polling is single-flight and ignores stale responses, and the task window waits for a successful current-user query before rendering every durable status, including completed history.
 
 ## Relevant Files
@@ -94,3 +94,4 @@ HACKING
 - 2026-07-13: Unified Cursor planning's instruction body with the standard planning prompt while retaining its explicit no-file-output constraint.
 - 2026-07-13: Added a shared optional-questions planning suffix with a Markdown question-and-answer-options template for unresolved critical details.
 - 2026-07-13: Routed planning refinements through the existing direct queue with their current plan and accumulated questionnaire answers.
+- 2026-07-13: Extended durable-task clear and status polling so cancelled agent-mode tasks are finalized and clearable alongside completed, failed, and blocked rows.

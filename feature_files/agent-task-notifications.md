@@ -5,7 +5,7 @@ The agent-task-notifications feature owns the dashboard bell UI, unread badge, a
 
 ## Key Points
 - **Completion Signal Source**: Relies on durable `agent_tasks` polling already owned by agent-prompt-chat / the feature-files dashboard; this feature only reacts to finalized status transitions.
-- **Finalized Outcomes**: Notifies on all terminal durable-task statuses matching `FINALIZED_AGENT_TASK_STATUSES` (`completed`, `failed`, `blocked`).
+- **Finalized Outcomes**: Notifies on all terminal durable-task statuses matching `FINALIZED_AGENT_TASK_STATUSES` (`completed`, `failed`, `blocked`, `cancelled`).
 - **First-Poll Seed Guard**: Seeds the prior-status map on the first successful poll without creating notifications, so reloads do not spam old history.
 - **In-Session Inbox**: Notification list is frontend-local only (no Supabase notification table, no browser push, no sound in HACKING).
 - **Bell UI**: Presentational bell + unread badge + dropdown sits beside the workspace hamburger; opening either panel closes the other.
@@ -22,3 +22,4 @@ HACKING
 ## State Log
 - 2026-07-12: Initialized the agent-task-notifications feature for the dashboard bell inbox and finalized durable-task transition alerts.
 - 2026-07-12: Added the bell UI, first-poll seed guard, and finalized-status transition inbox wired beside the workspace menu.
+- 2026-07-13: Included cancelled durable-task outcomes in the finalized notification set.
