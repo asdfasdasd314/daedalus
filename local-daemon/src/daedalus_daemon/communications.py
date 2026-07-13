@@ -2,7 +2,7 @@ import json
 import socket
 import time
 from urllib import request
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 
 
 AGENT_CHAT_PAYLOAD_KIND = "agent_chat"
@@ -209,9 +209,15 @@ def open_supabase_request(config: dict, http_request: request.Request):
             return request.urlopen(http_request, timeout=timeout_seconds)
         except (ConnectionResetError, TimeoutError, socket.timeout, URLError) as error:
             last_error = error
+            error_detail = str(error)
+
+            if isinstance(error, HTTPError):
+                response_body = error.read().decode("utf-8", errors="replace").strip()
+                if response_body:
+                    error_detail = f"{error}: {response_body}"
             print(
                 "Supabase request failed "
-                f"(attempt {attempt}/{retry_limit}): {error}",
+                f"(attempt {attempt}/{retry_limit}): {error_detail}",
             )
 
             if attempt == retry_limit:
@@ -219,4 +225,4 @@ def open_supabase_request(config: dict, http_request: request.Request):
 
             time.sleep(retry_delay_ms / 1000)
 
-    raise SupabaseUnavailableError(str(last_error)) from last_error
+    raise SupabaseUnavailableError(error_detail) from last_error

@@ -15,14 +15,12 @@ Daedalus Git Worktrees isolates agent-mode prompts on task branches and uses a d
 - **Integration Notification**: A successful promotion records an info event in `daemon_events` after the batch is completed, allowing the dashboard to report completion instead of leaving the last resolver warning visible.
 - **Planning Bypass**: Planning-mode prompts retain the read-only direct execution path and consume no worktree capacity.
 - **Deferred Controls**: User cancellation, pruning, and post-integration revert controls are intentionally outside this first delivery.
-- **Manual Git Sync**: The dashboard Git Sync panel sends commit and pull/push requests through the communications channel; the daemon runs explicit git commands and returns ordered stdout/stderr output for each step.
 
 ## Relevant Files
 - `local-daemon/src/daedalus_daemon/orchestrator.py`: Git worktree lifecycle, verification, batching, resolver attempts, and promotion.
 - `local-daemon/src/daedalus_daemon/communications.py`: Durable task, batch, and event transport used by the daemon.
 - `shared/database/migrations/009_git_worktree_orchestrator.sql`: Auth-scoped orchestration tables, policies, and daemon RPCs.
-- `daedalus-site/app/feature-files-dashboard.tsx`: Durable agent task submission, status polling, and Git Sync workspace controls.
-- `daedalus-site/app/git-sync-panel.tsx`: Git Sync overlay form for manual commit and GitHub sync operations.
+- `daedalus-site/app/feature-files-dashboard.tsx`: Durable agent task submission and status polling.
 - `parameter_files/daedalus-git-worktrees.toml`: Daedalus-owned scheduler, resolver, branch, and verification configuration shared by managed repositories.
 
 ## Dev Mode
@@ -38,3 +36,4 @@ HACKING
 - 2026-07-12: Moved durable orchestration ahead of legacy polling so an unrelated communications failure cannot leave submitted agent tasks queued without lifecycle events.
 - 2026-07-12: Added a final info event after successful batch promotion so the UI receives a durable orchestrator-completed notification.
 - 2026-07-12: Delivered the dashboard Git Sync workflow with daemon-side commit and pull/push execution, structured step output, and request-scoped frontend polling.
+- 2026-07-12: Moved manual Git Sync ownership into its own feature record so worktree orchestration remains scoped to durable agent scheduling and integration.

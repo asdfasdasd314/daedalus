@@ -76,7 +76,9 @@ using (user_id = auth.uid());
 
 create table daemon_payloads (
   user_id uuid not null references auth.users(id) on delete cascade,
-  kind text not null check (kind in ('feature_files', 'parameter_files', 'agent_chat')),
+  kind text not null check (
+    kind in ('feature_files', 'parameter_files', 'agent_chat', 'git_sync_result')
+  ),
   payload jsonb not null,
   updated_at timestamptz not null default now(),
   primary key (user_id, kind)
@@ -231,7 +233,12 @@ security definer
 set search_path = public
 as $$
 begin
-  if p_kind not in ('feature_files', 'parameter_files', 'agent_chat') then
+  if p_kind not in (
+    'feature_files',
+    'parameter_files',
+    'agent_chat',
+    'git_sync_result'
+  ) then
     raise exception 'Unsupported daemon payload kind: %', p_kind;
   end if;
 
