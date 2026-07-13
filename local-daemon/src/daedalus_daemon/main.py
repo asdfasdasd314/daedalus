@@ -79,6 +79,7 @@ if __package__ in {None, ""}:
         scan_parameter_file_projects,
     )
     from daedalus_daemon.orchestrator import GitWorktreeOrchestrator
+    from daedalus_daemon.execution import FeatureExecutionSupervisor
 else:
     from .communications import (
         AGENT_PROMPT_PURPOSE,
@@ -99,6 +100,7 @@ else:
     from .config import get_env_config_value, load_daemon_config, load_env_files
     from .scanner import scan_feature_file_projects, scan_parameter_file_projects
     from .orchestrator import GitWorktreeOrchestrator
+    from .execution import FeatureExecutionSupervisor
 
 
 ACTIVE_AGENT_PROCESSES: dict[str, subprocess.Popen] = {}
@@ -1059,12 +1061,17 @@ def main() -> None:
     orchestrator = GitWorktreeOrchestrator(
         config, run_codex_exec, run_cursor_exec, kill_agent_process
     )
+    execution_supervisor = FeatureExecutionSupervisor(config)
 
     while True:
         # Durable agent tasks must not wait behind the legacy communications polls.
         # Those polls can be unavailable while the task scheduler is still able to
         # claim queued work and report its lifecycle events.
         if not run_cycle_safely("agent_orchestrator", orchestrator.run_cycle, config):
+            time.sleep(config["pollIntervalMs"] / 1000)
+            continue
+
+        if not run_cycle_safely("feature_execution", execution_supervisor.run_cycle, config):
             time.sleep(config["pollIntervalMs"] / 1000)
             continue
 

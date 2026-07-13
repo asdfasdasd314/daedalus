@@ -1,0 +1,3 @@
+allow_concurrent_runs = false
+termination_grace_seconds = 2
+diagnostic_tail_max_chars = 12000

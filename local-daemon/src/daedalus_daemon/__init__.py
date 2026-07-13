@@ -29,6 +29,7 @@ from .main import (
 )
 from .scanner import scan_feature_file_projects, scan_parameter_file_projects
 from .orchestrator import GitWorktreeOrchestrator
+from .execution import FeatureExecutionSupervisor
 
 __all__ = [
     "AGENT_PROMPT_PURPOSE",
@@ -46,6 +47,7 @@ __all__ = [
     "GIT_SYNC_PAYLOAD_KIND",
     "GIT_SYNC_PURPOSE",
     "GitWorktreeOrchestrator",
+    "FeatureExecutionSupervisor",
     "PARAMETER_FILE_LOAD_PURPOSE",
     "PARAMETER_FILE_UPDATE_PURPOSE",
     "load_daemon_config",
