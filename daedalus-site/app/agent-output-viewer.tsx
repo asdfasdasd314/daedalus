@@ -88,7 +88,6 @@ export default function AgentOutputViewer({
     void Promise.all([
       fetchRecentAgentOutputHistory(supabaseUrl, supabasePublishableKey, accessToken),
       fetchAgentOutputHistoryPage(supabaseUrl, supabasePublishableKey, accessToken),
-      onRefreshLiveTasks?.() ?? Promise.resolve(),
     ])
       .then(([recent, page]) => {
         if (!active) return;
@@ -103,6 +102,11 @@ export default function AgentOutputViewer({
         if (active) setFetchError(error instanceof Error ? error.message : "Unable to load history.");
       })
       .finally(() => { if (active) setLoading(false); });
+    void (onRefreshLiveTasks?.() ?? Promise.resolve()).catch((error) => {
+      if (active) {
+        setFetchError(error instanceof Error ? error.message : "Unable to refresh active agent tasks.");
+      }
+    });
     void fetchAgentOutputFeatureSummaries(supabaseUrl, supabasePublishableKey, accessToken)
       .then((summaries) => {
         if (!active) return;
@@ -203,10 +207,7 @@ export default function AgentOutputViewer({
     setLoading(true);
     setFetchError("");
     try {
-      const [recent] = await Promise.all([
-        fetchRecentAgentOutputHistory(supabaseUrl, supabasePublishableKey, accessToken),
-        onRefreshLiveTasks?.() ?? Promise.resolve(),
-      ]);
+      const recent = await fetchRecentAgentOutputHistory(supabaseUrl, supabasePublishableKey, accessToken);
       setArchive((current) => {
         const recentPromptIds = new Set(recent.map((exchange) => exchange.promptId));
         const olderCompleted = current.filter(
@@ -216,6 +217,11 @@ export default function AgentOutputViewer({
       });
     } catch (error) {
       setFetchError(error instanceof Error ? error.message : "Unable to refresh history.");
+    }
+    try {
+      await (onRefreshLiveTasks?.() ?? Promise.resolve());
+    } catch (error) {
+      setFetchError(error instanceof Error ? error.message : "Unable to refresh active agent tasks.");
     } finally {
       setLoading(false);
     }

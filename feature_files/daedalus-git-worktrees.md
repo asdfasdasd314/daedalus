@@ -24,6 +24,7 @@ Daedalus Git Worktrees isolates agent-mode prompts on task branches and uses a d
 - `local-daemon/src/daedalus_daemon/communications.py`: Durable task, batch, and event transport used by the daemon.
 - `local-daemon/src/daedalus_daemon/main.py`: Tracked agent subprocess registry and SIGTERM/SIGKILL cancel plumbing.
 - `shared/database/migrations/015_agent_task_cancel.sql`: Adds `cancelled` status, `cancel_requested`, cancel RLS, and terminal RPC handling.
+- `shared/database/migrations/024_repair_agent_tasks_cancel_requested.sql`: Idempotent repair when live DB skipped 015's `cancel_requested` column.
 - `shared/database/migrations/009_git_worktree_orchestrator.sql`: Auth-scoped orchestration tables, policies, and daemon RPCs.
 - `daedalus-site/app/feature-files-dashboard.tsx`: Durable agent task submission, cancel requests, and status polling.
 - `daedalus-site/app/agent-session-panel.tsx`: Cancel control on in-flight durable tasks.
@@ -49,3 +50,4 @@ HACKING
 - 2026-07-13: Added trigger-owned durable history projection and removed the orchestrator's duplicate latest-chat result publication path.
 - 2026-07-13: Added database admission gating for new durable tasks while exposing all accepted nonterminal task and batch states to manager drain coordination.
 - 2026-07-14: Made resolver dispatch provider-aware and added a parameterized Codex/Cursor resolver selection so Cursor tasks never pass empty reasoning into Codex.
+- 2026-07-14: Added migration 024 to repair live databases that never received `agent_tasks.cancel_requested` from 015.

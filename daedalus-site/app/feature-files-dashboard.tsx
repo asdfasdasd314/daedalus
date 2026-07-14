@@ -4601,7 +4601,12 @@ async function fetchAgentTasks(
     headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
   });
   if (!response.ok) {
-    throw new Error("agent task query failed");
+    const detail = (await response.text()).trim();
+    throw new Error(
+      detail
+        ? `agent task query failed (${response.status}): ${detail}`
+        : `agent task query failed (${response.status})`,
+    );
   }
   return (await response.json()) as AgentTaskRow[];
 }
@@ -4617,7 +4622,14 @@ async function fetchActiveAgentTaskSummaries(
   url.searchParams.set("order", "queue_sequence.asc");
   url.searchParams.set("limit", "50");
   const response = await fetch(url, { headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken), cache: "no-store" });
-  if (!response.ok) throw new Error("agent task hydration query failed");
+  if (!response.ok) {
+    const detail = (await response.text()).trim();
+    throw new Error(
+      detail
+        ? `agent task hydration query failed (${response.status}): ${detail}`
+        : `agent task hydration query failed (${response.status})`,
+    );
+  }
   return (await response.json()) as AgentTaskRow[];
 }
 
