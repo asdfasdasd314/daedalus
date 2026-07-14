@@ -13,6 +13,7 @@ export type AgentChatExchange = {
   model?: string;
   reasoning?: string;
   planningMode?: boolean;
+  askMode?: boolean;
   targetedFeaturePaths?: string[];
 };
 

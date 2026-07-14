@@ -124,6 +124,7 @@ def post_agent_chat(
     reasoning: str = "",
     planning_mode: bool = False,
     targeted_feature_paths: list[str] | None = None,
+    ask_mode: bool = False,
 ) -> None:
     upsert_daemon_payload(config, AGENT_CHAT_PAYLOAD_KIND, {
         "promptId": prompt_id,
@@ -134,6 +135,7 @@ def post_agent_chat(
         "model": model,
         "reasoning": reasoning,
         "planningMode": planning_mode,
+        "askMode": ask_mode,
         "targetedFeaturePaths": targeted_feature_paths or [],
     })
 

@@ -155,6 +155,7 @@ type AgentPromptPayload = {
   model: string;
   reasoning: string;
   planningMode: boolean;
+  askMode: boolean;
   targetedFeaturePaths: string[];
   planningContext?: string;
   planningAnswers?: PlanningAnswer[];
@@ -247,7 +248,9 @@ export default function FeatureFilesDashboard({
   const defaultModel = agentModels.codex.models[0];
   const [isLoadingFeatureFiles, setIsLoadingFeatureFiles] = useState(false);
   const [isLoadingParameterFiles, setIsLoadingParameterFiles] = useState(false);
-  const [isPlanningMode, setIsPlanningMode] = useState(false);
+  const [selectedAgentMode, setSelectedAgentMode] = useState<
+    "standard" | "planning" | "ask"
+  >("standard");
   const [message, setMessage] = useState("");
   const [parameterFileMessage, setParameterFileMessage] = useState("");
   const [agentPromptMessage, setAgentPromptMessage] = useState("");
@@ -444,7 +447,7 @@ export default function FeatureFilesDashboard({
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setAgentPromptQueue(
           Array.isArray(parsedQueue)
-            ? parsedQueue.filter((item) => item.planningMode)
+            ? parsedQueue.filter((item) => item.planningMode || item.askMode)
             : [],
         );
       }
@@ -1324,7 +1327,7 @@ export default function FeatureFilesDashboard({
 
     const activePrompt = agentPromptQueue.find(
       (item) =>
-        item.planningMode &&
+        (item.planningMode || item.askMode) &&
         (item.status === "sending" || item.status === "running"),
     );
 
@@ -1333,7 +1336,7 @@ export default function FeatureFilesDashboard({
     }
 
     const nextQueuedPrompt = agentPromptQueue.find(
-      (item) => item.status === "queued" && item.planningMode,
+      (item) => item.status === "queued" && (item.planningMode || item.askMode),
     );
 
     if (!nextQueuedPrompt) {
@@ -1502,7 +1505,7 @@ export default function FeatureFilesDashboard({
     const intervalId = window.setInterval(() => {
       const activePrompt = agentPromptQueueRef.current.find(
         (item) =>
-          item.planningMode &&
+          (item.planningMode || item.askMode) &&
           (item.status === "sending" || item.status === "running"),
       );
 
@@ -1676,6 +1679,8 @@ export default function FeatureFilesDashboard({
     const promptId = createPromptId();
     const nextPrompt = promptText.trim();
     const targetedFeaturePaths = targetedFeatures.map((feature) => feature.filePath);
+    const planningMode = selectedAgentMode === "planning";
+    const askMode = selectedAgentMode === "ask";
     const nextPromptPayload: AgentPromptQueueEntry = {
       promptId,
       directory: selectedProjectDirectory,
@@ -1683,7 +1688,8 @@ export default function FeatureFilesDashboard({
       provider: selectedProvider,
       model: selectedModelId,
       reasoning: selectedReasoning,
-      planningMode: isPlanningMode,
+      planningMode,
+      askMode,
       targetedFeaturePaths,
       status: "queued",
       enqueuedAt: Date.now(),
@@ -1700,7 +1706,7 @@ export default function FeatureFilesDashboard({
     setAgentPromptMessage("");
     setIsAgentChatCleared(false);
     clearedAgentChatPrompt.current = "";
-    if (isPlanningMode) {
+    if (planningMode) {
       setPlanningSession({
         originalPrompt: nextPrompt,
         directory: selectedProjectDirectory,
@@ -1714,6 +1720,11 @@ export default function FeatureFilesDashboard({
         answers: [],
         activePlanningPromptId: promptId,
       });
+      setAgentPromptQueue((currentQueue) => [...currentQueue, nextPromptPayload]);
+      return;
+    }
+
+    if (askMode) {
       setAgentPromptQueue((currentQueue) => [...currentQueue, nextPromptPayload]);
       return;
     }
@@ -1740,6 +1751,7 @@ export default function FeatureFilesDashboard({
         model: nextPromptPayload.model,
         reasoning: nextPromptPayload.reasoning,
         planningMode: false,
+        askMode: false,
         targetedFeaturePaths: nextPromptPayload.targetedFeaturePaths,
       });
       setPromptStatus("Agent task durably queued.");
@@ -1806,6 +1818,7 @@ export default function FeatureFilesDashboard({
       model: planningSession.model,
       reasoning: planningSession.reasoning,
       planningMode: true,
+      askMode: false,
       targetedFeaturePaths: planningSession.targetedFeatures.map(
         (feature) => feature.filePath,
       ),
@@ -1844,6 +1857,7 @@ export default function FeatureFilesDashboard({
       model: planningSession.model,
       reasoning: planningSession.reasoning,
       planningMode: false,
+      askMode: false,
       targetedFeaturePaths: planningSession.targetedFeatures.map(
         (feature) => feature.filePath,
       ),
@@ -1876,6 +1890,7 @@ export default function FeatureFilesDashboard({
         model: task.model,
         reasoning: task.reasoning,
         planningMode: false,
+        askMode: false,
         targetedFeaturePaths: task.targetedFeaturePaths,
       });
       setPromptStatus("Plan implementation task durably queued.");
@@ -1976,6 +1991,7 @@ export default function FeatureFilesDashboard({
       model: queueEntry.model,
       reasoning: queueEntry.reasoning,
       planningMode: queueEntry.planningMode,
+      askMode: queueEntry.askMode,
       targetedFeaturePaths: queueEntry.targetedFeaturePaths,
     });
     setPromptStatus("Prompt sending to Supabase.");
@@ -1994,6 +2010,7 @@ export default function FeatureFilesDashboard({
           model: queueEntry.model,
           reasoning: queueEntry.reasoning,
           planningMode: queueEntry.planningMode,
+          askMode: queueEntry.askMode,
           targetedFeaturePaths: queueEntry.targetedFeaturePaths,
           planningContext: queueEntry.planningContext,
           planningAnswers: queueEntry.planningAnswers,
@@ -2701,7 +2718,7 @@ export default function FeatureFilesDashboard({
       setFinalizedDurableTaskCount(0);
       activePromptId.current = "";
       setLatestChat((currentChat) =>
-        currentChat?.planningMode ? currentChat : null,
+        currentChat?.planningMode || currentChat?.askMode ? currentChat : null,
       );
       setIsConfirmingClearDurableTasks(false);
       setPromptStatus("Durable agent tasks cleared.");
@@ -3674,7 +3691,7 @@ export default function FeatureFilesDashboard({
                 defaultProjectDirectory={DEFAULT_PROJECT_DIRECTORY}
                 formatAgentPromptMessage={formatAgentPromptMessage}
                 isAgentChatCleared={isAgentChatCleared}
-                isPlanningMode={isPlanningMode}
+                selectedMode={selectedAgentMode}
                 latestChat={latestChat}
                 onAbandonQueuedAgentPrompt={abandonQueuedAgentPrompt}
                 onCancelDurableTask={(promptId) => void cancelDurableTask(promptId)}
@@ -3683,7 +3700,7 @@ export default function FeatureFilesDashboard({
                 onConfirmClearDurableTasks={() => void clearDurableTasks()}
                 onUndoClearDurableTasks={() => setIsConfirmingClearDurableTasks(false)}
                 onClearAgentChat={clearAgentChat}
-                onPlanningModeChange={setIsPlanningMode}
+                onSelectedModeChange={setSelectedAgentMode}
                 onProviderChange={selectProvider}
                 onPromptTextChange={setPromptText}
                 onRemoveTargetedFeature={removeTargetedFeature}
@@ -3820,7 +3837,7 @@ export default function FeatureFilesDashboard({
                   defaultProjectDirectory={DEFAULT_PROJECT_DIRECTORY}
                   formatAgentPromptMessage={formatAgentPromptMessage}
                   isAgentChatCleared={isAgentChatCleared}
-                  isPlanningMode={isPlanningMode}
+                  selectedMode={selectedAgentMode}
                   latestChat={latestChat}
                   onAbandonQueuedAgentPrompt={abandonQueuedAgentPrompt}
                   onCancelDurableTask={(promptId) => void cancelDurableTask(promptId)}
@@ -3829,7 +3846,7 @@ export default function FeatureFilesDashboard({
                   onConfirmClearDurableTasks={() => void clearDurableTasks()}
                   onUndoClearDurableTasks={() => setIsConfirmingClearDurableTasks(false)}
                   onClearAgentChat={clearAgentChat}
-                  onPlanningModeChange={setIsPlanningMode}
+                  onSelectedModeChange={setSelectedAgentMode}
                   onProviderChange={selectProvider}
                   onPromptTextChange={setPromptText}
                   onRemoveTargetedFeature={removeTargetedFeature}
@@ -4373,6 +4390,7 @@ function mapAgentTaskRowToQueueEntry(row: AgentTaskRow): AgentPromptQueueEntry {
     model: row.model,
     reasoning: row.reasoning,
     planningMode: row.planning_mode,
+    askMode: false,
     targetedFeaturePaths: row.targeted_feature_paths ?? [],
     status: row.status,
     enqueuedAt: Date.parse(row.created_at),

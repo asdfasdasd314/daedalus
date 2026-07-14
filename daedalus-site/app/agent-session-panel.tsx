@@ -28,6 +28,8 @@ type AgentPromptQueueStatus =
   | "cancelled"
   | "stalled";
 
+type AgentPromptMode = "standard" | "planning" | "ask";
+
 type AgentSessionPanelProps = {
   agentModels: AgentModelsConfig;
   agentPromptMessage: string;
@@ -36,12 +38,13 @@ type AgentSessionPanelProps = {
   currentPromptQueueItem: {
     promptId: string;
     planningMode: boolean;
+    askMode: boolean;
     status: AgentPromptQueueStatus;
   } | null;
   defaultProjectDirectory: string;
   formatAgentPromptMessage: (message: string) => string;
   isAgentChatCleared: boolean;
-  isPlanningMode: boolean;
+  selectedMode: AgentPromptMode;
   latestChat: AgentChatExchange | null;
   onAbandonQueuedAgentPrompt: (promptId: string) => void;
   onCancelDurableTask: (promptId: string) => void;
@@ -49,7 +52,7 @@ type AgentSessionPanelProps = {
   onClearDurableTasks: () => void;
   onClearAgentChat: () => void;
   onConfirmClearDurableTasks: () => void;
-  onPlanningModeChange: (checked: boolean) => void;
+  onSelectedModeChange: (mode: AgentPromptMode) => void;
   onProviderChange: (provider: string) => void;
   onPromptTextChange: (text: string) => void;
   onRemoveTargetedFeature: (filePath: string) => void;
@@ -89,7 +92,7 @@ export default function AgentSessionPanel({
   defaultProjectDirectory,
   formatAgentPromptMessage,
   isAgentChatCleared,
-  isPlanningMode,
+  selectedMode,
   latestChat,
   onAbandonQueuedAgentPrompt,
   onCancelDurableTask,
@@ -97,7 +100,7 @@ export default function AgentSessionPanel({
   onClearDurableTasks,
   onClearAgentChat,
   onConfirmClearDurableTasks,
-  onPlanningModeChange,
+  onSelectedModeChange,
   onProviderChange,
   onPromptTextChange,
   onRemoveTargetedFeature,
@@ -288,15 +291,36 @@ export default function AgentSessionPanel({
         </div> : null}
       </div>
 
-      <label className="flex items-center gap-3 rounded-[1.25rem] border border-white/10 bg-slate-900/50 px-4 py-3 text-sm text-slate-200">
-        <input
-          type="checkbox"
-          checked={isPlanningMode}
-          onChange={(event) => onPlanningModeChange(event.target.checked)}
-          className="h-4 w-4 accent-cyan-300"
-        />
-        Planning mode
-      </label>
+      <fieldset className="grid gap-2 rounded-[1.25rem] border border-white/10 bg-slate-900/50 p-3">
+        <legend className="px-1 text-[11px] uppercase tracking-[0.28em] text-slate-400">
+          Mode
+        </legend>
+        <div className="grid gap-2 sm:grid-cols-3">
+          {([
+            ["standard", "Standard", "Creates a durable implementation task."],
+            ["planning", "Planning", "Builds a local plan and optional questionnaire."],
+            ["ask", "Ask", "Answers project questions without writing code."],
+          ] as const).map(([mode, label, description]) => (
+            <label
+              key={mode}
+              className="flex cursor-pointer gap-2 rounded-xl border border-white/10 bg-slate-950/30 p-3 text-sm text-slate-200"
+            >
+              <input
+                type="radio"
+                name="agent-mode"
+                value={mode}
+                checked={selectedMode === mode}
+                onChange={() => onSelectedModeChange(mode)}
+                className="mt-0.5 h-4 w-4 accent-cyan-300"
+              />
+              <span>
+                <span className="block font-semibold">{label}</span>
+                <span className="block text-xs text-slate-400">{description}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
 
       <div className="grid gap-3">
         <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">
@@ -377,7 +401,7 @@ export default function AgentSessionPanel({
 
       {!isAgentChatCleared &&
       currentPromptQueueItem &&
-      currentPromptQueueItem.planningMode &&
+      (currentPromptQueueItem.planningMode || currentPromptQueueItem.askMode) &&
       (currentPromptQueueItem.status === "failed" ||
         currentPromptQueueItem.status === "stalled") ? (
         <div className="flex flex-wrap gap-3">
@@ -499,7 +523,11 @@ export default function AgentSessionPanel({
                   <span className="block">{latestChat.model}</span>
                   <span className="block">
                     {latestChat.reasoning}
-                    {latestChat.planningMode ? " / planning" : ""}
+                    {latestChat.planningMode
+                      ? " / planning"
+                      : latestChat.askMode
+                        ? " / ask"
+                        : ""}
                   </span>
                 </p>
               ) : null}
