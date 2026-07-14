@@ -1,6 +1,12 @@
 max_agents_per_repository = 4
 cohort_idle_window_seconds = 30
 resolver_attempt_limit = 3
+# "auto" uses the provider selected for the first task in the batch. Set to
+# "codex" or "cursor" to reserve the resolver for that provider.
+resolver_provider = "auto"
+# Used only when resolver_provider = "codex".
+resolver_model = "gpt-5.6-terra"
+resolver_reasoning = "medium"
 task_verification_attempt_limit = 3
 cancel_kill_grace_seconds = 2
 primary_branch = "main"

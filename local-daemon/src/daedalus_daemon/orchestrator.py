@@ -539,6 +539,24 @@ class GitWorktreeOrchestrator:
             task_id,
         )
 
+    def _run_resolver_agent(
+        self, worktree_path: str, tasks: list[dict], settings: dict, prompt: str
+    ) -> str:
+        provider = settings["resolverProvider"]
+        if provider == "auto":
+            provider = str(tasks[0]["provider"])
+
+        if provider == "cursor":
+            return self.run_cursor(worktree_path, prompt, False)
+
+        if settings["resolverProvider"] == "auto":
+            model = str(tasks[0]["model"])
+            reasoning = str(tasks[0]["reasoning"])
+        else:
+            model = settings["resolverModel"]
+            reasoning = settings["resolverReasoning"]
+        return self.run_codex(worktree_path, prompt, model, reasoning)
+
     def _finish_tasks(self, tasks: list[dict]) -> None:
         tasks_by_id = {str(task["id"]): task for task in tasks}
         for task_id, future in list(self.task_futures.items()):
@@ -794,13 +812,13 @@ class GitWorktreeOrchestrator:
                 f"Resolver attempt {attempts}/{limit} for batch {batch['id']}.",
                 batch_id=str(batch["id"]),
             )
-            resolver_reply = self.run_codex(
+            resolver_reply = self._run_resolver_agent(
                 worktree_path,
+                tasks,
+                settings,
                 build_resolver_prompt(batch, tasks, failure),
-                str(tasks[0]["model"]),
-                str(tasks[0]["reasoning"]),
             )
-            if resolver_reply.startswith(("Codex failed", "Codex was cancelled")):
+            if reply_indicates_failure(resolver_reply):
                 failure = resolver_reply
                 continue
             if str(batch["id"]) in self.cancelled_batch_ids:
@@ -906,6 +924,9 @@ def load_worktree_settings() -> dict:
         "maxAgentsPerRepository": positive_int(values, "max_agents_per_repository"),
         "cohortIdleWindowSeconds": positive_int(values, "cohort_idle_window_seconds"),
         "resolverAttemptLimit": positive_int(values, "resolver_attempt_limit"),
+        "resolverProvider": str(values.get("resolver_provider", "auto")),
+        "resolverModel": str(values.get("resolver_model", "gpt-5.6-terra")),
+        "resolverReasoning": str(values.get("resolver_reasoning", "medium")),
         "taskVerificationAttemptLimit": positive_int(
             values, "task_verification_attempt_limit"
         ),

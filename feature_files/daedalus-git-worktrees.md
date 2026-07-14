@@ -13,6 +13,7 @@ Daedalus Git Worktrees isolates agent-mode prompts on task branches and uses a d
 - **Base-State Cohorts**: Tasks admitted from the same `main` commit are verified independently and integrated in submission order after the cohort fills or its quiet window expires.
 - **Safe Promotion**: Combined work is tested on an integration branch and local `main` advances only by a verified fast-forward; no remote push occurs.
 - **Resolver Loop**: Merge conflicts and combined-test failures launch a resolver agent up to three times, with daemon warnings for attempts and a blocking error after exhaustion.
+- **Resolver Provider**: The resolver defaults to the first task's provider and can be pinned to Codex or Cursor in the worktree parameter file, keeping resolver capacity independent of the submission UI.
 - **Integration Notification**: A successful promotion records an info event in `daemon_events` after the batch is completed, allowing the dashboard to report completion instead of leaving the last resolver warning visible.
 - **Hard Cancel**: Users can cancel agent-mode durable tasks (`queued` through `resolving`); the daemon kills the tracked process group, marks `cancelled`, force-removes the worktree, and records a durable cancel event. Planning-mode Abandon remains a local-queue-only path.
 - **Planning Bypass**: Planning-mode prompts retain the read-only direct execution path and consume no worktree capacity.
@@ -47,3 +48,4 @@ HACKING
 - 2026-07-13: Fixed planning-mode Codex cycle test expectation to include PLANNING_PROMPT_SUFFIX so verification matches build_codex_prompt.
 - 2026-07-13: Added trigger-owned durable history projection and removed the orchestrator's duplicate latest-chat result publication path.
 - 2026-07-13: Added database admission gating for new durable tasks while exposing all accepted nonterminal task and batch states to manager drain coordination.
+- 2026-07-14: Made resolver dispatch provider-aware and added a parameterized Codex/Cursor resolver selection so Cursor tasks never pass empty reasoning into Codex.

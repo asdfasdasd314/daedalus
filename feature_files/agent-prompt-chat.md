@@ -37,3 +37,4 @@ HACKING
 - 2026-07-14: Restored normal letter spacing for provider, model, and reasoning select values in the Edit form.
 - 2026-07-14: Kept prompt submission and planning handoffs in the composer without automatically opening the output viewer; the latest prompt remains selected when the viewer is opened manually.
 - 2026-07-14: Resolved the integration merge by retaining both the Edit-form typography restoration and manual output-viewer handoff.
+- 2026-07-14: Diagnosed batch resolver failures caused by passing Cursor's empty reasoning setting into a Codex resolver invocation.
