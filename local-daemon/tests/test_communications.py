@@ -274,6 +274,7 @@ class UpdateCurrentMessageTests(unittest.TestCase):
                     "model": "",
                     "reasoning": "",
                     "planningMode": False,
+                    "askMode": False,
                     "targetedFeaturePaths": [],
                 },
                 "p_user_id": "user-1",
@@ -317,6 +318,7 @@ class UpdateCurrentMessageTests(unittest.TestCase):
                     "model": "",
                     "reasoning": "",
                     "planningMode": False,
+                    "askMode": False,
                     "targetedFeaturePaths": [
                         "feature_files/agent-prompt-chat.md",
                         "feature_files/feature-file-graph-display.md",

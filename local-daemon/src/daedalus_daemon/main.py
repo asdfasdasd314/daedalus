@@ -47,6 +47,15 @@ CURSOR_PLANNING_PROMPT_PREFIX = (
     f"{PLANNING_PROMPT_PREFIX.rstrip()}\n\n"
     "Do not try to output the plan to a file.\n\n"
 )
+ASK_PROMPT_PREFIX = """You are in Ask mode.
+
+Answer the user's project question directly after inspecting the repository as needed.
+Do not edit files.
+Do not run modifying commands.
+Do not perform implementation work or create durable tasks/worktrees.
+
+"""
+CURSOR_ASK_PROMPT_PREFIX = ASK_PROMPT_PREFIX
 TARGETED_FEATURE_PATH_REGEX = re.compile(r"^feature_files/[A-Za-z0-9._/-]+\.md$")
 TARGETED_FEATURES_PROMPT_PREFIX = (
     "The following prompt reqeusts changes relevant to the following feature files: {paths}"
@@ -309,9 +318,12 @@ def run_agent_prompt_cycle(
     provider = prompt_request.get("provider", CODEX_PROVIDER)
     model = prompt_request.get("model", DEFAULT_CODEX_MODEL)
     reasoning = prompt_request.get("reasoning", DEFAULT_CODEX_REASONING)
-    planning_mode = prompt_request.get("planningMode", False)
-    planning_context = prompt_request.get("planningContext", "")
-    planning_answers = prompt_request.get("planningAnswers", [])
+    planning_mode = prompt_request.get("planningMode", False) is True
+    ask_mode = prompt_request.get("askMode", False) is True
+    if ask_mode:
+        planning_mode = False
+    planning_context = prompt_request.get("planningContext", "") if planning_mode else ""
+    planning_answers = prompt_request.get("planningAnswers", []) if planning_mode else []
     targeted_feature_paths = filter_targeted_feature_paths(
         prompt_request.get("targetedFeaturePaths", []),
     )
@@ -322,6 +334,7 @@ def run_agent_prompt_cycle(
             targeted_feature_paths,
             planning_context,
             planning_answers,
+            ask_mode=ask_mode,
         )
         if provider == CURSOR_PROVIDER
         else build_codex_prompt(
@@ -330,35 +343,40 @@ def run_agent_prompt_cycle(
             targeted_feature_paths,
             planning_context,
             planning_answers,
+            ask_mode=ask_mode,
         )
     )
     if provider == CURSOR_PROVIDER:
         reply = (
-            run_cursor_exec(directory, final_prompt, planning_mode)
+            run_cursor_exec(directory, final_prompt, planning_mode, ask_mode=ask_mode)
             if run_cursor_prompt is None
-            else run_cursor_prompt(directory, final_prompt, planning_mode)
+            else (
+                run_cursor_prompt(directory, final_prompt, planning_mode, ask_mode)
+                if ask_mode
+                else run_cursor_prompt(directory, final_prompt, planning_mode)
+            )
         )
     elif provider == CODEX_PROVIDER:
         reply = (
-            run_codex_exec(directory, final_prompt, model, reasoning)
+            run_codex_exec(directory, final_prompt, model, reasoning, ask_mode=ask_mode)
             if run_codex_prompt is None
-            else run_codex_prompt(directory, final_prompt, model, reasoning)
+            else (
+                run_codex_prompt(directory, final_prompt, model, reasoning, ask_mode)
+                if ask_mode
+                else run_codex_prompt(directory, final_prompt, model, reasoning)
+            )
         )
     else:
         reply = f"Unsupported agent provider: {provider}"
 
-    deliver_chat(
-        config,
-        prompt_id,
-        directory,
-        prompt,
-        reply,
-        provider,
-        model,
-        reasoning,
-        planning_mode,
-        targeted_feature_paths,
+    chat_args = (
+        config, prompt_id, directory, prompt, reply, provider, model, reasoning,
+        planning_mode, targeted_feature_paths,
     )
+    if ask_mode:
+        deliver_chat(*chat_args, ask_mode=True)
+    else:
+        deliver_chat(*chat_args)
 
     write_message(config, AGENT_PROMPT_PURPOSE, DAEMON_COMPLETE)
 
@@ -829,10 +847,13 @@ def build_codex_prompt(
     targeted_feature_paths: list[str] | None = None,
     planning_context: str = "",
     planning_answers: list[dict[str, str]] | None = None,
+    ask_mode: bool = False,
 ) -> str:
     prompt_sections: list[str] = []
 
-    if planning_mode:
+    if ask_mode:
+        prompt_sections.append(ASK_PROMPT_PREFIX.rstrip())
+    elif planning_mode:
         prompt_sections.append(PLANNING_PROMPT_PREFIX.rstrip())
         prompt_sections.append(PLANNING_PROMPT_SUFFIX.rstrip())
         refinement_context = build_planning_refinement_context(
@@ -862,10 +883,13 @@ def build_cursor_prompt(
     targeted_feature_paths: list[str] | None = None,
     planning_context: str = "",
     planning_answers: list[dict[str, str]] | None = None,
+    ask_mode: bool = False,
 ) -> str:
     prompt_sections: list[str] = []
 
-    if planning_mode:
+    if ask_mode:
+        prompt_sections.append(CURSOR_ASK_PROMPT_PREFIX.rstrip())
+    elif planning_mode:
         prompt_sections.append(CURSOR_PLANNING_PROMPT_PREFIX.rstrip())
         prompt_sections.append(PLANNING_PROMPT_SUFFIX.rstrip())
         refinement_context = build_planning_refinement_context(
@@ -938,6 +962,7 @@ def run_codex_exec(
     model: str = DEFAULT_CODEX_MODEL,
     reasoning: str = DEFAULT_CODEX_REASONING,
     task_id: str | None = None,
+    ask_mode: bool = False,
 ) -> str:
     codex_reasoning = map_reasoning_for_codex(reasoning)
     command = [
@@ -947,8 +972,10 @@ def run_codex_exec(
         model,
         "-c",
         f'model_reasoning_effort="{codex_reasoning}"',
-        prompt,
     ]
+    if ask_mode:
+        command.extend(["--sandbox", "read-only", "--ask-for-approval", "on-request"])
+    command.append(prompt)
 
     try:
         if task_id:
@@ -1062,6 +1089,7 @@ def run_cursor_exec(
     prompt: str,
     planning_mode: bool = False,
     task_id: str | None = None,
+    ask_mode: bool = False,
 ) -> str:
     if shutil.which("agent") is None:
         return (
@@ -1074,11 +1102,13 @@ def run_cursor_exec(
     if cursor_api_key:
         env["CURSOR_API_KEY"] = cursor_api_key
 
+    if ask_mode:
+        planning_mode = False
     output_format = "stream-json" if planning_mode else "json"
     command = ["agent", "-p", "--output-format", output_format]
     if planning_mode:
         command.extend(["--trust", "--mode=plan"])
-    else:
+    elif not ask_mode:
         command.append("--force")
     command.append(prompt)
 

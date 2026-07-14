@@ -25,6 +25,7 @@ from daedalus_daemon import (
     run_poll_cycle,
 )
 from daedalus_daemon.main import (
+    ASK_PROMPT_PREFIX,
     CURSOR_PLANNING_PROMPT_PREFIX,
     PLANNING_PROMPT_PREFIX,
     PLANNING_PROMPT_SUFFIX,
@@ -393,6 +394,22 @@ class BuildCodexPromptTests(unittest.TestCase):
     def test_omits_empty_planning_refinement_context(self):
         self.assertEqual(build_planning_refinement_context("", []), "")
 
+    def test_builds_read_only_ask_prompt_without_planning_instructions(self):
+        prompt = build_codex_prompt(
+            "Where is chat state persisted?",
+            False,
+            ["feature_files/agent-prompt-chat.md"],
+            planning_context="# Ignore this plan",
+            planning_answers=[{"question": "Ignore?", "answer": "Yes"}],
+            ask_mode=True,
+        )
+
+        self.assertIn(ASK_PROMPT_PREFIX.rstrip(), prompt)
+        self.assertIn("Do not edit files.", prompt)
+        self.assertIn("feature_files/agent-prompt-chat.md", prompt)
+        self.assertNotIn(PLANNING_PROMPT_SUFFIX.rstrip(), prompt)
+        self.assertNotIn("Refine the following current implementation plan", prompt)
+
 
 class FilterTargetedFeaturePathsTests(unittest.TestCase):
     def test_keeps_only_valid_feature_file_paths(self):
@@ -591,6 +608,67 @@ class RunAgentPromptCycleTests(unittest.TestCase):
                     [],
                 ),
             ],
+        )
+
+    def test_routes_ask_through_read_only_prompt_runner_and_chat_payload(self):
+        writes: list[tuple[str, str]] = []
+        runs: list[tuple[str, str, str, str, bool]] = []
+        deliveries: list[tuple[str, bool, bool, list[str]]] = []
+        prompt_payload = json.dumps({
+            "promptId": "ask-1",
+            "directory": "/workspace/project",
+            "provider": "codex",
+            "model": "gpt-5.5",
+            "reasoning": "high",
+            "planningMode": True,
+            "askMode": True,
+            "planningContext": "This must not be passed to Ask.",
+            "planningAnswers": [{"question": "Ignore?", "answer": "Yes"}],
+            "targetedFeaturePaths": ["feature_files/agent-prompt-chat.md"],
+            "prompt": "Where is the local chat queue?",
+        })
+
+        def fake_read_message(_config, _purpose):
+            return prompt_payload
+
+        def fake_write_message(_config, purpose, message):
+            writes.append((purpose, message))
+
+        def fake_run_codex_prompt(directory, prompt, model, reasoning, ask_mode):
+            runs.append((directory, prompt, model, reasoning, ask_mode))
+            return "The local queue is in the dashboard."
+
+        def fake_deliver_chat(
+            _config, prompt_id, _directory, _prompt, _reply, _provider, _model,
+            _reasoning, planning_mode, targeted_feature_paths, *, ask_mode=False,
+        ):
+            deliveries.append((prompt_id, planning_mode, ask_mode, targeted_feature_paths))
+
+        run_agent_prompt_cycle(
+            {"pollIntervalMs": 5000},
+            read_message=fake_read_message,
+            write_message=fake_write_message,
+            deliver_chat=fake_deliver_chat,
+            run_codex_prompt=fake_run_codex_prompt,
+        )
+
+        self.assertEqual(writes, [(AGENT_PROMPT_PURPOSE, DAEMON_COMPLETE)])
+        self.assertEqual(
+            runs,
+            [(
+                "/workspace/project",
+                f"{ASK_PROMPT_PREFIX.rstrip()}\n\n"
+                "The following prompt reqeusts changes relevant to the following feature files: "
+                "feature_files/agent-prompt-chat.md\n\n"
+                "Where is the local chat queue?",
+                "gpt-5.5",
+                "high",
+                True,
+            )],
+        )
+        self.assertEqual(
+            deliveries,
+            [("ask-1", False, True, ["feature_files/agent-prompt-chat.md"])],
         )
 
     def test_runs_codex_with_planning_mode_and_targeted_features(self):
@@ -874,6 +952,25 @@ class RunCodexExecTests(unittest.TestCase):
             "Codex failed with exit code 1\n\nSTDOUT:\npartial\n\nSTDERR:\nboom",
         )
 
+    def test_runs_ask_with_read_only_sandbox_and_on_request_approval(self):
+        class FakeProcess:
+            returncode = 0
+            stdout = "answer"
+            stderr = ""
+
+        with patch("daedalus_daemon.main.subprocess.run", return_value=FakeProcess()) as mocked_run:
+            reply = run_codex_exec(
+                "/workspace/project", "Answer the question", "gpt-5.5", "high",
+                ask_mode=True,
+            )
+
+        command = mocked_run.call_args.args[0]
+        self.assertEqual(command.count("--sandbox"), 1)
+        self.assertEqual(command[command.index("--sandbox") + 1], "read-only")
+        self.assertEqual(command.count("--ask-for-approval"), 1)
+        self.assertEqual(command[command.index("--ask-for-approval") + 1], "on-request")
+        self.assertEqual(reply, "answer")
+
 
 class RunCursorExecTests(unittest.TestCase):
     def test_returns_actionable_message_when_cursor_is_unavailable(self):
@@ -925,6 +1022,27 @@ class RunCursorExecTests(unittest.TestCase):
             ["agent", "-p", "--output-format", "stream-json", "--trust", "--mode=plan", "Build the feature"],
         )
         self.assertEqual(reply, "# Plan\n\nDo the work.")
+
+    def test_runs_cursor_ask_without_force_or_planning_flags(self):
+        class FakeProcess:
+            returncode = 0
+            stdout = json.dumps({"type": "result", "result": "answer"})
+            stderr = ""
+
+        with (
+            patch("daedalus_daemon.main.shutil.which", return_value="/usr/local/bin/agent"),
+            patch("daedalus_daemon.main.subprocess.run", return_value=FakeProcess()) as mocked_run,
+        ):
+            reply = run_cursor_exec(
+                "/workspace/project", "Answer the question", ask_mode=True,
+            )
+
+        command = mocked_run.call_args.args[0]
+        self.assertEqual(command[:4], ["agent", "-p", "--output-format", "json"])
+        self.assertNotIn("--force", command)
+        self.assertNotIn("--mode=plan", command)
+        self.assertNotIn("--trust", command)
+        self.assertEqual(reply, "answer")
 
     def test_falls_back_when_cursor_rejects_plan_mode(self):
         class UnsupportedPlanModeProcess:
