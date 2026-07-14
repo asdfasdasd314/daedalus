@@ -9,6 +9,7 @@ import subprocess
 import sys
 import threading
 import time
+from concurrent.futures import Future, ThreadPoolExecutor
 
 DEFAULT_CODEX_MODEL = "gpt-5.5"
 DEFAULT_CODEX_REASONING = "medium"
@@ -119,6 +120,21 @@ else:
 
 ACTIVE_AGENT_PROCESSES: dict[str, subprocess.Popen] = {}
 ACTIVE_AGENT_LOCK = threading.Lock()
+
+
+class DirectPromptSupervisor:
+    def __init__(self, config: dict):
+        self.config = config
+        self.executor = ThreadPoolExecutor(max_workers=1)
+        self.active_future: Future | None = None
+
+    def run_cycle(self, _config: dict | None = None) -> None:
+        if self.active_future:
+            if not self.active_future.done():
+                return
+            self.active_future.result()
+
+        self.active_future = self.executor.submit(run_agent_prompt_cycle, self.config)
 
 
 def register_agent_process(task_id: str, process: subprocess.Popen) -> None:
@@ -1220,6 +1236,7 @@ def main() -> None:
         config, run_codex_exec, run_cursor_exec, kill_agent_process
     )
     execution_supervisor = FeatureExecutionSupervisor(config)
+    direct_prompt_supervisor = DirectPromptSupervisor(config)
 
     while True:
         # Durable agent tasks must not wait behind the legacy communications polls.
@@ -1257,7 +1274,7 @@ def main() -> None:
             time.sleep(config["pollIntervalMs"] / 1000)
             continue
 
-        if not run_cycle_safely("agent_prompt", run_agent_prompt_cycle, config):
+        if not run_cycle_safely("agent_prompt", direct_prompt_supervisor.run_cycle, config):
             time.sleep(config["pollIntervalMs"] / 1000)
             continue
 

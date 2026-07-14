@@ -31,4 +31,5 @@ HACKING
 - 2026-07-13: Reduced Agent Prompt Chat to the prompt-only Edit surface, retired agent-chat payload output, and handed all lifecycle and response presentation to Agent Output Viewer.
 - 2026-07-13: Updated Ask-mode Codex execution to use the supported read-only sandbox option without the removed approval flag.
 - 2026-07-13: Paused standard submissions and direct Planning/Ask dispatch while manager admission is closed, preserving unsent direct prompts in the browser queue for resumption.
-- 2026-07-13: Resolved the integration conflict by preserving both Ask-mode compatibility and manager-admission queue behavior.
+- 2026-07-13: Moved direct prompt execution off the daemon polling loop so planning no longer delays queued standard prompt admission.
+- 2026-07-13: Integrated Ask-mode compatibility, manager admission, and independent direct-prompt supervision without changing their ownership boundaries.

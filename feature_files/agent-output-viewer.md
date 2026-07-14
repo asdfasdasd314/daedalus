@@ -32,4 +32,5 @@ HACKING
 - 2026-07-13: Implemented owner-scoped durable history projection and backfill, direct planning/ask publication, the unified responsive History drawer, planning and task controls, archive search/pagination, Edit cutover, and notification deep links.
 - 2026-07-13: Kept Ask-mode failures publishable to the viewer after removing the unsupported Codex approval argument from direct execution.
 - 2026-07-13: Added Completed/Failed-only trash delete on each prompt-answer chat box with owner-scoped history and matching durable-task cleanup.
-- 2026-07-13: Resolved the viewer documentation merge by retaining both the Ask-mode compatibility and terminal-exchange deletion changes.
+- 2026-07-13: Kept direct planning and Ask history publication asynchronous so a long-running exchange no longer delays durable task lifecycle updates in the viewer.
+- 2026-07-13: Integrated terminal-exchange deletion and asynchronous direct-prompt status publication while preserving Ask-mode failure visibility.
