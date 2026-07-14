@@ -9,11 +9,12 @@ The Agent Output Viewer is the durable, authenticated history and live-status su
 - **Feature Discovery**: A multi-feature prompt remains one database record and is presented beneath every repository-qualified targeted feature, with separate All activity and Unscoped groups.
 - **Planning Conversation**: A planning conversation ID links the initial request, every refinement, and the implementation task so the viewer presents one chronological transcript: initial prompt, planning questions and plan, then the implementation response or terminal error.
 - **Workspace Drawer**: A true upper-left history control opens a responsive drawer that is mutually exclusive with Ventures and supports notification deep links.
-- **Archive Controls**: The viewer owns formatted/raw output, copying, search, stable pagination, retry, abandon, cancel, finalized-task cleanup, and per-exchange delete for Completed/Failed prompt-answer pairs.
+- **Archive Controls**: The viewer owns formatted/raw output, copying, search, stable pagination, retry, abandon, cancel, finalized-task cleanup, and per-exchange delete for every finalized prompt-answer pair (`completed`, `failed`, `blocked`, or `cancelled`).
 
 ## Relevant Files
 - `shared/database/migrations/018_agent_output_history.sql`: Durable history table, policies, RPCs, task projection trigger, and recoverable backfills.
-- `shared/database/migrations/019_allow_agent_output_history_delete.sql`: Owner delete policy for Completed/Failed history rows.
+- `shared/database/migrations/019_allow_agent_output_history_delete.sql`: Original owner delete policy for history rows.
+- `shared/database/migrations/025_allow_terminal_agent_output_history_delete.sql`: Owner delete policy for every finalized history row.
 - `shared/database/migrations/020_planning_conversation_history.sql`: Durable planning conversation linkage for direct prompts and implementation tasks.
 - `shared/database/migrations/024_repair_agent_tasks_cancel_requested.sql`: Idempotent repair when live `agent_tasks` is missing `cancel_requested` (breaks History hydration selects).
 - `shared/database/schema.sql`: Current database schema snapshot.
@@ -40,3 +41,4 @@ HACKING
 - 2026-07-13: Linked planning refinements and their implementation handoff with a durable conversation ID, then rendered the full chronological transcript in History.
 - 2026-07-14: History open/Refresh now reloads recent in-progress archive rows and rehydrates live durable tasks on demand, with merge preferring fresher terminal history over stale live queued.
 - 2026-07-14: Diagnosed persistent History hydration failures as live Supabase missing `agent_tasks.cancel_requested` (select returns 400); added repair migration 024 and surfaced query error bodies.
+- 2026-07-14: Expanded viewer and owner-scoped archive deletion to every finalized output state, including blocked and cancelled records.

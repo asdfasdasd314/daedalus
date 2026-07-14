@@ -394,7 +394,7 @@ export async function fetchAgentOutputFeatureSummaries(
 }
 
 export function canDeleteAgentOutput(exchange: Pick<AgentOutputExchange, "status">) {
-  return exchange.status === "completed" || exchange.status === "failed";
+  return TERMINAL_AGENT_OUTPUT_STATUSES.has(exchange.status);
 }
 
 export async function deleteAgentOutputHistory(
@@ -405,7 +405,7 @@ export async function deleteAgentOutputHistory(
 ) {
   const url = new URL("/rest/v1/agent_output_history", supabaseUrl);
   url.searchParams.set("prompt_id", `eq.${promptId}`);
-  url.searchParams.set("status", "in.(completed,failed)");
+  url.searchParams.set("status", "in.(completed,failed,blocked,cancelled)");
   const response = await fetch(url, {
     method: "DELETE",
     headers: {
