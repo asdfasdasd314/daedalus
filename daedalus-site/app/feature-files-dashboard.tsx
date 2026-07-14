@@ -1980,6 +1980,39 @@ export default function FeatureFilesDashboard({
     setPromptStatus("Prompt abandoned.");
   }
 
+  function handleDeletedHistoryExchange(exchange: HistoryExchange) {
+    setAgentPromptQueue((currentQueue) =>
+      currentQueue.filter((item) => item.promptId !== exchange.promptId),
+    );
+    setDurableAgentTasks((currentTasks) =>
+      currentTasks.filter((item) => item.promptId !== exchange.promptId && item.promptId !== exchange.taskId),
+    );
+    setFinalizedDurableTaskCount((count) => Math.max(0, count - (exchange.taskId ? 1 : 0)));
+
+    if (activePromptId.current === exchange.promptId) {
+      activePromptId.current = "";
+    }
+
+    if (latestChatRef.current?.promptId === exchange.promptId) {
+      setLatestChat(null);
+    }
+
+    if (!exchange.taskId || !currentUser || !accessToken) {
+      setPromptStatus("History exchange deleted.");
+      return;
+    }
+
+    void deleteAgentTaskRow(
+      supabaseUrl,
+      supabasePublishableKey,
+      accessToken,
+      currentUserId,
+      exchange.taskId,
+    )
+      .then(() => setPromptStatus("History exchange deleted."))
+      .catch(() => setPromptStatus("History deleted. Durable task row may still need clearing."));
+  }
+
   const projectEntries = Object.entries(projects ?? {});
   const availableProjectDirectories = projectEntries.map(
     ([projectDirectory]) => projectDirectory,
@@ -2880,6 +2913,7 @@ export default function FeatureFilesDashboard({
         onCancelDurableTask={(promptId) => void cancelDurableTask(promptId)}
         onClearFinalizedTasks={() => void clearDurableTasks()}
         onClose={closeAgentOutputViewer}
+        onDeletedExchange={handleDeletedHistoryExchange}
         onImplementPlan={() => void implementPlanningSession()}
         onPlanningReply={handleHistoryPlanningReply}
         onRetryDirectPrompt={retryHistoryDirectPrompt}
@@ -4556,6 +4590,29 @@ async function deleteAgentTaskRows(
   const url = new URL("/rest/v1/agent_tasks", supabaseUrl);
   url.searchParams.set("user_id", `eq.${userId}`);
   url.searchParams.set("status", "in.(completed,failed,blocked,cancelled)");
+  const response = await fetch(url, {
+    method: "DELETE",
+    headers: {
+      ...getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
+      Prefer: "return=minimal",
+    },
+  });
+  if (!response.ok) {
+    throw new Error("agent task delete failed");
+  }
+}
+
+async function deleteAgentTaskRow(
+  supabaseUrl: string,
+  supabasePublishableKey: string,
+  accessToken: string,
+  userId: string,
+  taskId: string,
+) {
+  const url = new URL("/rest/v1/agent_tasks", supabaseUrl);
+  url.searchParams.set("id", `eq.${taskId}`);
+  url.searchParams.set("user_id", `eq.${userId}`);
+  url.searchParams.set("status", "in.(completed,failed)");
   const response = await fetch(url, {
     method: "DELETE",
     headers: {
