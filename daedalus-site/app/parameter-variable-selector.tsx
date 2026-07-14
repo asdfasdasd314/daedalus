@@ -8,6 +8,7 @@ import {
 } from "@/lib/parameter-file-parser";
 
 type ParameterVariableSelectorProps = {
+  acceptsWork: boolean;
   projectPath: string;
   parameterFilePath: string;
   parameterFile: ParameterFileRecord;
@@ -20,6 +21,7 @@ type ParameterVariableSelectorProps = {
 };
 
 export default function ParameterVariableSelector({
+  acceptsWork,
   projectPath,
   parameterFilePath,
   parameterFile,
@@ -56,7 +58,7 @@ export default function ParameterVariableSelector({
     : null;
 
   async function handleSave() {
-    if (!selectedVariable || !validation?.ok) {
+    if (!acceptsWork || !selectedVariable || !validation?.ok) {
       return;
     }
 
@@ -200,7 +202,7 @@ export default function ParameterVariableSelector({
         <button
           type="button"
           onClick={handleSave}
-          disabled={!selectedVariable.isEditable || !validation?.ok || isSaving}
+          disabled={!acceptsWork || !selectedVariable.isEditable || !validation?.ok || isSaving}
           className="rounded-full bg-cyan-300 px-4 py-2 text-xs font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
         >
           {isSaving ? "Saving..." : "Save variable"}

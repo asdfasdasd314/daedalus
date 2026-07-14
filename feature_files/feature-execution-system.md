@@ -31,3 +31,4 @@ HACKING
 - 2026-07-13: Replaced configurable execution commands with daemon-validated Python entry points and a parameter-file-backed picker.
 - 2026-07-13: Normalized execution project roots before containment checks so valid entry points resolve correctly in temporary and symlinked workspaces.
 - 2026-07-13: Preserved the configured project-relative entry-point spelling after canonical containment validation for stable Python command previews.
+- 2026-07-13: Gated new run insertion during manager drains and documented active queued/running runs as restart blockers, with startup reconciliation reserved for unexpected crash recovery.

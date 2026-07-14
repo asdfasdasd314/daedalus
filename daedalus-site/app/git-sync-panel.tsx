@@ -9,6 +9,7 @@ import type { GitSyncResult } from "./git-sync-types";
 import { formatGitSyncOutput } from "./git-sync-utils";
 
 type GitSyncPanelProps = {
+  acceptsWork: boolean;
   availableProjectDirectories: string[];
   commitMessage: string;
   defaultProjectDirectory: string;
@@ -24,6 +25,7 @@ type GitSyncPanelProps = {
 };
 
 export default function GitSyncPanel({
+  acceptsWork,
   availableProjectDirectories,
   commitMessage,
   defaultProjectDirectory,
@@ -121,7 +123,7 @@ export default function GitSyncPanel({
         <button
           type="button"
           onClick={onCommitChanges}
-          disabled={isRequestInFlight || !commitMessage.trim()}
+          disabled={!acceptsWork || isRequestInFlight || !commitMessage.trim()}
           className="rounded-full bg-cyan-300 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
         >
           {isRequestInFlight ? "Working..." : "Commit changes"}
@@ -129,7 +131,7 @@ export default function GitSyncPanel({
         <button
           type="button"
           onClick={onSyncWithGitHub}
-          disabled={isRequestInFlight}
+          disabled={!acceptsWork || isRequestInFlight}
           className="rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
         >
           {isRequestInFlight ? "Working..." : "Sync with GitHub"}
@@ -137,12 +139,16 @@ export default function GitSyncPanel({
         <button
           type="button"
           onClick={onViewGitStatus}
-          disabled={isRequestInFlight}
+          disabled={!acceptsWork || isRequestInFlight}
           className="rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
         >
           {isRequestInFlight ? "Working..." : "View Git status"}
         </button>
       </div>
+
+      {!acceptsWork ? (
+        <p className="text-sm text-amber-200">The execution daemon is draining for restart. New work will resume after the restart completes or is cancelled.</p>
+      ) : null}
 
       {statusText ? (
         <p className="rounded-[1.25rem] border border-white/10 bg-slate-900/50 px-4 py-3 text-sm text-slate-200">

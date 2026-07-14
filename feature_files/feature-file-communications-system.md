@@ -42,3 +42,4 @@ HACKING
 - 2026-07-09: Added an explicit network-outage cooldown so exhausted Supabase retries now pause the daemon briefly instead of immediately hammering the remaining poll cycles.
 - 2026-07-12: Updated daemon communications and config tests to accept urlopen timeouts and assert the new retry/cooldown defaults.
 - 2026-07-13: Retained communications as the direct planning/ask pickup protocol while moving response publication out of daemon payloads and into durable agent output history.
+- 2026-07-13: Added manager admission gating for feature-file load requests and exposed in-progress `daemon_review` loads through the authoritative drain interface.

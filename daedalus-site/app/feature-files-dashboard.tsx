@@ -18,6 +18,7 @@ import FeatureSearchDialog, {
 } from "./feature-search-dialog";
 import ParameterVariableSelector from "./parameter-variable-selector";
 import EntryPointPicker from "./entry-point-picker";
+import DaemonManagerPanel, { type DaemonManagerStatus } from "./daemon-manager-panel";
 import type {
   AgentChatExchange,
   TargetedFeature,
@@ -89,6 +90,7 @@ const DEFAULT_DESKTOP_NODE_SCALE = 1;
 const DEFAULT_MOBILE_NODE_SCALE = 0.65;
 const DEFAULT_MOBILE_LABEL_MIN_ZOOM = 1.0;
 const GRAPH_PARAMETER_FILE_PATH = "parameter_files/feature-file-graph-display.toml";
+const DAEMON_ADMISSION_MESSAGE = "The execution daemon is draining for restart. New work will resume after the restart completes or is cancelled.";
 
 type AuthMode = "sign-in" | "sign-up";
 type DevEnvironmentState = "idle" | "loading" | "ready" | "error";
@@ -355,6 +357,8 @@ export default function FeatureFilesDashboard({
   const [deletingVentureId, setDeletingVentureId] = useState("");
   const [ventureError, setVentureError] = useState("");
   const [error, setError] = useState("");
+  const [managerStatus, setManagerStatus] = useState<DaemonManagerStatus | null>(null);
+  const [managerOnline, setManagerOnline] = useState(false);
   const latestLocalWriteStartedAt = useRef(0);
   const latestParameterUpdateWriteStartedAt = useRef(0);
   const initialDevEnvironmentUserIdRef = useRef("");
@@ -369,9 +373,30 @@ export default function FeatureFilesDashboard({
   >(new Map());
   const hasSeededDurableTaskStatusesRef = useRef(false);
   const latestChatRef = useRef<AgentChatExchange | null>(null);
+  const observedExecutionGenerationRef = useRef<number | null>(null);
   const currentUser = session?.user ?? null;
   const currentUserId = currentUser?.id ?? "";
   const accessToken = session?.access_token ?? "";
+  const daemonAcceptsWork = managerStatus === null
+    ? true
+    : managerOnline && managerStatus.accepts_work;
+  const handleManagerStatusChange = useCallback(
+    (nextStatus: DaemonManagerStatus | null, online: boolean) => {
+      setManagerStatus(nextStatus);
+      setManagerOnline(online);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!managerStatus || !daemonAcceptsWork) return;
+    const previousGeneration = observedExecutionGenerationRef.current;
+    observedExecutionGenerationRef.current = managerStatus.execution_generation;
+    if (previousGeneration === null || previousGeneration === managerStatus.execution_generation) return;
+    void requestDevEnvironment();
+    // Refresh execution-owned payloads only after a successful generation change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [daemonAcceptsWork, managerStatus?.execution_generation]);
 
   useEffect(() => {
     durableTaskPollUserIdRef.current = currentUserId;
@@ -1323,6 +1348,7 @@ export default function FeatureFilesDashboard({
     accessToken,
     agentPromptQueue,
     currentUser,
+    daemonAcceptsWork,
     isAgentPromptQueueHydrated,
   ]);
 
@@ -1468,6 +1494,8 @@ export default function FeatureFilesDashboard({
     setVentures([]);
     setLatestChat(null);
     setDurableAgentTasks([]);
+    setManagerStatus(null);
+    setManagerOnline(false);
     setFinalizedDurableTaskCount(0);
   }
 
@@ -1480,6 +1508,7 @@ export default function FeatureFilesDashboard({
     if (!currentUser || !accessToken) {
       throw new Error("Sign in before saving parameter edits.");
     }
+    if (!daemonAcceptsWork) throw new Error(DAEMON_ADMISSION_MESSAGE);
 
     const writeStartedAt = Date.now();
     latestParameterUpdateWriteStartedAt.current = writeStartedAt;
@@ -1502,6 +1531,7 @@ export default function FeatureFilesDashboard({
 
   async function requestEntryPointUpdate(request: EntryPointUpdateRequest) {
     if (!currentUser || !accessToken) throw new Error("Sign in before changing an entry point.");
+    if (!daemonAcceptsWork) throw new Error(DAEMON_ADMISSION_MESSAGE);
     setIsEntryPointUpdatePending(true);
     setEntryPointUpdateError("");
     try {
@@ -1516,6 +1546,10 @@ export default function FeatureFilesDashboard({
   async function requestDevEnvironment() {
     if (!currentUser || !accessToken) {
       setError("Sign in before loading the dev environment.");
+      return;
+    }
+    if (!daemonAcceptsWork) {
+      setError(DAEMON_ADMISSION_MESSAGE);
       return;
     }
 
@@ -1560,6 +1594,10 @@ export default function FeatureFilesDashboard({
 
   async function sendAgentPrompt() {
     if (!promptText.trim() || !currentUser || !accessToken) {
+      return;
+    }
+    if (!daemonAcceptsWork) {
+      setPromptSubmissionError(DAEMON_ADMISSION_MESSAGE);
       return;
     }
 
@@ -1649,9 +1687,9 @@ export default function FeatureFilesDashboard({
         targetedFeaturePaths: nextPromptPayload.targetedFeaturePaths,
       });
       setPromptStatus("Agent task durably queued.");
-    } catch {
+    } catch (submissionError) {
       setPromptStatus("Unable to queue the agent task right now.");
-      setPromptSubmissionError("Unable to queue the prompt in the browser. Please try again.");
+      setPromptSubmissionError(submissionError instanceof Error ? submissionError.message : "Unable to queue the prompt in the browser. Please try again.");
     }
   }
 
@@ -1719,6 +1757,10 @@ export default function FeatureFilesDashboard({
     if (!planningSession || !currentUser || !accessToken) {
       return;
     }
+    if (!daemonAcceptsWork) {
+      setPromptSubmissionError(DAEMON_ADMISSION_MESSAGE);
+      return;
+    }
 
     const promptId = createPromptId();
     const implementationPrompt = buildImplementationPrompt(
@@ -1772,8 +1814,10 @@ export default function FeatureFilesDashboard({
         targetedFeaturePaths: task.targetedFeaturePaths,
       });
       setPromptStatus("Plan implementation task durably queued.");
-    } catch {
-      setPromptStatus("Unable to queue the plan implementation right now.");
+    } catch (submissionError) {
+      const detail = submissionError instanceof Error ? submissionError.message : "Unable to queue the plan implementation right now.";
+      setPromptStatus(detail);
+      setPromptSubmissionError(detail);
     }
   }
 
@@ -1824,7 +1868,7 @@ export default function FeatureFilesDashboard({
   }
 
   async function dispatchQueuedAgentPrompt(queueEntry: AgentPromptQueueEntry) {
-    if (!currentUser || !accessToken) {
+    if (!currentUser || !accessToken || !daemonAcceptsWork) {
       return;
     }
 
@@ -1887,16 +1931,17 @@ export default function FeatureFilesDashboard({
         }),
       );
       setPromptStatus("Prompt sent. Waiting for daemon pickup.");
-    } catch {
+    } catch (submissionError) {
       activePromptId.current = "";
-      setPromptStatus("Unable to send the prompt right now.");
+      const detail = submissionError instanceof Error ? submissionError.message : "Unable to send the prompt right now.";
+      setPromptStatus(detail);
       setAgentPromptQueue((currentQueue) =>
         currentQueue.map((item) =>
           item.promptId === queueEntry.promptId
             ? {
                 ...item,
-                status: "failed",
-                error: "Unable to send the prompt right now.",
+                status: detail === DAEMON_ADMISSION_MESSAGE ? "queued" : "failed",
+                error: detail === DAEMON_ADMISSION_MESSAGE ? undefined : detail,
               }
             : item,
         ),
@@ -2302,6 +2347,10 @@ export default function FeatureFilesDashboard({
     if (!currentUser || !accessToken || isGitSyncRequestInFlight) {
       return;
     }
+    if (!daemonAcceptsWork) {
+      setGitSyncStatus(DAEMON_ADMISSION_MESSAGE);
+      return;
+    }
 
     if (operation === "commit" && !message.trim()) {
       setGitSyncStatus("Enter a commit message before committing changes.");
@@ -2329,10 +2378,10 @@ export default function FeatureFilesDashboard({
         }),
       );
       setGitSyncStatus("Git request sent. Waiting for daemon pickup.");
-    } catch {
+    } catch (submissionError) {
       activeGitSyncRequestId.current = "";
       setIsGitSyncRequestInFlight(false);
-      setGitSyncStatus("Unable to send the Git request right now.");
+      setGitSyncStatus(submissionError instanceof Error ? submissionError.message : "Unable to send the Git request right now.");
     }
   }
 
@@ -2732,6 +2781,7 @@ export default function FeatureFilesDashboard({
 
   async function startFeatureExecution() {
     if (!currentUser || !accessToken || !selectedFeatureSession || !runnableFeature.runnable || selectedFeatureRun?.status === "queued" || selectedFeatureRun?.status === "running") return;
+    if (!daemonAcceptsWork) { setFeatureExecutionMessage(DAEMON_ADMISSION_MESSAGE); return; }
     setFeatureExecutionMessage("Submitting run request.");
     try {
       await insertFeatureExecutionRun(
@@ -2739,8 +2789,8 @@ export default function FeatureFilesDashboard({
         buildFeatureExecutionRequest(selectedFeatureSession.projectPath, selectedFeatureSession.filePath),
       );
       setFeatureExecutionMessage("Run queued for the local daemon.");
-    } catch {
-      setFeatureExecutionMessage("Unable to queue this feature run. It may already be active.");
+    } catch (submissionError) {
+      setFeatureExecutionMessage(submissionError instanceof Error ? submissionError.message : "Unable to queue this feature run. It may already be active.");
     }
   }
 
@@ -3644,6 +3694,7 @@ export default function FeatureFilesDashboard({
             </div>
             <div className="agent-chat-scrollbar min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-4 sm:px-5">
               <GitSyncPanel
+                acceptsWork={daemonAcceptsWork}
                 availableProjectDirectories={availableProjectDirectories}
                 commitMessage={gitSyncCommitMessage}
                 defaultProjectDirectory={DEFAULT_PROJECT_DIRECTORY}
@@ -3685,6 +3736,7 @@ export default function FeatureFilesDashboard({
             </div>
             <div className="agent-chat-scrollbar min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-4 sm:px-5">
               <AgentSessionPanel
+                acceptsWork={daemonAcceptsWork}
                 agentModels={agentModels}
                 availableProjectDirectories={availableProjectDirectories}
                 defaultProjectDirectory={DEFAULT_PROJECT_DIRECTORY}
@@ -3748,7 +3800,7 @@ export default function FeatureFilesDashboard({
                       {selectedFeatureRun.cancel_requested ? "Cancelling" : "Cancel"}
                     </button>
                   ) : (
-                    <button type="button" onClick={() => void startFeatureExecution()} disabled={!runnableFeature.runnable} className="rounded-full bg-emerald-300 px-3 py-2 font-semibold text-slate-950 disabled:opacity-40">
+                    <button type="button" onClick={() => void startFeatureExecution()} disabled={!daemonAcceptsWork || !runnableFeature.runnable} className="rounded-full bg-emerald-300 px-3 py-2 font-semibold text-slate-950 disabled:opacity-40">
                       Run
                     </button>
                   )}
@@ -3804,6 +3856,7 @@ export default function FeatureFilesDashboard({
             <div className="agent-chat-scrollbar min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-4 sm:px-5">
               {featureDetailTab === "edit" ? (
                 <AgentSessionPanel
+                  acceptsWork={daemonAcceptsWork}
                   agentModels={agentModels}
                   availableProjectDirectories={availableProjectDirectories}
                   defaultProjectDirectory={DEFAULT_PROJECT_DIRECTORY}
@@ -3846,8 +3899,9 @@ export default function FeatureFilesDashboard({
                     </p>
                     {matchedParameterFile ? (
                       <>
-                        <EntryPointPicker featureMarkdown={selectedFeatureRecord?.markdown ?? ""} parameterFile={matchedParameterFile} pending={isEntryPointUpdatePending} daemonError={entryPointUpdateError} onSave={(operation, entryPoint) => requestEntryPointUpdate({ projectPath: selectedFeatureSession.projectPath, featureFilePath: selectedFeatureSession.filePath, operation, entryPoint })} />
+                        <EntryPointPicker acceptsWork={daemonAcceptsWork} featureMarkdown={selectedFeatureRecord?.markdown ?? ""} parameterFile={matchedParameterFile} pending={isEntryPointUpdatePending} daemonError={entryPointUpdateError} onSave={(operation, entryPoint) => requestEntryPointUpdate({ projectPath: selectedFeatureSession.projectPath, featureFilePath: selectedFeatureSession.filePath, operation, entryPoint })} />
                         <ParameterVariableSelector
+                          acceptsWork={daemonAcceptsWork}
                           key={`${selectedFeatureSession.projectPath}:${matchedParameterFile.path}`}
                           projectPath={selectedFeatureSession.projectPath}
                           parameterFilePath={matchedParameterFile.path}
@@ -3881,6 +3935,16 @@ export default function FeatureFilesDashboard({
           </div>
         ) : null}
       </div>
+
+      {currentUser && accessToken ? (
+        <DaemonManagerPanel
+          accessToken={accessToken}
+          pollIntervalMs={pollIntervalMs}
+          supabasePublishableKey={supabasePublishableKey}
+          supabaseUrl={supabaseUrl}
+          onStatusChange={handleManagerStatusChange}
+        />
+      ) : null}
 
       <FeatureSearchDialog
         excludedFilePaths={
@@ -3985,9 +4049,8 @@ async function updateMessage(
         });
 
   if (!response.ok) {
-    throw new Error(
-      `communications message update failed (${response.status}): ${await response.text()}`,
-    );
+    const detail = await response.text();
+    throw submissionRequestError(response, detail, "communications message update failed");
   }
 
   return content ?? "";
@@ -4449,7 +4512,8 @@ async function insertAgentTask(
     }),
   });
   if (!response.ok) {
-    throw new Error("agent task insert failed");
+    const detail = await response.text();
+    throw submissionRequestError(response, detail, "agent task insert failed");
   }
 }
 
@@ -4462,7 +4526,18 @@ async function insertFeatureExecutionRun(
     headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
     body: JSON.stringify({ user_id: userId, ...request, status: "queued", message: DAEMON_REVIEW }),
   });
-  if (!response.ok) throw new Error("feature execution run insert failed");
+  if (!response.ok) {
+    const detail = await response.text();
+    throw submissionRequestError(response, detail, "feature execution run insert failed");
+  }
+}
+
+function submissionRequestError(response: Response, detail: string, fallback: string) {
+  const normalizedDetail = detail.toLowerCase();
+  if (normalizedDetail.includes("row-level security") || normalizedDetail.includes("42501")) {
+    return new Error(DAEMON_ADMISSION_MESSAGE);
+  }
+  return new Error(`${fallback} (${response.status}): ${detail}`);
 }
 
 async function fetchFeatureExecutionRuns(
