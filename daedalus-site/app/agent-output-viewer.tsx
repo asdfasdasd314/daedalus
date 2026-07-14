@@ -1,0 +1,246 @@
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { FeatureFileProjects } from "@/lib/feature-file-cache";
+import type { PlanningSession } from "@/lib/planning-questionnaire";
+import { parsePlanningReply } from "@/lib/planning-questionnaire";
+import {
+  AGENT_OUTPUT_MODE_LABELS,
+  AGENT_OUTPUT_SOURCE_LABELS,
+  AGENT_OUTPUT_STATUS_LABELS,
+  dedupeAgentOutputs,
+  findMatchingAgentOutputFeaturePaths,
+  fetchAgentOutputHistoryPage,
+  fetchAgentOutputFeatureSummaries,
+  fetchRecentAgentOutputHistory,
+  groupAgentOutputsByFeature,
+  mergeAgentOutputRecords,
+  rerankAgentOutputSearch,
+  searchAgentOutputArchive,
+  type AgentOutputCursor,
+  type AgentOutputExchange,
+} from "@/lib/agent-output-history";
+import AgentOutputDetail from "./agent-output-detail";
+import { getProjectLabel } from "./feature-workspace-utils";
+
+type AgentOutputViewerProps = {
+  accessToken: string;
+  activitySummary: string;
+  isOpen: boolean;
+  liveExchanges: AgentOutputExchange[];
+  onAbandonDirectPrompt: (promptId: string) => void;
+  onAnswerPlanningQuestion: (answer: string) => void;
+  onCancelDurableTask: (promptId: string) => void;
+  onClearFinalizedTasks: () => void;
+  onClose: () => void;
+  onImplementPlan: () => void;
+  onPlanningReply: (exchange: AgentOutputExchange) => void;
+  onRetryDirectPrompt: (exchange: AgentOutputExchange) => void;
+  onSelectedPromptIdChange: (promptId: string) => void;
+  planningSession: PlanningSession | null;
+  pollIntervalMs: number;
+  projects: FeatureFileProjects;
+  selectedPromptId: string;
+  supabasePublishableKey: string;
+  supabaseUrl: string;
+};
+
+export default function AgentOutputViewer({
+  accessToken, activitySummary, isOpen, liveExchanges, onAbandonDirectPrompt,
+  onAnswerPlanningQuestion, onCancelDurableTask, onClearFinalizedTasks,
+  onClose, onImplementPlan, onPlanningReply, onRetryDirectPrompt,
+  onSelectedPromptIdChange, planningSession, pollIntervalMs, projects,
+  selectedPromptId, supabasePublishableKey, supabaseUrl,
+}: AgentOutputViewerProps) {
+  const [archive, setArchive] = useState<AgentOutputExchange[]>([]);
+  const [cursor, setCursor] = useState<AgentOutputCursor | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [fetchError, setFetchError] = useState("");
+  const [search, setSearch] = useState("");
+  const [searchResults, setSearchResults] = useState<AgentOutputExchange[] | null>(null);
+  const [featureSummaryCounts, setFeatureSummaryCounts] = useState<Record<string, number>>({});
+  const [selectedGroupKey, setSelectedGroupKey] = useState("all");
+  const [mobileDetail, setMobileDetail] = useState(false);
+  const [otherAnswer, setOtherAnswer] = useState("");
+  const publishedPlanningPromptRef = useRef("");
+
+  useEffect(() => {
+    if (!isOpen || !accessToken || archive.length > 0 || loading) return;
+    setLoading(true);
+    setFetchError("");
+    void fetchAgentOutputHistoryPage(supabaseUrl, supabasePublishableKey, accessToken)
+      .then((page) => {
+        setArchive(page.exchanges);
+        setCursor(page.cursor);
+        setHasMore(page.hasMore);
+        if (!selectedPromptId && page.exchanges[0]) onSelectedPromptIdChange(page.exchanges[0].promptId);
+      })
+      .catch((error) => setFetchError(error instanceof Error ? error.message : "Unable to load history."))
+      .finally(() => setLoading(false));
+    void fetchAgentOutputFeatureSummaries(supabaseUrl, supabasePublishableKey, accessToken)
+      .then((summaries) => setFeatureSummaryCounts(Object.fromEntries(
+        summaries.map((summary) => [`${summary.repository}\u0000${summary.feature_path}`, Number(summary.result_count)]),
+      )))
+      .catch(() => undefined);
+  }, [accessToken, archive.length, isOpen, loading, onSelectedPromptIdChange, selectedPromptId, supabasePublishableKey, supabaseUrl]);
+
+  useEffect(() => {
+    if (!isOpen || !accessToken) return;
+    let active = true;
+    async function refresh() {
+      try {
+        const recent = await fetchRecentAgentOutputHistory(supabaseUrl, supabasePublishableKey, accessToken);
+        if (active) setArchive((current) => dedupeAgentOutputs([...recent, ...current]));
+      } catch {
+        return;
+      }
+    }
+    void refresh();
+    const interval = window.setInterval(refresh, pollIntervalMs);
+    return () => { active = false; window.clearInterval(interval); };
+  }, [accessToken, isOpen, pollIntervalMs, supabasePublishableKey, supabaseUrl]);
+
+  useEffect(() => {
+    if (!isOpen || !search.trim()) return;
+    const timer = window.setTimeout(() => {
+      const featurePaths = findMatchingAgentOutputFeaturePaths(search, projects);
+      void searchAgentOutputArchive(supabaseUrl, supabasePublishableKey, accessToken, search, featurePaths)
+        .then((results) => setSearchResults(rerankAgentOutputSearch(search, results, projects)))
+        .catch((error) => setFetchError(error instanceof Error ? error.message : "Search failed."));
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [accessToken, isOpen, projects, search, supabasePublishableKey, supabaseUrl]);
+
+  const exchanges = useMemo(() => mergeAgentOutputRecords(archive, liveExchanges), [archive, liveExchanges]);
+  const activeSearchResults = search.trim() ? searchResults : null;
+  const visibleSource = activeSearchResults ?? exchanges;
+  const groups = useMemo(() => groupAgentOutputsByFeature(visibleSource, projects), [projects, visibleSource]);
+  const visibleExchanges = selectedGroupKey === "all"
+    ? visibleSource
+    : selectedGroupKey === "unscoped"
+      ? visibleSource.filter((exchange) => exchange.targetedFeaturePaths.length === 0)
+      : groups.find((group) => group.key === selectedGroupKey)?.exchanges ?? [];
+  const selected = exchanges.find((exchange) => exchange.promptId === selectedPromptId)
+    ?? visibleExchanges[0] ?? null;
+  const parsedPlanning = selected?.mode === "planning" && selected.output
+    ? parsePlanningReply(selected.output)
+    : null;
+  const planningQuestion = planningSession?.pendingQuestions[planningSession.questionIndex] ?? null;
+  const canImplement = Boolean(selected?.mode === "planning" && parsedPlanning &&
+    planningSession?.currentPlan === parsedPlanning.plan && !planningQuestion && selected.status === "completed");
+  const canCancel = Boolean(selected?.taskId && !selected.cancelRequested &&
+    ["queued", "running", "verifying", "ready", "integrating", "resolving"].includes(selected.status));
+  const canRetry = Boolean(selected?.source === "direct_prompt" &&
+    (selected.status === "failed" || selected.status === "cancelled" || selected.status === "blocked"));
+  const canAbandon = Boolean(selected && liveExchanges.some((exchange) =>
+    exchange.promptId === selected.promptId && exchange.source === "direct_prompt"
+      && (exchange.status === "failed" || exchange.status === "blocked"),
+  ));
+  const projectDirectories = Object.keys(projects);
+
+  useEffect(() => {
+    if (selected?.mode === "planning" && selected.status === "completed" && selected.output && publishedPlanningPromptRef.current !== selected.promptId) {
+      publishedPlanningPromptRef.current = selected.promptId;
+      onPlanningReply(selected);
+    }
+  }, [onPlanningReply, selected]);
+
+  async function loadMore() {
+    if (!cursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const page = await fetchAgentOutputHistoryPage(supabaseUrl, supabasePublishableKey, accessToken, cursor);
+      setArchive((current) => dedupeAgentOutputs([...current, ...page.exchanges]));
+      setCursor(page.cursor);
+      setHasMore(page.hasMore);
+    } catch (error) {
+      setFetchError(error instanceof Error ? error.message : "Unable to load more history.");
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
+  if (!isOpen) return null;
+
+  return (
+    <aside className="fixed inset-3 z-40 flex min-w-0 overflow-hidden rounded-[1.5rem] border border-white/10 bg-slate-950/96 shadow-[0_30px_100px_rgba(2,6,23,0.7)] backdrop-blur md:inset-y-4 md:left-4 md:right-auto md:w-[min(72rem,calc(100vw-2rem))]">
+      <div className={`${mobileDetail ? "hidden md:flex" : "flex"} w-full min-w-0 flex-col border-r border-white/10 md:w-80`}>
+        <div className="border-b border-white/10 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div><p className="text-[11px] uppercase tracking-[0.28em] text-cyan-200">History</p><h2 className="mt-1 text-xl font-semibold text-white">Agent output</h2>{activitySummary ? <p className="mt-1 line-clamp-2 text-xs text-slate-400">{activitySummary}</p> : null}</div>
+            <button type="button" onClick={onClose} className="rounded-full border border-white/10 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10">Close</button>
+          </div>
+          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search complete archive..." className="mt-4 w-full rounded-full border border-white/10 bg-black/35 px-4 py-2.5 text-sm text-white outline-none placeholder:text-slate-500" />
+        </div>
+        <div className="agent-chat-scrollbar min-h-0 flex-1 overflow-y-auto p-3">
+          <div className="mb-3 grid gap-1">
+            <GroupButton label="All activity" count={visibleSource.length} active={selectedGroupKey === "all"} onClick={() => setSelectedGroupKey("all")} />
+            <GroupButton label="Unscoped" count={visibleSource.filter((item) => item.targetedFeaturePaths.length === 0).length} active={selectedGroupKey === "unscoped"} onClick={() => setSelectedGroupKey("unscoped")} />
+            {groups.filter((group) => group.featurePath !== null).map((group) => (
+              <GroupButton key={group.key} label={group.featureName} detail={`${getProjectLabel(group.repository, projectDirectories)}${group.unavailable ? " · Unavailable" : ""}`} count={activeSearchResults ? group.exchanges.length : featureSummaryCounts[group.key] ?? group.exchanges.length} active={selectedGroupKey === group.key} onClick={() => setSelectedGroupKey(group.key)} />
+            ))}
+          </div>
+          <div className="grid gap-2 border-t border-white/10 pt-3">
+            {loading ? <p className="p-3 text-sm text-slate-400">Loading history...</p> : null}
+            {!loading && visibleExchanges.length === 0 ? <p className="p-3 text-sm text-slate-400">{search.trim() ? "No archived prompts match this search." : "No agent output has been archived yet."}</p> : null}
+            {visibleExchanges.map((exchange) => (
+              <button key={exchange.promptId} type="button" onClick={() => { onSelectedPromptIdChange(exchange.promptId); setMobileDetail(true); }} className={`min-w-0 rounded-xl border p-3 text-left transition ${selected?.promptId === exchange.promptId ? "border-cyan-300/40 bg-cyan-300/10" : "border-white/8 bg-white/[0.03] hover:bg-white/[0.06]"}`}>
+                <div className="flex items-center justify-between gap-2"><span className="rounded-full bg-white/8 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-100">{AGENT_OUTPUT_STATUS_LABELS[exchange.status]}</span><time className="text-[10px] text-slate-500">{formatTime(exchange.completedAt ?? exchange.updatedAt)}</time></div>
+                <p className="mt-2 line-clamp-2 break-words text-sm text-slate-200">{exchange.prompt}</p>
+              </button>
+            ))}
+            {hasMore && !activeSearchResults ? <div className="grid gap-2"><p className="text-center text-[11px] text-slate-500">Showing the newest archived exchanges.</p><button type="button" onClick={() => void loadMore()} disabled={loadingMore} className="rounded-full border border-white/10 px-4 py-2 text-xs font-semibold text-slate-200 disabled:opacity-50">{loadingMore ? "Loading..." : "Load more"}</button></div> : null}
+          </div>
+        </div>
+      </div>
+
+      <div className={`${mobileDetail ? "flex" : "hidden md:flex"} min-w-0 flex-1 flex-col`}>
+        <div className="flex items-start justify-between gap-4 border-b border-white/10 p-4">
+          <button type="button" onClick={() => setMobileDetail(false)} className="rounded-full border border-white/10 px-3 py-2 text-xs font-semibold text-slate-200 md:hidden">Back</button>
+          <div className="min-w-0 flex-1"><p className="text-[11px] uppercase tracking-[0.24em] text-slate-400">Selected exchange</p><h2 className="mt-1 truncate text-lg font-semibold text-white">{selected?.prompt || "Select a prompt"}</h2></div>
+          <button type="button" onClick={onClose} className="hidden rounded-full border border-white/10 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10 md:block">Close</button>
+        </div>
+        <div className="agent-chat-scrollbar min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
+          {fetchError ? <p className="mb-4 rounded-xl border border-rose-400/20 bg-rose-500/10 p-3 text-sm text-rose-100">{fetchError} Loaded results remain available.</p> : null}
+          {selected ? (
+            <div className="grid min-w-0 gap-4">
+              <div className="flex flex-wrap gap-2 text-xs text-slate-300">
+                <span className="rounded-full bg-cyan-300/12 px-3 py-1.5 text-cyan-100">{AGENT_OUTPUT_STATUS_LABELS[selected.status]}</span>
+                <span className="rounded-full bg-white/7 px-3 py-1.5">{AGENT_OUTPUT_MODE_LABELS[selected.mode]}</span>
+                <span className="rounded-full bg-white/7 px-3 py-1.5">{AGENT_OUTPUT_SOURCE_LABELS[selected.source]}</span>
+                <span className="rounded-full bg-white/7 px-3 py-1.5">{selected.provider} · {selected.model || "default"} · {selected.reasoning || "default"}</span>
+              </div>
+              <dl className="grid gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-3 text-xs sm:grid-cols-2">
+                <div><dt className="text-slate-500">Project</dt><dd className="mt-1 break-all text-slate-200">{getProjectLabel(selected.repository, projectDirectories)}</dd></div>
+                <div><dt className="text-slate-500">Completed</dt><dd className="mt-1 text-slate-200">{selected.completedAt ? formatTime(selected.completedAt) : "In progress"}</dd></div>
+                <div className="sm:col-span-2"><dt className="text-slate-500">Features</dt><dd className="mt-1 break-words text-slate-200">{selected.targetedFeaturePaths.join(", ") || "Unscoped"}</dd></div>
+              </dl>
+              <AgentOutputDetail label="Prompt" value={selected.prompt} />
+              {selected.output ? <AgentOutputDetail label="Agent output" value={selected.output} markdown /> : <p className="rounded-xl border border-dashed border-white/10 p-4 text-sm text-slate-400">No output has been published yet.</p>}
+              {selected.error ? <section className="rounded-xl border border-rose-400/25 bg-rose-500/10 p-4"><h3 className="text-[11px] uppercase tracking-[0.24em] text-rose-200">Terminal error</h3><pre className="mt-3 whitespace-pre-wrap break-words text-sm text-rose-100">{selected.error}</pre></section> : null}
+              {selected.statusDetail && selected.statusDetail !== selected.error ? <p className="rounded-xl border border-white/10 p-3 text-sm text-slate-300">{selected.statusDetail}</p> : null}
+              {selected.mode === "planning" && parsedPlanning ? <section className="grid gap-3 rounded-xl border border-cyan-300/20 bg-cyan-300/[0.05] p-4"><h3 className="font-semibold text-white">Planning workflow</h3>{planningQuestion ? <><p className="text-sm text-slate-200">{planningQuestion.question}</p><div className="flex flex-wrap gap-2">{planningQuestion.options.map((option) => <button key={option} type="button" onClick={() => onAnswerPlanningQuestion(option)} className="rounded-full border border-cyan-300/25 px-3 py-2 text-xs text-cyan-100">{option}</button>)}</div><div className="flex gap-2"><input value={otherAnswer} onChange={(event) => setOtherAnswer(event.target.value)} placeholder="Other answer" className="min-w-0 flex-1 rounded-full border border-white/10 bg-black/30 px-3 py-2 text-sm text-white" /><button type="button" onClick={() => { onAnswerPlanningQuestion(otherAnswer); setOtherAnswer(""); }} disabled={!otherAnswer.trim()} className="rounded-full bg-cyan-300 px-3 py-2 text-xs font-semibold text-slate-950 disabled:opacity-50">Answer</button></div></> : canImplement ? <button type="button" onClick={onImplementPlan} className="w-fit rounded-full bg-cyan-300 px-4 py-2 text-sm font-semibold text-slate-950">Implement Plan</button> : <p className="text-sm text-slate-400">The selected plan is ready for review.</p>}</section> : null}
+              <div className="flex flex-wrap gap-2 border-t border-white/10 pt-4">
+                {canCancel ? <button type="button" onClick={() => onCancelDurableTask(selected.promptId)} className="rounded-full border border-rose-400/25 bg-rose-500/10 px-4 py-2 text-xs font-semibold text-rose-100">Cancel task</button> : null}
+                {canRetry ? <button type="button" onClick={() => onRetryDirectPrompt(selected)} className="rounded-full border border-cyan-300/25 px-4 py-2 text-xs font-semibold text-cyan-100">Retry prompt</button> : null}
+                {canAbandon ? <button type="button" onClick={() => onAbandonDirectPrompt(selected.promptId)} className="rounded-full border border-white/10 px-4 py-2 text-xs font-semibold text-slate-200">Abandon local prompt</button> : null}
+                <button type="button" onClick={onClearFinalizedTasks} className="rounded-full border border-white/10 px-4 py-2 text-xs font-semibold text-slate-200" title="Deletes finalized task queue rows only; archived History remains.">Clear finalized task rows (keeps History)</button>
+              </div>
+            </div>
+          ) : <p className="text-sm text-slate-400">Choose an exchange from the history list.</p>}
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function GroupButton({ label, detail, count, active, onClick }: { label: string; detail?: string; count: number; active: boolean; onClick: () => void }) {
+  return <button type="button" onClick={onClick} className={`flex items-center justify-between gap-3 rounded-xl px-3 py-2 text-left ${active ? "bg-white/10 text-white" : "text-slate-300 hover:bg-white/[0.05]"}`}><span className="min-w-0"><span className="block truncate text-sm font-semibold">{label}</span>{detail ? <span className="block truncate text-[10px] text-slate-500">{detail}</span> : null}</span><span className="rounded-full bg-black/30 px-2 py-1 text-[10px]">{count}</span></button>;
+}
+
+function formatTime(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}

@@ -67,6 +67,7 @@ if __package__ in {None, ""}:
         AGENT_PROMPT_PURPOSE,
         CLIENT_REVIEW,
         DAEMON_COMPLETE,
+        DAEMON_SENT_RESPONSE,
         FEATURE_FILE_LOAD_PURPOSE,
         PARAMETER_FILE_LOAD_PURPOSE,
         PARAMETER_FILE_UPDATE_PURPOSE,
@@ -74,7 +75,7 @@ if __package__ in {None, ""}:
         SupabaseUnavailableError,
         GIT_SYNC_PURPOSE,
         fetch_current_message,
-        post_agent_chat,
+        upsert_agent_output_history,
         post_feature_files,
         post_git_sync_result,
         post_parameter_files,
@@ -96,6 +97,7 @@ else:
         AGENT_PROMPT_PURPOSE,
         CLIENT_REVIEW,
         DAEMON_COMPLETE,
+        DAEMON_SENT_RESPONSE,
         FEATURE_FILE_LOAD_PURPOSE,
         PARAMETER_FILE_LOAD_PURPOSE,
         PARAMETER_FILE_UPDATE_PURPOSE,
@@ -103,7 +105,7 @@ else:
         SupabaseUnavailableError,
         GIT_SYNC_PURPOSE,
         fetch_current_message,
-        post_agent_chat,
+        upsert_agent_output_history,
         post_feature_files,
         post_git_sync_result,
         post_parameter_files,
@@ -294,9 +296,10 @@ def run_agent_prompt_cycle(
     config: dict,
     read_message=fetch_current_message,
     write_message=update_current_message,
-    deliver_chat=post_agent_chat,
+    publish_history=None,
     run_codex_prompt=None,
     run_cursor_prompt=None,
+    deliver_chat=None,
 ) -> None:
     message = read_message(config, AGENT_PROMPT_PURPOSE)
 
@@ -327,6 +330,14 @@ def run_agent_prompt_cycle(
     targeted_feature_paths = filter_targeted_feature_paths(
         prompt_request.get("targetedFeaturePaths", []),
     )
+    mode = "ask" if ask_mode else "planning"
+    history_publisher = publish_history or upsert_agent_output_history
+    history_args = (
+        config, prompt_id, directory, prompt, "", "", provider, model,
+        reasoning, mode, targeted_feature_paths,
+    )
+    if deliver_chat is None:
+        history_publisher(*history_args, status="running")
     final_prompt = (
         build_cursor_prompt(
             prompt,
@@ -346,39 +357,63 @@ def run_agent_prompt_cycle(
             ask_mode=ask_mode,
         )
     )
-    if provider == CURSOR_PROVIDER:
-        reply = (
-            run_cursor_exec(directory, final_prompt, planning_mode, ask_mode=ask_mode)
-            if run_cursor_prompt is None
-            else (
-                run_cursor_prompt(directory, final_prompt, planning_mode, ask_mode)
-                if ask_mode
-                else run_cursor_prompt(directory, final_prompt, planning_mode)
+    try:
+        if provider == CURSOR_PROVIDER:
+            reply = (
+                run_cursor_exec(directory, final_prompt, planning_mode, ask_mode=ask_mode)
+                if run_cursor_prompt is None
+                else (
+                    run_cursor_prompt(directory, final_prompt, planning_mode, ask_mode)
+                    if ask_mode
+                    else run_cursor_prompt(directory, final_prompt, planning_mode)
+                )
             )
+        elif provider == CODEX_PROVIDER:
+            reply = (
+                run_codex_exec(directory, final_prompt, model, reasoning, ask_mode=ask_mode)
+                if run_codex_prompt is None
+                else (
+                    run_codex_prompt(directory, final_prompt, model, reasoning, ask_mode)
+                    if ask_mode
+                    else run_codex_prompt(directory, final_prompt, model, reasoning)
+                )
+            )
+        else:
+            raise ValueError(f"Unsupported agent provider: {provider}")
+    except Exception as error:
+        history_publisher(
+            config, prompt_id, directory, prompt, "", str(error), provider,
+            model, reasoning, mode, targeted_feature_paths, status="failed",
+            status_detail=str(error),
         )
-    elif provider == CODEX_PROVIDER:
-        reply = (
-            run_codex_exec(directory, final_prompt, model, reasoning, ask_mode=ask_mode)
-            if run_codex_prompt is None
-            else (
-                run_codex_prompt(directory, final_prompt, model, reasoning, ask_mode)
-                if ask_mode
-                else run_codex_prompt(directory, final_prompt, model, reasoning)
+        if deliver_chat is None:
+            write_message(
+                config, AGENT_PROMPT_PURPOSE, CLIENT_REVIEW,
+                build_agent_prompt_state_message(prompt_id, DAEMON_SENT_RESPONSE),
             )
+        else:
+            write_message(config, AGENT_PROMPT_PURPOSE, DAEMON_COMPLETE)
+        return
+
+    if deliver_chat is None:
+        history_publisher(
+            config, prompt_id, directory, prompt, reply, "", provider, model,
+            reasoning, mode, targeted_feature_paths, status="completed",
+        )
+        write_message(
+            config, AGENT_PROMPT_PURPOSE, CLIENT_REVIEW,
+            build_agent_prompt_state_message(prompt_id, DAEMON_SENT_RESPONSE),
         )
     else:
-        reply = f"Unsupported agent provider: {provider}"
-
-    chat_args = (
-        config, prompt_id, directory, prompt, reply, provider, model, reasoning,
-        planning_mode, targeted_feature_paths,
-    )
-    if ask_mode:
-        deliver_chat(*chat_args, ask_mode=True)
-    else:
-        deliver_chat(*chat_args)
-
-    write_message(config, AGENT_PROMPT_PURPOSE, DAEMON_COMPLETE)
+        legacy_args = (
+            config, prompt_id, directory, prompt, reply, provider, model,
+            reasoning, planning_mode, targeted_feature_paths,
+        )
+        if ask_mode:
+            deliver_chat(*legacy_args, ask_mode=True)
+        else:
+            deliver_chat(*legacy_args)
+        write_message(config, AGENT_PROMPT_PURPOSE, DAEMON_COMPLETE)
 
 
 def parse_agent_prompt_message(message: str) -> dict[str, object] | None:

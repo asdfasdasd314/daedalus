@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient, type Session } from "@supabase/supabase-js";
 import AgentSessionPanel from "./agent-session-panel";
+import AgentOutputViewer from "./agent-output-viewer";
 import AgentTaskNotifications, {
   type AgentTaskNotification,
 } from "./agent-task-notifications";
@@ -22,6 +23,7 @@ import type {
   TargetedFeature,
 } from "@/lib/agent-chat-cache";
 import type { AgentModelsConfig } from "@/lib/agent-models";
+import type { AgentOutputExchange as HistoryExchange } from "@/lib/agent-output-history";
 import {
   buildImplementationPrompt,
   parsePlanningReply,
@@ -71,11 +73,9 @@ const AGENT_PROMPT_PURPOSE = "agent_prompt";
 const GIT_SYNC_PURPOSE = "git_sync_request";
 const FEATURE_FILES_PAYLOAD_KIND = "feature_files";
 const PARAMETER_FILES_PAYLOAD_KIND = "parameter_files";
-const AGENT_CHAT_PAYLOAD_KIND = "agent_chat";
 const GIT_SYNC_PAYLOAD_KIND = "git_sync_result";
 const DEFAULT_PROJECT_DIRECTORY = "/Users/jameshollingsworth/Projects/daedalus";
 const AGENT_PROMPT_QUEUE_STORAGE_KEY = "agent-prompt-queue-v1";
-const AGENT_CHAT_STORAGE_KEY = "agent-chat-snapshot-v1";
 const PLANNING_SESSION_STORAGE_KEY = "planning-questionnaire-session-v1";
 const AGENT_PROMPT_TIMEOUT_MS = 5 * 60 * 1000;
 const VENTURE_PROGRESS_STATES = ["idle", "in progress", "completed"] as const;
@@ -93,7 +93,7 @@ const GRAPH_PARAMETER_FILE_PATH = "parameter_files/feature-file-graph-display.to
 type AuthMode = "sign-in" | "sign-up";
 type DevEnvironmentState = "idle" | "loading" | "ready" | "error";
 type PrimaryOverlay = "feature-detail" | "new-feature" | "git-sync" | null;
-type FeatureDetailTab = "chat" | "info" | "params";
+type FeatureDetailTab = "edit" | "info" | "params";
 type VentureProgressState = (typeof VENTURE_PROGRESS_STATES)[number];
 
 type VentureRow = {
@@ -253,18 +253,18 @@ export default function FeatureFilesDashboard({
   >("standard");
   const [message, setMessage] = useState("");
   const [parameterFileMessage, setParameterFileMessage] = useState("");
-  const [agentPromptMessage, setAgentPromptMessage] = useState("");
+  const [, setAgentPromptMessage] = useState("");
   const [parameterUpdateMessage, setParameterUpdateMessage] = useState("");
   const [entryPointUpdateMessage, setEntryPointUpdateMessage] = useState("");
   const [isEntryPointUpdatePending, setIsEntryPointUpdatePending] = useState(false);
   const [entryPointUpdateError, setEntryPointUpdateError] = useState("");
   const [promptText, setPromptText] = useState("");
-  const [promptStatus, setPromptStatus] = useState("");
+  const [promptSubmissionError, setPromptSubmissionError] = useState("");
+  const [, setPromptStatus] = useState("");
   const [lastIntegratedBatchStatus, setLastIntegratedBatchStatus] =
     useState("");
   const [latestChat, setLatestChat] = useState<AgentChatExchange | null>(null);
   const [planningSession, setPlanningSession] = useState<PlanningSession | null>(null);
-  const [isAgentChatCleared, setIsAgentChatCleared] = useState(false);
   const [agentPromptQueue, setAgentPromptQueue] = useState<
     AgentPromptQueueEntry[]
   >([]);
@@ -273,7 +273,6 @@ export default function FeatureFilesDashboard({
   >([]);
   const [isAgentPromptQueueHydrated, setIsAgentPromptQueueHydrated] =
     useState(false);
-  const [durableTaskUserId, setDurableTaskUserId] = useState("");
   const [finalizedDurableTaskCount, setFinalizedDurableTaskCount] =
     useState(0);
   const [projects, setProjects] = useState<FeatureFileProjects | null>(null);
@@ -295,12 +294,14 @@ export default function FeatureFilesDashboard({
   const [activePrimaryOverlay, setActivePrimaryOverlay] =
     useState<PrimaryOverlay>(null);
   const [featureDetailTab, setFeatureDetailTab] =
-    useState<FeatureDetailTab>("chat");
+    useState<FeatureDetailTab>("edit");
   const [graphZoom, setGraphZoom] = useState(1);
   const [isMobileLayout, setIsMobileLayout] = useState(false);
   const [selectedFeatureSession, setSelectedFeatureSession] =
     useState<SelectedFeatureSession | null>(null);
   const [venturesDrawerOpen, setVenturesDrawerOpen] = useState(false);
+  const [isAgentOutputViewerOpen, setIsAgentOutputViewerOpen] = useState(false);
+  const [selectedHistoryPromptId, setSelectedHistoryPromptId] = useState("");
   const [isWorkspaceMenuOpen, setIsWorkspaceMenuOpen] = useState(false);
   const [isAgentTaskNotificationsOpen, setIsAgentTaskNotificationsOpen] =
     useState(false);
@@ -359,7 +360,6 @@ export default function FeatureFilesDashboard({
   const initialDevEnvironmentUserIdRef = useRef("");
   const activePromptId = useRef("");
   const activeGitSyncRequestId = useRef("");
-  const clearedAgentChatPrompt = useRef("");
   const agentPromptQueueRef = useRef<AgentPromptQueueEntry[]>([]);
   const durableTaskPollUserIdRef = useRef("");
   const graphZoomProfileRef = useRef("");
@@ -372,8 +372,6 @@ export default function FeatureFilesDashboard({
   const currentUser = session?.user ?? null;
   const currentUserId = currentUser?.id ?? "";
   const accessToken = session?.access_token ?? "";
-  const areDurableTasksLoaded =
-    Boolean(currentUserId) && durableTaskUserId === currentUserId;
 
   useEffect(() => {
     durableTaskPollUserIdRef.current = currentUserId;
@@ -452,13 +450,6 @@ export default function FeatureFilesDashboard({
         );
       }
 
-      const storedChat = window.localStorage.getItem(AGENT_CHAT_STORAGE_KEY);
-
-      if (storedChat) {
-        const parsedChat = JSON.parse(storedChat) as AgentChatExchange;
-        setLatestChat(parsedChat);
-      }
-
       const storedPlanningSession = window.localStorage.getItem(
         PLANNING_SESSION_STORAGE_KEY,
       );
@@ -486,22 +477,6 @@ export default function FeatureFilesDashboard({
       JSON.stringify(agentPromptQueue),
     );
   }, [agentPromptQueue, isAgentPromptQueueHydrated]);
-
-  useEffect(() => {
-    if (!isAgentPromptQueueHydrated) {
-      return;
-    }
-
-    if (latestChat) {
-      window.localStorage.setItem(
-        AGENT_CHAT_STORAGE_KEY,
-        JSON.stringify(latestChat),
-      );
-      return;
-    }
-
-    window.localStorage.removeItem(AGENT_CHAT_STORAGE_KEY);
-  }, [isAgentPromptQueueHydrated, latestChat]);
 
   useEffect(() => {
     if (!isAgentPromptQueueHydrated) {
@@ -716,7 +691,6 @@ export default function FeatureFilesDashboard({
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setDurableAgentTasks([]);
-    setDurableTaskUserId("");
     setFinalizedDurableTaskCount(0);
     setLastIntegratedBatchStatus("");
     setAgentTaskNotifications([]);
@@ -830,7 +804,6 @@ export default function FeatureFilesDashboard({
           rows.filter((row) => isFinalizedAgentTaskStatus(row.status)).length,
         );
         setDurableAgentTasks(durableQueue);
-        setDurableTaskUserId(pollUserId);
         if (latestIntegrationEvent) {
           setLastIntegratedBatchStatus(
             `Daemon: ${latestIntegrationEvent.content}`,
@@ -1354,91 +1327,6 @@ export default function FeatureFilesDashboard({
   ]);
 
   useEffect(() => {
-    if (!isAgentPromptQueueHydrated) {
-      return;
-    }
-
-    if (!currentUser || !accessToken) {
-      return;
-    }
-
-    let isMounted = true;
-
-    async function pollAgentChat() {
-      try {
-        const nextChat = await fetchLatestAgentChat(
-          supabaseUrl,
-          supabasePublishableKey,
-          accessToken,
-          currentUserId,
-        );
-
-        if (!isMounted || !nextChat) {
-          return;
-        }
-
-        if (
-          clearedAgentChatPrompt.current &&
-          nextChat.promptId === clearedAgentChatPrompt.current
-        ) {
-          return;
-        }
-
-        const currentPromptId = activePromptId.current;
-        const isActivePlanningSession = Boolean(
-          nextChat.planningMode &&
-            planningSession?.activePlanningPromptId === nextChat.promptId,
-        );
-
-        if (currentPromptId && nextChat.promptId !== currentPromptId) {
-          return;
-        }
-
-        const visibleChat = nextChat.planningMode
-          ? {
-              ...nextChat,
-              reply: parsePlanningReply(nextChat.reply).plan,
-            }
-          : nextChat;
-
-        setLatestChat(visibleChat);
-
-        if (nextChat.promptId === currentPromptId || isActivePlanningSession) {
-          if (nextChat.planningMode) {
-            recordPlanningReply(nextChat);
-          }
-          setPromptStatus("Reply received.");
-          // eslint-disable-next-line react-hooks/immutability
-          finalizeQueuedAgentPrompt(nextChat.promptId, visibleChat);
-        }
-        await completeDaemonPayloadReview(
-          supabaseUrl, supabasePublishableKey, accessToken, currentUserId,
-          AGENT_CHAT_PAYLOAD_KIND,
-        );
-      } catch {
-        return;
-      }
-    }
-
-    void pollAgentChat();
-    const intervalId = window.setInterval(pollAgentChat, pollIntervalMs);
-
-    return () => {
-      isMounted = false;
-      window.clearInterval(intervalId);
-    };
-  }, [
-    accessToken,
-    currentUser,
-    currentUserId,
-    isAgentPromptQueueHydrated,
-    pollIntervalMs,
-    planningSession,
-    supabasePublishableKey,
-    supabaseUrl,
-  ]);
-
-  useEffect(() => {
     if (!currentUser || !accessToken) {
       return;
     }
@@ -1580,7 +1468,6 @@ export default function FeatureFilesDashboard({
     setVentures([]);
     setLatestChat(null);
     setDurableAgentTasks([]);
-    setDurableTaskUserId("");
     setFinalizedDurableTaskCount(0);
   }
 
@@ -1695,6 +1582,15 @@ export default function FeatureFilesDashboard({
       enqueuedAt: Date.now(),
     };
 
+    setPromptSubmissionError("");
+    setSelectedHistoryPromptId(promptId);
+    setIsAgentOutputViewerOpen(true);
+    setVenturesDrawerOpen(false);
+    if (isMobileLayout) {
+      setActivePrimaryOverlay(null);
+      setSelectedFeatureSession(null);
+    }
+
     setPromptStatus(
       agentPromptQueueRef.current.some(
         (item) => item.status === "sending" || item.status === "running",
@@ -1704,8 +1600,6 @@ export default function FeatureFilesDashboard({
     );
     setPromptText("");
     setAgentPromptMessage("");
-    setIsAgentChatCleared(false);
-    clearedAgentChatPrompt.current = "";
     if (planningMode) {
       setPlanningSession({
         originalPrompt: nextPrompt,
@@ -1757,28 +1651,8 @@ export default function FeatureFilesDashboard({
       setPromptStatus("Agent task durably queued.");
     } catch {
       setPromptStatus("Unable to queue the agent task right now.");
+      setPromptSubmissionError("Unable to queue the prompt in the browser. Please try again.");
     }
-  }
-
-  function recordPlanningReply(replyExchange: AgentChatExchange) {
-    const parsedReply = parsePlanningReply(replyExchange.reply);
-
-    setPlanningSession((currentSession) => {
-      if (
-        !currentSession ||
-        currentSession.activePlanningPromptId !== replyExchange.promptId
-      ) {
-        return currentSession;
-      }
-
-      return {
-        ...currentSession,
-        currentPlan: parsedReply.plan,
-        pendingQuestions: parsedReply.questions,
-        questionIndex: 0,
-        activePlanningPromptId: "",
-      };
-    });
   }
 
   function answerPlanningQuestion(answer: string) {
@@ -1836,6 +1710,8 @@ export default function FeatureFilesDashboard({
       activePlanningPromptId: promptId,
     });
     setPromptStatus("Answers saved. Refining the plan.");
+    setSelectedHistoryPromptId(promptId);
+    setIsAgentOutputViewerOpen(true);
     setAgentPromptQueue((currentQueue) => [...currentQueue, nextPromptPayload]);
   }
 
@@ -1872,6 +1748,8 @@ export default function FeatureFilesDashboard({
         task,
       );
       activePromptId.current = promptId;
+      setSelectedHistoryPromptId(promptId);
+      setIsAgentOutputViewerOpen(true);
       setPlanningSession(null);
       setDurableAgentTasks((currentTasks) => [
         ...currentTasks,
@@ -1897,15 +1775,6 @@ export default function FeatureFilesDashboard({
     } catch {
       setPromptStatus("Unable to queue the plan implementation right now.");
     }
-  }
-
-  function clearAgentChat() {
-    clearedAgentChatPrompt.current = latestChat?.promptId ?? activePromptId.current;
-    setLatestChat(null);
-    setPromptStatus("");
-    setAgentPromptMessage("");
-    setPlanningSession(null);
-    setIsAgentChatCleared(true);
   }
 
   function syncAgentPromptQueueFromRowMessage(messageValue: string) {
@@ -2071,6 +1940,30 @@ export default function FeatureFilesDashboard({
     setPromptStatus("Retrying the stalled prompt.");
   }
 
+  function retryHistoryDirectPrompt(exchange: HistoryExchange) {
+    const existing = agentPromptQueueRef.current.find((item) => item.promptId === exchange.promptId);
+    if (existing) {
+      retryQueuedAgentPrompt(exchange.promptId);
+      return;
+    }
+    const promptId = createPromptId();
+    setAgentPromptQueue((currentQueue) => [...currentQueue, {
+      promptId,
+      directory: exchange.repository,
+      prompt: exchange.prompt,
+      provider: exchange.provider,
+      model: exchange.model,
+      reasoning: exchange.reasoning,
+      planningMode: exchange.mode === "planning",
+      askMode: exchange.mode === "ask",
+      targetedFeaturePaths: exchange.targetedFeaturePaths,
+      status: "queued",
+      enqueuedAt: Date.now(),
+    }]);
+    setSelectedHistoryPromptId(promptId);
+    setPromptStatus("Retry queued as a new history exchange.");
+  }
+
   function abandonQueuedAgentPrompt(promptId: string) {
     setAgentPromptQueue((currentQueue) =>
       currentQueue.filter((item) => item.promptId !== promptId),
@@ -2091,14 +1984,60 @@ export default function FeatureFilesDashboard({
   const availableProjectDirectories = projectEntries.map(
     ([projectDirectory]) => projectDirectory,
   );
-  const currentPromptQueueItem = agentPromptQueue[0] ?? null;
-  const promptQueueStatusText =
-    lastIntegratedBatchStatus ||
-    promptStatus ||
-    getAgentPromptQueueStatusText(agentPromptQueue) ||
-    (durableAgentTasks[0]
-      ? formatDurableTaskStatus(durableAgentTasks[0])
-      : "");
+  const liveHistoryExchanges = useMemo<HistoryExchange[]>(() => {
+    const normalizeStatus = (status: AgentPromptQueueStatus) => {
+      if (status === "sending") return "queued" as const;
+      if (status === "stalled") return "failed" as const;
+      return status;
+    };
+    const mapEntry = (
+      entry: AgentPromptQueueEntry,
+      source: "direct_prompt" | "durable_task",
+    ): HistoryExchange => ({
+      id: entry.promptId,
+      promptId: entry.promptId,
+      taskId: source === "durable_task" ? entry.promptId : null,
+      repository: entry.directory,
+      prompt: entry.prompt,
+      output: "",
+      error: entry.error ?? "",
+      provider: entry.provider,
+      model: entry.model,
+      reasoning: entry.reasoning,
+      mode: entry.askMode ? "ask" : entry.planningMode ? "planning" : "standard",
+      source,
+      targetedFeaturePaths: entry.targetedFeaturePaths,
+      status: normalizeStatus(entry.status),
+      statusDetail: entry.cancelRequested ? "Cancellation requested." : "",
+      createdAt: new Date(entry.enqueuedAt).toISOString(),
+      startedAt: entry.sentAt ? new Date(entry.sentAt).toISOString() : null,
+      completedAt: entry.completedAt ? new Date(entry.completedAt).toISOString() : null,
+      updatedAt: new Date(entry.completedAt ?? entry.sentAt ?? entry.enqueuedAt).toISOString(),
+      cancelRequested: entry.cancelRequested,
+      localOnly: source === "direct_prompt" && entry.status === "queued",
+    });
+    return [
+      ...agentPromptQueue.map((entry) => mapEntry(entry, "direct_prompt")),
+      ...durableAgentTasks.map((entry) => mapEntry(entry, "durable_task")),
+    ];
+  }, [agentPromptQueue, durableAgentTasks]);
+  const handleHistoryPlanningReply = useCallback((exchange: HistoryExchange) => {
+    const parsedReply = parsePlanningReply(exchange.output);
+    setPlanningSession((currentSession) => {
+      if (!currentSession || currentSession.activePlanningPromptId !== exchange.promptId) return currentSession;
+      return {
+        ...currentSession,
+        currentPlan: parsedReply.plan,
+        pendingQuestions: parsedReply.questions,
+        questionIndex: 0,
+        activePlanningPromptId: "",
+      };
+    });
+    if (activePromptId.current === exchange.promptId) {
+      activePromptId.current = "";
+      setAgentPromptQueue((currentQueue) => currentQueue.filter((item) => item.promptId !== exchange.promptId));
+    }
+  }, []);
   const devEnvironmentState = getDevEnvironmentState(
     error,
     isLoadingFeatureFiles,
@@ -2206,6 +2145,7 @@ export default function FeatureFilesDashboard({
   }
 
   function openNewFeatureOverlay() {
+    setIsAgentOutputViewerOpen(false);
     setTargetedFeatures([]);
     setActivePrimaryOverlay("new-feature");
 
@@ -2225,6 +2165,7 @@ export default function FeatureFilesDashboard({
   }
 
   function toggleVenturesDrawer() {
+    setIsAgentOutputViewerOpen(false);
     if (isMobileLayout) {
       setActivePrimaryOverlay(null);
       setSelectedFeatureSession(null);
@@ -2240,6 +2181,22 @@ export default function FeatureFilesDashboard({
     setIsWorkspaceMenuOpen((currentValue) => !currentValue);
   }
 
+  function openAgentOutputViewer(promptId = "") {
+    if (promptId) setSelectedHistoryPromptId(promptId);
+    setVenturesDrawerOpen(false);
+    setIsWorkspaceMenuOpen(false);
+    setIsAgentTaskNotificationsOpen(false);
+    if (isMobileLayout) {
+      setActivePrimaryOverlay(null);
+      setSelectedFeatureSession(null);
+    }
+    setIsAgentOutputViewerOpen(true);
+  }
+
+  function closeAgentOutputViewer() {
+    setIsAgentOutputViewerOpen(false);
+  }
+
   function closeWorkspaceMenu() {
     setIsWorkspaceMenuOpen(false);
   }
@@ -2250,6 +2207,10 @@ export default function FeatureFilesDashboard({
     }
 
     setIsAgentTaskNotificationsOpen(open);
+  }
+
+  function selectAgentTaskNotification(taskId: string) {
+    openAgentOutputViewer(taskId);
   }
 
   function markAgentTaskNotificationsRead() {
@@ -2314,6 +2275,7 @@ export default function FeatureFilesDashboard({
   }
 
   function openGitSyncOverlay() {
+    setIsAgentOutputViewerOpen(false);
     closeWorkspaceMenu();
     setVenturesDrawerOpen(false);
     setSelectedFeatureSession(null);
@@ -2387,6 +2349,7 @@ export default function FeatureFilesDashboard({
   }
 
   function handleFeatureNodeSelect(selection: FeatureGraphSelection) {
+    setIsAgentOutputViewerOpen(false);
     setSelectedProjectDirectory(selection.projectPath);
     setTargetedFeatures([
       {
@@ -2396,7 +2359,7 @@ export default function FeatureFilesDashboard({
       },
     ]);
     setSelectedFeatureSession(selection);
-    setFeatureDetailTab("chat");
+    setFeatureDetailTab("edit");
     setActivePrimaryOverlay("feature-detail");
 
     if (isMobileLayout) {
@@ -2906,7 +2869,40 @@ export default function FeatureFilesDashboard({
         zoom={graphZoom}
       />
 
+      <AgentOutputViewer
+        key={currentUserId}
+        accessToken={accessToken}
+        activitySummary={lastIntegratedBatchStatus}
+        isOpen={isAgentOutputViewerOpen}
+        liveExchanges={liveHistoryExchanges}
+        onAbandonDirectPrompt={abandonQueuedAgentPrompt}
+        onAnswerPlanningQuestion={answerPlanningQuestion}
+        onCancelDurableTask={(promptId) => void cancelDurableTask(promptId)}
+        onClearFinalizedTasks={() => void clearDurableTasks()}
+        onClose={closeAgentOutputViewer}
+        onImplementPlan={() => void implementPlanningSession()}
+        onPlanningReply={handleHistoryPlanningReply}
+        onRetryDirectPrompt={retryHistoryDirectPrompt}
+        onSelectedPromptIdChange={setSelectedHistoryPromptId}
+        planningSession={planningSession}
+        pollIntervalMs={pollIntervalMs}
+        projects={projects ?? {}}
+        selectedPromptId={selectedHistoryPromptId}
+        supabasePublishableKey={supabasePublishableKey}
+        supabaseUrl={supabaseUrl}
+      />
+
       <div className="pointer-events-none absolute inset-0">
+        <button
+          type="button"
+          onClick={() => isAgentOutputViewerOpen ? closeAgentOutputViewer() : openAgentOutputViewer()}
+          aria-label="Open agent output history"
+          title="Agent output history"
+          className={`pointer-events-auto absolute left-4 top-4 z-20 inline-flex h-11 w-11 items-center justify-center rounded-full border shadow-[0_20px_60px_rgba(2,6,23,0.45)] transition sm:h-12 sm:w-12 ${isAgentOutputViewerOpen ? "border-cyan-300/30 bg-cyan-200 text-slate-950" : "border-white/10 bg-white text-slate-950 hover:bg-slate-200"}`}
+        >
+          <svg aria-hidden="true" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/></svg>
+          {liveHistoryExchanges.some((exchange) => !["completed", "failed", "blocked", "cancelled"].includes(exchange.status)) ? <span className="absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full border-2 border-slate-950 bg-amber-300" /> : null}
+        </button>
         <div className="pointer-events-auto absolute right-4 top-4 z-20 flex flex-col items-end gap-2">
           <div className="flex items-center gap-2">
             <AgentTaskNotifications
@@ -2915,6 +2911,7 @@ export default function FeatureFilesDashboard({
               onOpenChange={handleAgentTaskNotificationsOpenChange}
               onMarkAllRead={markAgentTaskNotificationsRead}
               onClearAll={clearAgentTaskNotifications}
+              onSelect={selectAgentTaskNotification}
             />
             <div ref={workspaceMenuRef} className="relative">
               <button
@@ -3689,51 +3686,24 @@ export default function FeatureFilesDashboard({
             <div className="agent-chat-scrollbar min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-4 sm:px-5">
               <AgentSessionPanel
                 agentModels={agentModels}
-                agentPromptMessage={agentPromptMessage}
-                areDurableTasksLoaded={areDurableTasksLoaded}
                 availableProjectDirectories={availableProjectDirectories}
-                currentPromptQueueItem={currentPromptQueueItem}
                 defaultProjectDirectory={DEFAULT_PROJECT_DIRECTORY}
-                formatAgentPromptMessage={formatAgentPromptMessage}
-                isAgentChatCleared={isAgentChatCleared}
                 selectedMode={selectedAgentMode}
-                latestChat={latestChat}
-                onAbandonQueuedAgentPrompt={abandonQueuedAgentPrompt}
-                onCancelDurableTask={(promptId) => void cancelDurableTask(promptId)}
-                onAnswerPlanningQuestion={answerPlanningQuestion}
-                onClearDurableTasks={() => setIsConfirmingClearDurableTasks(true)}
-                onConfirmClearDurableTasks={() => void clearDurableTasks()}
-                onUndoClearDurableTasks={() => setIsConfirmingClearDurableTasks(false)}
-                onClearAgentChat={clearAgentChat}
                 onSelectedModeChange={setSelectedAgentMode}
                 onProviderChange={selectProvider}
                 onPromptTextChange={setPromptText}
                 onRemoveTargetedFeature={removeTargetedFeature}
-                onRetryQueuedAgentPrompt={retryQueuedAgentPrompt}
                 onSelectedProjectDirectoryChange={setSelectedProjectDirectory}
                 onSelectedReasoningChange={setSelectedReasoning}
                 onSelectModel={selectModel}
                 onSendPrompt={sendAgentPrompt}
                 onOpenFeatureTagSearch={openFeatureTagSearch}
-                onImplementPlan={() => void implementPlanningSession()}
-                durableTasks={durableAgentTasks.map(
-                  ({ promptId, prompt, status, cancelRequested }) => ({
-                    promptId,
-                    prompt,
-                    status,
-                    cancelRequested,
-                  }),
-                )}
-                finalizedDurableTaskCount={finalizedDurableTaskCount}
-                isConfirmingClearDurableTasks={isConfirmingClearDurableTasks}
-                isClearingDurableTasks={isClearingDurableTasks}
-                promptQueueStatusText={promptQueueStatusText}
                 promptText={promptText}
-                planningSession={planningSession}
                 selectedModelId={selectedModelId}
                 selectedProvider={selectedProvider}
                 selectedProjectDirectory={selectedProjectDirectory}
                 selectedReasoning={selectedReasoning}
+                submissionError={promptSubmissionError}
                 targetedFeatures={targetedFeatures}
               />
             </div>
@@ -3798,14 +3768,14 @@ export default function FeatureFilesDashboard({
               <div className="flex flex-wrap gap-2 rounded-[1.25rem] border border-white/10 bg-black/25 p-1">
                 <button
                   type="button"
-                  onClick={() => setFeatureDetailTab("chat")}
+                  onClick={() => setFeatureDetailTab("edit")}
                   className={`min-w-0 flex-1 rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] transition sm:flex-none ${
-                    featureDetailTab === "chat"
+                    featureDetailTab === "edit"
                       ? "bg-cyan-300 text-slate-950"
                       : "text-slate-300 hover:bg-white/10"
                   }`}
                 >
-                  Chat
+                  Edit
                 </button>
                 <button
                   type="button"
@@ -3832,54 +3802,27 @@ export default function FeatureFilesDashboard({
               </div>
             </div>
             <div className="agent-chat-scrollbar min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-4 sm:px-5">
-              {featureDetailTab === "chat" ? (
+              {featureDetailTab === "edit" ? (
                 <AgentSessionPanel
                   agentModels={agentModels}
-                  agentPromptMessage={agentPromptMessage}
-                  areDurableTasksLoaded={areDurableTasksLoaded}
                   availableProjectDirectories={availableProjectDirectories}
-                  currentPromptQueueItem={currentPromptQueueItem}
                   defaultProjectDirectory={DEFAULT_PROJECT_DIRECTORY}
-                  formatAgentPromptMessage={formatAgentPromptMessage}
-                  isAgentChatCleared={isAgentChatCleared}
                   selectedMode={selectedAgentMode}
-                  latestChat={latestChat}
-                  onAbandonQueuedAgentPrompt={abandonQueuedAgentPrompt}
-                  onCancelDurableTask={(promptId) => void cancelDurableTask(promptId)}
-                  onAnswerPlanningQuestion={answerPlanningQuestion}
-                  onClearDurableTasks={() => setIsConfirmingClearDurableTasks(true)}
-                  onConfirmClearDurableTasks={() => void clearDurableTasks()}
-                  onUndoClearDurableTasks={() => setIsConfirmingClearDurableTasks(false)}
-                  onClearAgentChat={clearAgentChat}
                   onSelectedModeChange={setSelectedAgentMode}
                   onProviderChange={selectProvider}
                   onPromptTextChange={setPromptText}
                   onRemoveTargetedFeature={removeTargetedFeature}
-                  onRetryQueuedAgentPrompt={retryQueuedAgentPrompt}
                   onSelectedProjectDirectoryChange={setSelectedProjectDirectory}
                   onSelectedReasoningChange={setSelectedReasoning}
                   onSelectModel={selectModel}
                   onSendPrompt={sendAgentPrompt}
                   onOpenFeatureTagSearch={openFeatureTagSearch}
-                  onImplementPlan={() => void implementPlanningSession()}
-                  durableTasks={durableAgentTasks.map(
-                    ({ promptId, prompt, status, cancelRequested }) => ({
-                      promptId,
-                      prompt,
-                      status,
-                      cancelRequested,
-                    }),
-                  )}
-                  finalizedDurableTaskCount={finalizedDurableTaskCount}
-                  isConfirmingClearDurableTasks={isConfirmingClearDurableTasks}
-                  isClearingDurableTasks={isClearingDurableTasks}
-                  promptQueueStatusText={promptQueueStatusText}
                   promptText={promptText}
-                  planningSession={planningSession}
                   selectedModelId={selectedModelId}
                   selectedProvider={selectedProvider}
                   selectedProjectDirectory={selectedProjectDirectory}
                   selectedReasoning={selectedReasoning}
+                  submissionError={promptSubmissionError}
                   targetedFeatures={targetedFeatures}
                 />
               ) : featureDetailTab === "info" ? (
@@ -4329,63 +4272,6 @@ function parseAgentPromptRowMessage(message: string): ParsedAgentPromptRow | nul
   }
 }
 
-function getAgentPromptQueueStatusText(queue: AgentPromptQueueEntry[]) {
-  const activePrompt = queue.find(
-    (item) => item.status === "sending" || item.status === "running",
-  );
-
-  if (activePrompt) {
-    if (activePrompt.status === "sending") {
-      return "Prompt sending to Supabase.";
-    }
-
-    return "Daemon is running the current prompt.";
-  }
-
-  const stalledPrompt = queue[0];
-
-  if (stalledPrompt?.status === "failed") {
-    return "Prompt failed. Retry or abandon it.";
-  }
-
-  if (stalledPrompt?.status === "stalled") {
-    return "Prompt stalled. Retry or abandon it.";
-  }
-
-  const queuedCount = queue.filter((item) => item.status === "queued").length;
-
-  if (queuedCount === 1) {
-    return "1 prompt queued locally.";
-  }
-
-  if (queuedCount > 1) {
-    return `${queuedCount} prompts queued locally.`;
-  }
-
-  return "";
-}
-
-function formatDurableTaskStatus(task: AgentPromptQueueEntry) {
-  if (task.status === "queued") return "Agent task is durably queued.";
-  if (task.status === "running") return "Agent is running in an isolated Git worktree.";
-  if (task.status === "verifying") {
-    return task.verificationAttempts
-      ? `Agent branch is being verified (attempt ${task.verificationAttempts}/3).`
-      : "Agent branch is being verified.";
-  }
-  if (task.status === "ready") return "Agent branch is waiting for its integration cohort.";
-  if (task.status === "integrating") return "Orchestrator is testing the combined integration branch.";
-  if (task.status === "resolving") return "Resolver agent is repairing the integration batch.";
-  if (task.status === "blocked") return `Repository blocked: ${task.error || "integration failed"}`;
-  if (task.status === "failed") return `Agent task failed: ${task.error || "unknown failure"}`;
-  if (task.status === "cancelled") {
-    return task.cancelRequested
-      ? "Agent task cancelled by user."
-      : "Agent task cancelled.";
-  }
-  return "Agent task completed.";
-}
-
 function mapAgentTaskRowToQueueEntry(row: AgentTaskRow): AgentPromptQueueEntry {
   return {
     promptId: row.id,
@@ -4791,25 +4677,6 @@ async function fetchLatestGitSyncResult(
   }
 }
 
-async function fetchLatestAgentChat(
-  supabaseUrl: string,
-  supabasePublishableKey: string,
-  accessToken: string,
-  userId: string,
-) {
-  try {
-    return await fetchDaemonPayload<AgentChatExchange>(
-      supabaseUrl,
-      supabasePublishableKey,
-      accessToken,
-      userId,
-      AGENT_CHAT_PAYLOAD_KIND,
-    );
-  } catch {
-    return null;
-  }
-}
-
 function parseParameterUpdateRowMessage(message: string): { state?: string; error?: string } | null {
   const trimmedMessage = message.trim();
 
@@ -4850,30 +4717,6 @@ function getAuthenticatedSupabaseHeaders(
     "Content-Type": "application/json",
     ...extraHeaders,
   };
-}
-
-function formatAgentPromptMessage(message: string) {
-  const parsedMessage = parseAgentPromptRowMessage(message);
-
-  if (!parsedMessage) {
-    return "Prompt queued";
-  }
-
-  if (parsedMessage.state === DAEMON_RECEIVED_MESSAGE) {
-    return parsedMessage.promptId
-      ? `Daemon received prompt ${parsedMessage.promptId}`
-      : "Daemon received prompt";
-  }
-
-  if (parsedMessage.state === DAEMON_SENT_RESPONSE) {
-    return parsedMessage.promptId
-      ? `Daemon sent response for ${parsedMessage.promptId}`
-      : "Daemon sent response";
-  }
-
-  return parsedMessage.promptId
-    ? `Prompt queued ${parsedMessage.promptId}`
-    : "Prompt queued";
 }
 
 function mapVentureRowToItem(row: VentureRow): VentureItem {

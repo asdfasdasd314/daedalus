@@ -7,7 +7,7 @@ Auth-scoped Supabase access moves Daedalus database interaction from global anon
 - **Authenticated Frontend**: The dashboard gates access behind Supabase Auth and uses the session access token for communications, ventures, and daemon payload reads.
 - **Trusted Daemon Scope**: The daemon reads `DAEDALUS_USER_ID`, `SUPABASE_URL`, and `SUPABASE_PUBLISHABLE_KEY` from `.env` and calls RPC functions that scope all operations to that user id.
 - **User-Owned Rows**: `communications`, `ventures`, and `daemon_payloads` all carry `user_id`, with authenticated RLS policies limiting browser access to `auth.uid()`.
-- **Daemon Payloads**: Feature-file payloads, parameter-file payloads, and latest agent-chat replies are stored in `daemon_payloads` instead of Next.js in-memory cache routes.
+- **Durable Agent History**: Authenticated users have owner-only select access to `agent_output_history`; direct daemon writes use a narrow user/prompt-keyed RPC and browser mutations have no general policy.
 - **Local File Edits**: Parameter-file saves are sent as user-scoped Supabase commands and executed by the daemon locally, keeping hosted frontend code away from local filesystem writes.
 
 ## Relevant Files
@@ -23,3 +23,4 @@ HACKING
 ## State Log
 - 2026-07-08: Initialized the auth-scoped Supabase access feature for per-user database ownership, authenticated frontend calls, and trusted daemon RPC scoping.
 - 2026-07-09: Installed the frontend Supabase client dependency into `node_modules` so the Next.js dashboard can resolve `@supabase/supabase-js` at runtime.
+- 2026-07-13: Added owner-isolated Agent Output Viewer reads, authenticated search and summaries, and a narrow daemon history upsert without browser insert/update/delete access.

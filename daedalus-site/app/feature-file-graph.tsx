@@ -1510,7 +1510,7 @@ export default function FeatureFileGraph({
         onClick={onOpenVentures}
         className={`pointer-events-auto absolute border border-white/10 bg-slate-950/82 text-slate-100 shadow-[0_20px_60px_rgba(2,6,23,0.5)] backdrop-blur transition hover:bg-slate-900 ${
           isCoarsePointer
-            ? "left-4 top-4 inline-flex h-11 items-center justify-center rounded-full px-4 text-[11px] font-semibold uppercase tracking-[0.22em]"
+            ? "left-4 top-20 inline-flex h-11 items-center justify-center rounded-full px-4 text-[11px] font-semibold uppercase tracking-[0.22em]"
             : "left-3 top-1/2 -translate-y-1/2 rounded-r-[1.25rem] border-l-0 px-3 py-8 text-xs font-semibold uppercase tracking-[0.22em]"
         }`}
       >

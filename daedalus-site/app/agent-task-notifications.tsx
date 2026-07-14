@@ -25,6 +25,7 @@ type AgentTaskNotificationsProps = {
   onOpenChange: (open: boolean) => void;
   onMarkAllRead: () => void;
   onClearAll: () => void;
+  onSelect: (taskId: string) => void;
 };
 
 const STATUS_LABELS: Record<AgentTaskNotificationStatus, string> = {
@@ -40,6 +41,7 @@ export default function AgentTaskNotifications({
   onOpenChange,
   onMarkAllRead,
   onClearAll,
+  onSelect,
 }: AgentTaskNotificationsProps) {
   const panelRef = useRef<HTMLDivElement | null>(null);
   const unreadCount = notifications.filter((item) => !item.read).length;
@@ -151,6 +153,7 @@ export default function AgentTaskNotifications({
                   key={item.id}
                   className="border-b border-white/6 px-4 py-3 last:border-b-0"
                 >
+                  <button type="button" onClick={() => onSelect(item.taskId)} className="w-full text-left">
                   <div className="flex items-start justify-between gap-3">
                     <span
                       className={`text-[11px] font-semibold uppercase tracking-[0.18em] ${
@@ -178,6 +181,7 @@ export default function AgentTaskNotifications({
                       {item.error}
                     </p>
                   ) : null}
+                  </button>
                 </li>
               ))}
             </ul>

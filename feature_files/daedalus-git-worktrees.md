@@ -6,7 +6,7 @@ Daedalus Git Worktrees isolates agent-mode prompts on task branches and uses a d
 ## Key Points
 - **Per-Repository Capacity**: Each repository may run up to four isolated agent worktrees while later submissions remain durably queued.
 - **Central Configuration**: Scheduler, resolver, branch, and verification settings are loaded once from Daedalus's feature-owned parameter file rather than requiring configuration files in managed repositories.
-- **Durable Progress**: The daemon records task claim, agent-start, and verification events so agent-mode work is observable without relying on the legacy single-prompt channel.
+- **Durable Progress**: Every task insert and lifecycle update atomically projects status, result, error, metadata, and timestamps into Agent Output Viewer history.
 - **Daemon-Owned Commits**: When an agent sandbox cannot reach Git's shared worktree metadata, the daemon stages and commits the completed isolated changes before verification.
 - **Reclaimable Workspaces**: Completed, cancelled, and clean failed worktrees are removed on later daemon cycles; dirty failures and blocked integrations remain available for recovery.
 - **Task Repair Loop**: Individual verification suites receive up to three total attempts in the same isolated worktree, with later agent repairs informed by the captured failure before a durable terminal error is reported.
@@ -45,3 +45,4 @@ HACKING
 - 2026-07-12: Reclaimed completed and clean failed worktrees after daemon interruptions while excluding the Daedalus workspace root from project scans.
 - 2026-07-13: Added hard cancel for agent-mode worktree tasks with process-group kill, cancel_requested signaling, cancelled terminal status, force worktree reclaim, and dashboard Cancel controls.
 - 2026-07-13: Fixed planning-mode Codex cycle test expectation to include PLANNING_PROMPT_SUFFIX so verification matches build_codex_prompt.
+- 2026-07-13: Added trigger-owned durable history projection and removed the orchestrator's duplicate latest-chat result publication path.

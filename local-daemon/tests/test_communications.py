@@ -8,7 +8,6 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from daedalus_daemon.communications import (
-    AGENT_CHAT_PAYLOAD_KIND,
     AGENT_PROMPT_PURPOSE,
     DAEMON_COMPLETE,
     DAEMON_REVIEW,
@@ -18,7 +17,7 @@ from daedalus_daemon.communications import (
     PARAMETER_FILES_PAYLOAD_KIND,
     PARAMETER_FILE_LOAD_PURPOSE,
     fetch_current_message,
-    post_agent_chat,
+    upsert_agent_output_history,
     post_feature_files,
     post_git_sync_result,
     post_parameter_files,
@@ -238,7 +237,7 @@ class UpdateCurrentMessageTests(unittest.TestCase):
             }],
         )
 
-    def test_posts_agent_chat_to_daemon_payload_rpc(self):
+    def test_upserts_direct_prompt_history(self):
         seen_methods: list[str] = []
         request_bodies: list[dict] = []
 
@@ -248,7 +247,7 @@ class UpdateCurrentMessageTests(unittest.TestCase):
             return FakeResponse({})
 
         with patch("daedalus_daemon.communications.request.urlopen", side_effect=fake_urlopen):
-            post_agent_chat(
+            upsert_agent_output_history(
                 {
                     "supabaseUrl": "https://example.supabase.co",
                     "supabasePublishableKey": "publishable-key",
@@ -258,30 +257,32 @@ class UpdateCurrentMessageTests(unittest.TestCase):
                 "/workspace/project",
                 "Build the feature",
                 "Here is the reply",
+                "",
+                mode="planning",
+                status="completed",
             )
 
         self.assertEqual(seen_methods, ["POST"])
         self.assertEqual(
             request_bodies,
             [{
-                "p_kind": AGENT_CHAT_PAYLOAD_KIND,
-                "p_payload": {
-                    "promptId": "prompt-1",
-                    "directory": "/workspace/project",
-                    "prompt": "Build the feature",
-                    "reply": "Here is the reply",
-                    "provider": "codex",
-                    "model": "",
-                    "reasoning": "",
-                    "planningMode": False,
-                    "askMode": False,
-                    "targetedFeaturePaths": [],
-                },
                 "p_user_id": "user-1",
+                "p_prompt_id": "prompt-1",
+                "p_repository": "/workspace/project",
+                "p_prompt": "Build the feature",
+                "p_output": "Here is the reply",
+                "p_error": "",
+                "p_provider": "codex",
+                "p_model": "",
+                "p_reasoning": "",
+                "p_mode": "planning",
+                "p_targeted_feature_paths": [],
+                "p_status": "completed",
+                "p_status_detail": None,
             }],
         )
 
-    def test_posts_agent_chat_with_targeted_feature_paths(self):
+    def test_upserts_direct_prompt_history_with_targeted_feature_paths(self):
         request_bodies: list[dict] = []
 
         def fake_urlopen(http_request, timeout=None):
@@ -289,7 +290,7 @@ class UpdateCurrentMessageTests(unittest.TestCase):
             return FakeResponse({})
 
         with patch("daedalus_daemon.communications.request.urlopen", side_effect=fake_urlopen):
-            post_agent_chat(
+            upsert_agent_output_history(
                 {
                     "supabaseUrl": "https://example.supabase.co",
                     "supabasePublishableKey": "publishable-key",
@@ -299,32 +300,33 @@ class UpdateCurrentMessageTests(unittest.TestCase):
                 "/workspace/project",
                 "Build the feature",
                 "Here is the reply",
+                "",
                 targeted_feature_paths=[
                     "feature_files/agent-prompt-chat.md",
                     "feature_files/feature-file-graph-display.md",
                 ],
+                status="completed",
             )
 
         self.assertEqual(
             request_bodies,
             [{
-                "p_kind": AGENT_CHAT_PAYLOAD_KIND,
-                "p_payload": {
-                    "promptId": "prompt-2",
-                    "directory": "/workspace/project",
-                    "prompt": "Build the feature",
-                    "reply": "Here is the reply",
-                    "provider": "codex",
-                    "model": "",
-                    "reasoning": "",
-                    "planningMode": False,
-                    "askMode": False,
-                    "targetedFeaturePaths": [
+                "p_user_id": "user-1",
+                "p_prompt_id": "prompt-2",
+                "p_repository": "/workspace/project",
+                "p_prompt": "Build the feature",
+                "p_output": "Here is the reply",
+                "p_error": "",
+                "p_provider": "codex",
+                "p_model": "",
+                "p_reasoning": "",
+                "p_mode": "planning",
+                "p_targeted_feature_paths": [
                         "feature_files/agent-prompt-chat.md",
                         "feature_files/feature-file-graph-display.md",
-                    ],
-                },
-                "p_user_id": "user-1",
+                ],
+                "p_status": "completed",
+                "p_status_detail": None,
             }],
         )
 
