@@ -1,4 +1,4 @@
-export type GitSyncOperation = "commit" | "sync";
+export type GitSyncOperation = "commit" | "sync" | "status";
 
 export type GitSyncStep = {
   command: string[];
