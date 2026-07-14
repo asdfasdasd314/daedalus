@@ -34,3 +34,4 @@ HACKING
 - 2026-07-13: Moved direct prompt execution off the daemon polling loop so planning no longer delays queued standard prompt admission.
 - 2026-07-13: Integrated Ask-mode compatibility, manager admission, and independent direct-prompt supervision without changing their ownership boundaries.
 - 2026-07-13: Confirmed a failed Cursor standard submission did not enter the separate Planning transport; the agent itself returned planning narration despite an implementation task.
+- 2026-07-14: Restored normal letter spacing for provider, model, and reasoning select values in the Edit form.
