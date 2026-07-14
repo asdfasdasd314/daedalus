@@ -16,6 +16,7 @@ import {
   fetchAgentOutputHistoryPage,
   fetchAgentOutputFeatureSummaries,
   fetchAgentOutputConversation,
+  fetchRecentAgentOutputHistory,
   groupAgentOutputsByFeature,
   mergeAgentOutputRecords,
   rerankAgentOutputSearch,
@@ -33,12 +34,13 @@ type AgentOutputViewerProps = {
   liveExchanges: AgentOutputExchange[];
   onAbandonDirectPrompt: (promptId: string) => void;
   onAnswerPlanningQuestion: (answer: string) => void;
-  onCancelDurableTask: (promptId: string) => void;
+  onCancelDurableTask: (exchange: AgentOutputExchange) => void;
   onClearFinalizedTasks: () => void;
   onClose: () => void;
   onDeletedExchange: (exchange: AgentOutputExchange) => void;
   onImplementPlan: () => void;
   onPlanningReply: (exchange: AgentOutputExchange) => void;
+  onRefreshLiveTasks?: () => Promise<void>;
   onRetryDirectPrompt: (exchange: AgentOutputExchange) => void;
   onSelectedPromptIdChange: (promptId: string) => void;
   planningSession: PlanningSession | null;
@@ -52,8 +54,8 @@ type AgentOutputViewerProps = {
 export default function AgentOutputViewer({
   accessToken, activitySummary, isOpen, liveExchanges, onAbandonDirectPrompt,
   onAnswerPlanningQuestion, onCancelDurableTask, onClearFinalizedTasks,
-  onClose, onDeletedExchange, onImplementPlan, onPlanningReply, onRetryDirectPrompt,
-  onSelectedPromptIdChange, planningSession, projects,
+  onClose, onDeletedExchange, onImplementPlan, onPlanningReply, onRefreshLiveTasks,
+  onRetryDirectPrompt, onSelectedPromptIdChange, planningSession, projects,
   selectedPromptId, supabasePublishableKey, supabaseUrl,
 }: AgentOutputViewerProps) {
   const [archive, setArchive] = useState<AgentOutputExchange[]>([]);
@@ -71,28 +73,46 @@ export default function AgentOutputViewer({
   const [mobileDetail, setMobileDetail] = useState(false);
   const [otherAnswer, setOtherAnswer] = useState("");
   const publishedPlanningPromptRef = useRef("");
-  const initialHistoryLoadTokenRef = useRef("");
+  const historyOpenLoadKeyRef = useRef("");
 
   useEffect(() => {
-    if (!isOpen || !accessToken || initialHistoryLoadTokenRef.current === accessToken) return;
-    initialHistoryLoadTokenRef.current = accessToken;
+    if (!isOpen) {
+      historyOpenLoadKeyRef.current = "";
+      return;
+    }
+    if (!accessToken || historyOpenLoadKeyRef.current === accessToken) return;
+    historyOpenLoadKeyRef.current = accessToken;
+    let active = true;
     setLoading(true);
     setFetchError("");
-    void fetchAgentOutputHistoryPage(supabaseUrl, supabasePublishableKey, accessToken)
-      .then((page) => {
-        setArchive(page.exchanges);
+    void Promise.all([
+      fetchRecentAgentOutputHistory(supabaseUrl, supabasePublishableKey, accessToken),
+      fetchAgentOutputHistoryPage(supabaseUrl, supabasePublishableKey, accessToken),
+      onRefreshLiveTasks?.() ?? Promise.resolve(),
+    ])
+      .then(([recent, page]) => {
+        if (!active) return;
+        setArchive(dedupeAgentOutputs([...recent, ...page.exchanges]));
         setCursor(page.cursor);
         setHasMore(page.hasMore);
-        if (!selectedPromptId && page.exchanges[0]) onSelectedPromptIdChange(page.exchanges[0].promptId);
+        if (!selectedPromptId && (recent[0] || page.exchanges[0])) {
+          onSelectedPromptIdChange((recent[0] ?? page.exchanges[0]).promptId);
+        }
       })
-      .catch((error) => setFetchError(error instanceof Error ? error.message : "Unable to load history."))
-      .finally(() => setLoading(false));
+      .catch((error) => {
+        if (active) setFetchError(error instanceof Error ? error.message : "Unable to load history.");
+      })
+      .finally(() => { if (active) setLoading(false); });
     void fetchAgentOutputFeatureSummaries(supabaseUrl, supabasePublishableKey, accessToken)
-      .then((summaries) => setFeatureSummaryCounts(Object.fromEntries(
-        summaries.map((summary) => [`${summary.repository}\u0000${summary.feature_path}`, Number(summary.result_count)]),
-      )))
+      .then((summaries) => {
+        if (!active) return;
+        setFeatureSummaryCounts(Object.fromEntries(
+          summaries.map((summary) => [`${summary.repository}\u0000${summary.feature_path}`, Number(summary.result_count)]),
+        ));
+      })
       .catch(() => undefined);
-  }, [accessToken, isOpen, onSelectedPromptIdChange, selectedPromptId, supabasePublishableKey, supabaseUrl]);
+    return () => { active = false; };
+  }, [accessToken, isOpen, onRefreshLiveTasks, onSelectedPromptIdChange, selectedPromptId, supabasePublishableKey, supabaseUrl]);
 
   useEffect(() => {
     if (!isOpen || !search.trim()) return;
@@ -183,12 +203,17 @@ export default function AgentOutputViewer({
     setLoading(true);
     setFetchError("");
     try {
-      const page = await fetchAgentOutputHistoryPage(
-        supabaseUrl, supabasePublishableKey, accessToken,
-      );
-      setArchive((current) => dedupeAgentOutputs([...page.exchanges, ...current]));
-      setCursor(page.cursor);
-      setHasMore(page.hasMore);
+      const [recent] = await Promise.all([
+        fetchRecentAgentOutputHistory(supabaseUrl, supabasePublishableKey, accessToken),
+        onRefreshLiveTasks?.() ?? Promise.resolve(),
+      ]);
+      setArchive((current) => {
+        const recentPromptIds = new Set(recent.map((exchange) => exchange.promptId));
+        const olderCompleted = current.filter(
+          (exchange) => exchange.completedAt && !recentPromptIds.has(exchange.promptId),
+        );
+        return dedupeAgentOutputs([...recent, ...olderCompleted]);
+      });
     } catch (error) {
       setFetchError(error instanceof Error ? error.message : "Unable to refresh history.");
     } finally {
@@ -334,7 +359,7 @@ export default function AgentOutputViewer({
               {selected.statusDetail && selected.statusDetail !== selected.error ? <p className="rounded-xl border border-white/10 p-3 text-sm text-slate-300">{selected.statusDetail}</p> : null}
               {selected.mode === "planning" && parsedPlanning ? <section className="grid gap-3 rounded-xl border border-cyan-300/20 bg-cyan-300/[0.05] p-4"><h3 className="font-semibold text-white">Planning workflow</h3>{planningQuestion ? <><p className="text-sm text-slate-200">{planningQuestion.question}</p><div className="flex flex-wrap gap-2">{planningQuestion.options.map((option) => <button key={option} type="button" onClick={() => onAnswerPlanningQuestion(option)} className="rounded-full border border-cyan-300/25 px-3 py-2 text-xs text-cyan-100">{option}</button>)}</div><div className="flex gap-2"><input value={otherAnswer} onChange={(event) => setOtherAnswer(event.target.value)} placeholder="Other answer" className="min-w-0 flex-1 rounded-full border border-white/10 bg-black/30 px-3 py-2 text-sm text-white" /><button type="button" onClick={() => { onAnswerPlanningQuestion(otherAnswer); setOtherAnswer(""); }} disabled={!otherAnswer.trim()} className="rounded-full bg-cyan-300 px-3 py-2 text-xs font-semibold text-slate-950 disabled:opacity-50">Answer</button></div></> : canImplement ? <button type="button" onClick={onImplementPlan} className="w-fit rounded-full bg-cyan-300 px-4 py-2 text-sm font-semibold text-slate-950">Implement Plan</button> : <p className="text-sm text-slate-400">The selected plan is ready for review.</p>}</section> : null}
               <div className="flex flex-wrap gap-2 border-t border-white/10 pt-4">
-                {canCancel ? <button type="button" onClick={() => onCancelDurableTask(selected.promptId)} className="rounded-full border border-rose-400/25 bg-rose-500/10 px-4 py-2 text-xs font-semibold text-rose-100">Cancel task</button> : null}
+                {canCancel ? <button type="button" onClick={() => onCancelDurableTask(selected)} className="rounded-full border border-rose-400/25 bg-rose-500/10 px-4 py-2 text-xs font-semibold text-rose-100">Cancel task</button> : null}
                 {canRetry ? <button type="button" onClick={() => onRetryDirectPrompt(selected)} className="rounded-full border border-cyan-300/25 px-4 py-2 text-xs font-semibold text-cyan-100">Retry prompt</button> : null}
                 {canAbandon ? <button type="button" onClick={() => onAbandonDirectPrompt(selected.promptId)} className="rounded-full border border-white/10 px-4 py-2 text-xs font-semibold text-slate-200">Abandon local prompt</button> : null}
                 <button type="button" onClick={onClearFinalizedTasks} className="rounded-full border border-white/10 px-4 py-2 text-xs font-semibold text-slate-200" title="Deletes finalized task queue rows only; archived History remains.">Clear finalized task rows (keeps History)</button>

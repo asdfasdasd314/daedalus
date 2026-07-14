@@ -61,6 +61,58 @@ test("accepted direct history outranks a stale local sending state", () => {
   assert.equal(merged[0].status, "running");
 });
 
+test("fresher history verifying beats stale live queued for durable tasks", () => {
+  const merged = mergeAgentOutputRecords(
+    [exchange({
+      status: "verifying",
+      completedAt: null,
+      updatedAt: "2026-01-01T00:05:00Z",
+      output: "Still working",
+    })],
+    [exchange({
+      id: "local",
+      status: "queued",
+      updatedAt: "2026-01-01T00:01:00Z",
+      output: "",
+    })],
+  );
+  assert.equal(merged[0].status, "verifying");
+  assert.equal(merged[0].output, "Still working");
+});
+
+test("terminal history blocked beats stale live queued", () => {
+  const merged = mergeAgentOutputRecords(
+    [exchange({
+      status: "blocked",
+      error: "Needs attention",
+      updatedAt: "2026-01-01T00:06:00Z",
+      completedAt: "2026-01-01T00:06:00Z",
+    })],
+    [exchange({
+      id: "local",
+      status: "queued",
+      updatedAt: "2026-01-01T00:01:00Z",
+      output: "",
+      error: "",
+    })],
+  );
+  assert.equal(merged[0].status, "blocked");
+  assert.equal(merged[0].error, "Needs attention");
+});
+
+test("newer live durable status still outranks older history", () => {
+  const merged = mergeAgentOutputRecords(
+    [exchange({ status: "queued", updatedAt: "2026-01-01T00:01:00Z", completedAt: null })],
+    [exchange({
+      id: "local",
+      status: "ready",
+      updatedAt: "2026-01-01T00:07:00Z",
+      completedAt: null,
+    })],
+  );
+  assert.equal(merged[0].status, "ready");
+});
+
 test("deduplicates prompt IDs and fuzzy reranks current feature names", () => {
   assert.equal(dedupeAgentOutputs([exchange(), exchange({ id: "row-old" })]).length, 1);
   const results = rerankAgentOutputSearch("Output Viewer", [exchange({ targetedFeaturePaths: ["feature_files/viewer.md"] })], projects);

@@ -37,3 +37,4 @@ HACKING
 - 2026-07-13: Integrated terminal-exchange deletion and asynchronous direct-prompt status publication while preserving Ask-mode failure visibility.
 - 2026-07-13: Diagnosed a failed Cursor standard task whose clean, unchanged worktree confirmed that the provider returned an informal plan without making implementation changes; no viewer lifecycle defect was found.
 - 2026-07-13: Linked planning refinements and their implementation handoff with a durable conversation ID, then rendered the full chronological transcript in History.
+- 2026-07-14: History open/Refresh now reloads recent in-progress archive rows and rehydrates live durable tasks on demand, with merge preferring fresher terminal history over stale live queued.

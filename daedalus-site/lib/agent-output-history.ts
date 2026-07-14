@@ -142,6 +142,22 @@ export function dedupeAgentOutputConversations(exchanges: AgentOutputExchange[])
   return [...byConversationId.values()];
 }
 
+const TERMINAL_AGENT_OUTPUT_STATUSES = new Set<AgentOutputStatus>([
+  "completed", "failed", "blocked", "cancelled",
+]);
+
+function preferLiveDurableStatus(
+  history: AgentOutputExchange,
+  live: AgentOutputExchange,
+) {
+  const historyTime = Date.parse(history.updatedAt) || 0;
+  const liveTime = Date.parse(live.updatedAt) || 0;
+  const historyTerminal = TERMINAL_AGENT_OUTPUT_STATUSES.has(history.status);
+  const liveTerminal = TERMINAL_AGENT_OUTPUT_STATUSES.has(live.status);
+  if (historyTerminal && !liveTerminal && liveTime <= historyTime) return false;
+  return liveTime >= historyTime;
+}
+
 export function mergeAgentOutputRecords(
   archived: AgentOutputExchange[],
   authoritative: AgentOutputExchange[],
@@ -149,19 +165,43 @@ export function mergeAgentOutputRecords(
   const merged = new Map(archived.map((exchange) => [exchange.promptId, exchange]));
   for (const live of authoritative) {
     const history = merged.get(live.promptId);
-    merged.set(live.promptId, history ? {
+    if (!history) {
+      merged.set(live.promptId, live);
+      continue;
+    }
+    if (live.source === "direct_prompt") {
+      merged.set(live.promptId, {
+        ...history,
+        ...live,
+        status: history.status,
+        statusDetail: history.statusDetail || live.statusDetail,
+        output: history.output || live.output,
+        error: history.error || live.error,
+        id: history.id,
+        taskId: live.taskId ?? history.taskId,
+        cancelRequested: Boolean(live.cancelRequested || history.cancelRequested),
+        localOnly: false,
+      });
+      continue;
+    }
+    const useLiveStatus = preferLiveDurableStatus(history, live);
+    const historyTime = Date.parse(history.updatedAt) || 0;
+    const liveTime = Date.parse(live.updatedAt) || 0;
+    merged.set(live.promptId, {
       ...history,
       ...live,
-      status: live.source === "direct_prompt" ? history.status : live.status,
-      statusDetail: live.source === "direct_prompt"
-        ? history.statusDetail || live.statusDetail
-        : live.statusDetail || history.statusDetail,
+      status: useLiveStatus ? live.status : history.status,
+      statusDetail: useLiveStatus
+        ? (live.statusDetail || history.statusDetail)
+        : (history.statusDetail || live.statusDetail),
       output: history.output || live.output,
       error: history.error || live.error,
       id: history.id,
       taskId: live.taskId ?? history.taskId,
+      updatedAt: liveTime >= historyTime ? live.updatedAt : history.updatedAt,
+      cancelRequested: Boolean(live.cancelRequested || history.cancelRequested),
       localOnly: false,
-    } : live);
+    });
   }
   return sortAgentOutputsRecentFirst([...merged.values()]);
 }

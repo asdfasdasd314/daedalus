@@ -63,6 +63,22 @@ test("task and feature-run acknowledgements are generation guarded", () => {
 test("agent output history is refreshed only on demand", () => {
   assert.doesNotMatch(historySource, /window\.setInterval\(refresh/);
   assert.match(historySource, /refreshHistory/);
+  assert.match(historySource, /fetchRecentAgentOutputHistory/);
+  assert.match(historySource, /onRefreshLiveTasks/);
+});
+
+test("live durable task rehydrate stays non-recurrent and column-scoped", () => {
+  assert.match(dashboardSource, /rehydrateDurableAgentTasks/);
+  assert.doesNotMatch(dashboardSource, /setInterval\([^)]*rehydrateDurableAgentTasks/);
+  const hydrate = functionSource("fetchActiveAgentTaskSummaries");
+  assert.match(hydrate, /url\.searchParams\.set\("select"/);
+  assert.match(hydrate, /url\.searchParams\.set\("message", `eq\.\$\{DAEMON_REVIEW\}`\)/);
+  assert.match(hydrate, /url\.searchParams\.set\("limit", "50"\)/);
+  assert.doesNotMatch(hydrate, /select", "\*"/);
+  const byId = functionSource("fetchAgentTaskById");
+  assert.match(byId, /url\.searchParams\.set\("id", `eq\.\$\{taskId\}`\)/);
+  assert.match(byId, /url\.searchParams\.set\("limit", "1"\)/);
+  assert.doesNotMatch(byId, /select", "\*"/);
 });
 
 test("manager heartbeats use client review and timestamp-guarded acknowledgement", () => {
