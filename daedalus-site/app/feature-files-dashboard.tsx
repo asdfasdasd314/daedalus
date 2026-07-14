@@ -2317,7 +2317,7 @@ export default function FeatureFilesDashboard({
   }
 
   async function sendGitSyncRequest(
-    operation: "commit" | "sync",
+    operation: "commit" | "sync" | "status",
     message = "",
   ) {
     if (!currentUser || !accessToken || isGitSyncRequestInFlight) {
@@ -2363,6 +2363,10 @@ export default function FeatureFilesDashboard({
 
   function syncGitSyncWithGitHub() {
     void sendGitSyncRequest("sync");
+  }
+
+  function viewGitSyncStatus() {
+    void sendGitSyncRequest("status");
   }
 
   function handleFeatureNodeSelect(selection: FeatureGraphSelection) {
@@ -3635,6 +3639,7 @@ export default function FeatureFilesDashboard({
                 onCommitChanges={commitGitSyncChanges}
                 onSelectedProjectDirectoryChange={setGitSyncProjectDirectory}
                 onSyncWithGitHub={syncGitSyncWithGitHub}
+                onViewGitStatus={viewGitSyncStatus}
                 selectedProjectDirectory={gitSyncProjectDirectory}
                 statusText={gitSyncStatus}
               />

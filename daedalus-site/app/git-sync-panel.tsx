@@ -17,6 +17,7 @@ type GitSyncPanelProps = {
   onCommitMessageChange: (message: string) => void;
   onCommitChanges: () => void;
   onSelectedProjectDirectoryChange: (projectDirectory: string) => void;
+  onViewGitStatus: () => void;
   onSyncWithGitHub: () => void;
   selectedProjectDirectory: string;
   statusText: string;
@@ -31,6 +32,7 @@ export default function GitSyncPanel({
   onCommitMessageChange,
   onCommitChanges,
   onSelectedProjectDirectoryChange,
+  onViewGitStatus,
   onSyncWithGitHub,
   selectedProjectDirectory,
   statusText,
@@ -131,6 +133,14 @@ export default function GitSyncPanel({
           className="rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
         >
           {isRequestInFlight ? "Working..." : "Sync with GitHub"}
+        </button>
+        <button
+          type="button"
+          onClick={onViewGitStatus}
+          disabled={isRequestInFlight}
+          className="rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
+        >
+          {isRequestInFlight ? "Working..." : "View Git status"}
         </button>
       </div>
 

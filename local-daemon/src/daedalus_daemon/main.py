@@ -648,6 +648,7 @@ def run_git_command(
     directory: str,
     command: list[str],
     run_process=subprocess.run,
+    include_stdout: bool = False,
 ) -> dict[str, object]:
     result = run_process(
         command,
@@ -659,8 +660,8 @@ def run_git_command(
     return {
         "command": command,
         "exitCode": result.returncode,
-        "stdout": result.stdout,
-        "stderr": result.stderr,
+        "stdout": result.stdout if include_stdout else "",
+        "stderr": result.stderr if result.returncode != 0 else "",
     }
 
 
@@ -719,6 +720,16 @@ def execute_git_sync_operation(
 
         return steps, "success"
 
+    if operation == "status":
+        status_step = run_git_command(
+            directory,
+            ["git", "status"],
+            include_stdout=True,
+            run_process=run_process,
+        )
+        steps.append(status_step)
+        return steps, "success" if status_step["exitCode"] == 0 else "failed"
+
     return steps, "failed"
 
 
@@ -750,7 +761,7 @@ def run_git_sync_cycle(
     if not isinstance(directory, str) or not directory.strip():
         return
 
-    if operation not in {"commit", "sync"}:
+    if operation not in {"commit", "sync", "status"}:
         return
 
     commit_message = ""

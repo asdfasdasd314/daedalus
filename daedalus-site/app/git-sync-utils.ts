@@ -11,12 +11,14 @@ function formatStepOutput(step: GitSyncStep, index: number) {
     `Exit code: ${exitCodeText}`,
   ];
 
-  if (step.stdout) {
-    sections.push(`stdout:\n${step.stdout}`);
-  }
-
-  if (step.stderr) {
-    sections.push(`stderr:\n${step.stderr}`);
+  if (step.exitCode === 0) {
+    if (step.stdout) {
+      sections.push(`output:\n${step.stdout}`);
+    } else {
+      sections.push("No errors.");
+    }
+  } else if (step.stderr) {
+    sections.push(`error:\n${step.stderr}`);
   }
 
   return sections.join("\n");
