@@ -23,3 +23,4 @@ HACKING
 - 2026-07-12: Initialized the agent-task-notifications feature for the dashboard bell inbox and finalized durable-task transition alerts.
 - 2026-07-12: Added the bell UI, first-poll seed guard, and finalized-status transition inbox wired beside the workspace menu.
 - 2026-07-13: Included cancelled durable-task outcomes in the finalized notification set.
+- 2026-07-13: Recorded the dashboard mobile viewport containment adjustment; the Ventures feature owns the affected drawer implementation.

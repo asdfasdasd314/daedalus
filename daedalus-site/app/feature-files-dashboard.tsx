@@ -2795,7 +2795,7 @@ export default function FeatureFilesDashboard({
   }
 
   const venturesDrawerClassName = isMobileLayout
-    ? "pointer-events-auto absolute inset-3 z-30 flex min-w-0 flex-col overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/94 shadow-[0_28px_100px_rgba(2,6,23,0.72)] backdrop-blur"
+    ? "pointer-events-auto fixed inset-3 z-30 flex min-w-0 flex-col overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/94 shadow-[0_28px_100px_rgba(2,6,23,0.72)] backdrop-blur"
     : "pointer-events-auto absolute left-4 top-28 bottom-6 flex w-[min(28rem,calc(100vw-8rem))] flex-col overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/90 shadow-[0_28px_100px_rgba(2,6,23,0.72)] backdrop-blur";
   const primaryOverlayClassName = isMobileLayout
     ? "pointer-events-auto absolute inset-3 z-30 flex min-w-0 flex-col overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/94 shadow-[0_28px_100px_rgba(2,6,23,0.72)] backdrop-blur"
