@@ -169,6 +169,7 @@ type AgentPromptQueueEntry = AgentPromptPayload & {
   enqueuedAt: number;
   sentAt?: number;
   completedAt?: number;
+  updatedAt?: number;
   error?: string;
   verificationAttempts?: number;
   cancelRequested?: boolean;
@@ -378,6 +379,7 @@ export default function FeatureFilesDashboard({
     Map<string, AgentPromptQueueStatus>
   >(new Map());
   const hasSeededDurableTaskStatusesRef = useRef(false);
+  const isAgentOutputViewerOpenRef = useRef(false);
   const latestChatRef = useRef<AgentChatExchange | null>(null);
   const observedExecutionGenerationRef = useRef<number | null>(null);
   const currentUser = session?.user ?? null;
@@ -713,6 +715,37 @@ export default function FeatureFilesDashboard({
   }, [accessToken, currentUser, currentUserId, entryPointUpdateMessage, supabasePublishableKey, supabaseUrl]);
 
   useEffect(() => {
+    isAgentOutputViewerOpenRef.current = isAgentOutputViewerOpen;
+  }, [isAgentOutputViewerOpen]);
+
+  const rehydrateDurableAgentTasks = useCallback(async () => {
+    if (!currentUser || !accessToken) return;
+    const rows = await fetchActiveAgentTaskSummaries(
+      supabaseUrl, supabasePublishableKey, accessToken, currentUserId,
+    );
+    const activeEntries = rows.map(mapAgentTaskRowToQueueEntry);
+    const activeIds = new Set(activeEntries.map((entry) => entry.promptId));
+    setDurableAgentTasks((currentTasks) => {
+      const preservedTerminals = currentTasks.filter(
+        (task) => isFinalizedAgentTaskStatus(task.status) && !activeIds.has(task.promptId),
+      );
+      return [...activeEntries, ...preservedTerminals].sort(
+        (left, right) => left.enqueuedAt - right.enqueuedAt,
+      );
+    });
+    for (const row of rows) {
+      previousDurableTaskStatusesRef.current.set(row.id, row.status);
+    }
+    hasSeededDurableTaskStatusesRef.current = true;
+  }, [
+    accessToken,
+    currentUser,
+    currentUserId,
+    supabasePublishableKey,
+    supabaseUrl,
+  ]);
+
+  useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setDurableAgentTasks([]);
     setFinalizedDurableTaskCount(0);
@@ -733,14 +766,16 @@ export default function FeatureFilesDashboard({
     let requestGeneration = 0;
     const pollUserId = currentUserId;
 
-    void fetchActiveAgentTaskSummaries(
-      supabaseUrl, supabasePublishableKey, accessToken, pollUserId,
-    ).then((rows) => {
+    void rehydrateDurableAgentTasks().catch((error) => {
       if (!isMounted) return;
-      setDurableAgentTasks(rows.map(mapAgentTaskRowToQueueEntry));
-      for (const row of rows) previousDurableTaskStatusesRef.current.set(row.id, row.status);
-      hasSeededDurableTaskStatusesRef.current = true;
-    }).catch(() => undefined);
+      if (isAgentOutputViewerOpenRef.current) {
+        setPromptStatus(
+          error instanceof Error
+            ? error.message
+            : "Unable to refresh active agent tasks.",
+        );
+      }
+    });
 
     async function pollDurableAgentTasks() {
       if (isPollInFlight) {
@@ -878,6 +913,7 @@ export default function FeatureFilesDashboard({
     currentUser,
     currentUserId,
     pollIntervalMs,
+    rehydrateDurableAgentTasks,
     supabasePublishableKey,
     supabaseUrl,
   ]);
@@ -1897,7 +1933,9 @@ export default function FeatureFilesDashboard({
       createdAt: new Date(entry.enqueuedAt).toISOString(),
       startedAt: entry.sentAt ? new Date(entry.sentAt).toISOString() : null,
       completedAt: entry.completedAt ? new Date(entry.completedAt).toISOString() : null,
-      updatedAt: new Date(entry.completedAt ?? entry.sentAt ?? entry.enqueuedAt).toISOString(),
+      updatedAt: new Date(
+        entry.updatedAt ?? entry.completedAt ?? entry.sentAt ?? entry.enqueuedAt,
+      ).toISOString(),
       cancelRequested: entry.cancelRequested,
       localOnly: source === "direct_prompt" && entry.status === "queued",
     });
@@ -2585,18 +2623,44 @@ export default function FeatureFilesDashboard({
     }
   }
 
-  async function cancelDurableTask(promptId: string) {
+  async function cancelDurableTask(exchange: HistoryExchange) {
     if (!currentUser || !accessToken) {
       return;
     }
 
-    setDurableAgentTasks((currentTasks) =>
-      currentTasks.map((task) =>
-        task.promptId === promptId
-          ? { ...task, cancelRequested: true }
-          : task,
-      ),
-    );
+    const taskId = exchange.taskId || exchange.promptId;
+    setDurableAgentTasks((currentTasks) => {
+      const existing = currentTasks.find((task) => task.promptId === taskId);
+      if (existing) {
+        return currentTasks.map((task) =>
+          task.promptId === taskId
+            ? { ...task, cancelRequested: true }
+            : task,
+        );
+      }
+      return [
+        ...currentTasks,
+        {
+          promptId: taskId,
+          conversationId: exchange.conversationId,
+          directory: exchange.repository,
+          prompt: exchange.prompt,
+          provider: exchange.provider,
+          model: exchange.model,
+          reasoning: exchange.reasoning,
+          planningMode: exchange.mode === "planning",
+          askMode: exchange.mode === "ask",
+          targetedFeaturePaths: exchange.targetedFeaturePaths,
+          status: exchange.status as AgentPromptQueueStatus,
+          enqueuedAt: Date.parse(exchange.createdAt) || Date.now(),
+          sentAt: exchange.startedAt ? Date.parse(exchange.startedAt) : undefined,
+          completedAt: exchange.completedAt ? Date.parse(exchange.completedAt) : undefined,
+          updatedAt: Date.parse(exchange.updatedAt) || Date.now(),
+          error: exchange.error || undefined,
+          cancelRequested: true,
+        },
+      ].sort((left, right) => left.enqueuedAt - right.enqueuedAt);
+    });
     setPromptStatus("Cancel requested.");
 
     try {
@@ -2605,12 +2669,35 @@ export default function FeatureFilesDashboard({
         supabasePublishableKey,
         accessToken,
         currentUserId,
-        promptId,
+        taskId,
       );
+      const synced = await fetchAgentTaskById(
+        supabaseUrl,
+        supabasePublishableKey,
+        accessToken,
+        currentUserId,
+        taskId,
+      ).catch(() => null);
+      if (synced) {
+        const mapped = {
+          ...mapAgentTaskRowToQueueEntry(synced),
+          cancelRequested: true,
+        };
+        setDurableAgentTasks((currentTasks) => {
+          const nextRows = new Map(currentTasks.map((row) => [row.promptId, row]));
+          nextRows.set(mapped.promptId, {
+            ...mapped,
+            cancelRequested: mapped.cancelRequested || synced.cancel_requested,
+          });
+          return [...nextRows.values()].sort(
+            (left, right) => left.enqueuedAt - right.enqueuedAt,
+          );
+        });
+      }
     } catch {
       setDurableAgentTasks((currentTasks) =>
         currentTasks.map((task) =>
-          task.promptId === promptId
+          task.promptId === taskId
             ? { ...task, cancelRequested: false }
             : task,
         ),
@@ -2767,12 +2854,13 @@ export default function FeatureFilesDashboard({
         liveExchanges={liveHistoryExchanges}
         onAbandonDirectPrompt={abandonQueuedAgentPrompt}
         onAnswerPlanningQuestion={answerPlanningQuestion}
-        onCancelDurableTask={(promptId) => void cancelDurableTask(promptId)}
+        onCancelDurableTask={(exchange) => void cancelDurableTask(exchange)}
         onClearFinalizedTasks={() => void clearDurableTasks()}
         onClose={closeAgentOutputViewer}
         onDeletedExchange={handleDeletedHistoryExchange}
         onImplementPlan={() => void implementPlanningSession()}
         onPlanningReply={handleHistoryPlanningReply}
+        onRefreshLiveTasks={rehydrateDurableAgentTasks}
         onRetryDirectPrompt={retryHistoryDirectPrompt}
         onSelectedPromptIdChange={setSelectedHistoryPromptId}
         planningSession={planningSession}
@@ -4210,6 +4298,7 @@ function mapAgentTaskRowToQueueEntry(row: AgentTaskRow): AgentPromptQueueEntry {
     enqueuedAt: Date.parse(row.created_at),
     sentAt: row.started_at ? Date.parse(row.started_at) : undefined,
     completedAt: row.completed_at ? Date.parse(row.completed_at) : undefined,
+    updatedAt: Date.parse(row.updated_at) || Date.parse(row.created_at),
     error: row.error || undefined,
     verificationAttempts: row.verification_attempts,
     cancelRequested: Boolean(row.cancel_requested),
@@ -4530,6 +4619,30 @@ async function fetchActiveAgentTaskSummaries(
   const response = await fetch(url, { headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken), cache: "no-store" });
   if (!response.ok) throw new Error("agent task hydration query failed");
   return (await response.json()) as AgentTaskRow[];
+}
+
+async function fetchAgentTaskById(
+  supabaseUrl: string,
+  supabasePublishableKey: string,
+  accessToken: string,
+  userId: string,
+  taskId: string,
+) {
+  const url = new URL("/rest/v1/agent_tasks", supabaseUrl);
+  url.searchParams.set(
+    "select",
+    "id,repository,prompt,provider,model,reasoning,planning_mode,targeted_feature_paths,status,queue_sequence,created_at,started_at,completed_at,error,verification_attempts,cancel_requested,message,updated_at",
+  );
+  url.searchParams.set("id", `eq.${taskId}`);
+  url.searchParams.set("user_id", `eq.${userId}`);
+  url.searchParams.set("limit", "1");
+  const response = await fetch(url, {
+    headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
+    cache: "no-store",
+  });
+  if (!response.ok) throw new Error("agent task lookup failed");
+  const rows = (await response.json()) as AgentTaskRow[];
+  return rows[0] ?? null;
 }
 
 async function completeAgentTaskReview(
