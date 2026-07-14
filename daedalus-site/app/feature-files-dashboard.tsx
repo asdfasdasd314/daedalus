@@ -1432,12 +1432,6 @@ export default function FeatureFilesDashboard({
 
     setPromptSubmissionError("");
     setSelectedHistoryPromptId(promptId);
-    setIsAgentOutputViewerOpen(true);
-    setVenturesDrawerOpen(false);
-    if (isMobileLayout) {
-      setActivePrimaryOverlay(null);
-      setSelectedFeatureSession(null);
-    }
 
     setPromptStatus(
       agentPromptQueueRef.current.some(
@@ -1561,7 +1555,6 @@ export default function FeatureFilesDashboard({
     });
     setPromptStatus("Answers saved. Refining the plan.");
     setSelectedHistoryPromptId(promptId);
-    setIsAgentOutputViewerOpen(true);
     setAgentPromptQueue((currentQueue) => [...currentQueue, nextPromptPayload]);
   }
 
@@ -1604,7 +1597,6 @@ export default function FeatureFilesDashboard({
       );
       activePromptId.current = promptId;
       setSelectedHistoryPromptId(promptId);
-      setIsAgentOutputViewerOpen(true);
       setPlanningSession(null);
       setDurableAgentTasks((currentTasks) => [
         ...currentTasks,
