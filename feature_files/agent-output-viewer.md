@@ -7,13 +7,14 @@ The Agent Output Viewer is the durable, authenticated history and live-status su
 - **Durable Projection**: One `agent_output_history` row is stored per user and prompt ID, preserving prompt metadata, raw output, terminal error, concise outcome, and lifecycle timestamps after transient task rows are cleared.
 - **Unified Read Model**: Active direct prompts and durable tasks supply current lifecycle state while history supplies archived content; records merge by prompt ID.
 - **Feature Discovery**: A multi-feature prompt remains one database record and is presented beneath every repository-qualified targeted feature, with separate All activity and Unscoped groups.
-- **Planning Ownership**: Planning output, questionnaires, refinements, and implementation handoff are presented from the selected history exchange while the prompt composer retains submission ownership.
+- **Planning Conversation**: A planning conversation ID links the initial request, every refinement, and the implementation task so the viewer presents one chronological transcript: initial prompt, planning questions and plan, then the implementation response or terminal error.
 - **Workspace Drawer**: A true upper-left history control opens a responsive drawer that is mutually exclusive with Ventures and supports notification deep links.
 - **Archive Controls**: The viewer owns formatted/raw output, copying, search, stable pagination, retry, abandon, cancel, finalized-task cleanup, and per-exchange delete for Completed/Failed prompt-answer pairs.
 
 ## Relevant Files
 - `shared/database/migrations/018_agent_output_history.sql`: Durable history table, policies, RPCs, task projection trigger, and recoverable backfills.
 - `shared/database/migrations/019_allow_agent_output_history_delete.sql`: Owner delete policy for Completed/Failed history rows.
+- `shared/database/migrations/020_planning_conversation_history.sql`: Durable planning conversation linkage for direct prompts and implementation tasks.
 - `shared/database/schema.sql`: Current database schema snapshot.
 - `parameter_files/agent-output-viewer.toml`: Viewer-owned tunable settings.
 - `local-daemon/src/daedalus_daemon/communications.py`: Narrow direct-prompt history upsert transport.
@@ -35,3 +36,4 @@ HACKING
 - 2026-07-13: Kept direct planning and Ask history publication asynchronous so a long-running exchange no longer delays durable task lifecycle updates in the viewer.
 - 2026-07-13: Integrated terminal-exchange deletion and asynchronous direct-prompt status publication while preserving Ask-mode failure visibility.
 - 2026-07-13: Diagnosed a failed Cursor standard task whose clean, unchanged worktree confirmed that the provider returned an informal plan without making implementation changes; no viewer lifecycle defect was found.
+- 2026-07-13: Linked planning refinements and their implementation handoff with a durable conversation ID, then rendered the full chronological transcript in History.

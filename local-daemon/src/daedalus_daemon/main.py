@@ -343,6 +343,9 @@ def run_agent_prompt_cycle(
         planning_mode = False
     planning_context = prompt_request.get("planningContext", "") if planning_mode else ""
     planning_answers = prompt_request.get("planningAnswers", []) if planning_mode else []
+    conversation_id = prompt_request.get("conversationId")
+    if not isinstance(conversation_id, str) or not conversation_id.strip():
+        conversation_id = prompt_id
     targeted_feature_paths = filter_targeted_feature_paths(
         prompt_request.get("targetedFeaturePaths", []),
     )
@@ -350,7 +353,7 @@ def run_agent_prompt_cycle(
     history_publisher = publish_history or upsert_agent_output_history
     history_args = (
         config, prompt_id, directory, prompt, "", "", provider, model,
-        reasoning, mode, targeted_feature_paths,
+        reasoning, mode, targeted_feature_paths, conversation_id,
     )
     if deliver_chat is None:
         history_publisher(*history_args, status="running")
@@ -399,7 +402,7 @@ def run_agent_prompt_cycle(
     except Exception as error:
         history_publisher(
             config, prompt_id, directory, prompt, "", str(error), provider,
-            model, reasoning, mode, targeted_feature_paths, status="failed",
+            model, reasoning, mode, targeted_feature_paths, conversation_id, status="failed",
             status_detail=str(error),
         )
         if deliver_chat is None:
@@ -414,7 +417,7 @@ def run_agent_prompt_cycle(
     if deliver_chat is None:
         history_publisher(
             config, prompt_id, directory, prompt, reply, "", provider, model,
-            reasoning, mode, targeted_feature_paths, status="completed",
+            reasoning, mode, targeted_feature_paths, conversation_id, status="completed",
         )
         write_message(
             config, AGENT_PROMPT_PURPOSE, CLIENT_REVIEW,

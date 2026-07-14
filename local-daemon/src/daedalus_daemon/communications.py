@@ -124,6 +124,7 @@ def upsert_agent_output_history(
     reasoning: str = "",
     mode: str = "planning",
     targeted_feature_paths: list[str] | None = None,
+    conversation_id: str | None = None,
     status: str = "running",
     status_detail: str | None = None,
 ) -> None:
@@ -137,6 +138,7 @@ def upsert_agent_output_history(
         "p_provider": provider,
         "p_model": model,
         "p_reasoning": reasoning,
+        "p_conversation_id": conversation_id,
         "p_mode": mode,
         "p_targeted_feature_paths": targeted_feature_paths or [],
         "p_status": status,

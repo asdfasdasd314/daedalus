@@ -9,11 +9,13 @@ import {
   AGENT_OUTPUT_SOURCE_LABELS,
   AGENT_OUTPUT_STATUS_LABELS,
   canDeleteAgentOutput,
+  dedupeAgentOutputConversations,
   dedupeAgentOutputs,
   deleteAgentOutputHistory,
   findMatchingAgentOutputFeaturePaths,
   fetchAgentOutputHistoryPage,
   fetchAgentOutputFeatureSummaries,
+  fetchAgentOutputConversation,
   fetchRecentAgentOutputHistory,
   groupAgentOutputsByFeature,
   mergeAgentOutputRecords,
@@ -124,7 +126,10 @@ export default function AgentOutputViewer({
     [archive, deletedPromptIdSet, liveExchanges],
   );
   const activeSearchResults = search.trim() ? searchResults?.filter((exchange) => !deletedPromptIdSet.has(exchange.promptId)) ?? null : null;
-  const visibleSource = activeSearchResults ?? exchanges;
+  const visibleSource = useMemo(
+    () => dedupeAgentOutputConversations(activeSearchResults ?? exchanges),
+    [activeSearchResults, exchanges],
+  );
   const groups = useMemo(() => groupAgentOutputsByFeature(visibleSource, projects), [projects, visibleSource]);
   const visibleExchanges = selectedGroupKey === "all"
     ? visibleSource
@@ -133,6 +138,10 @@ export default function AgentOutputViewer({
       : groups.find((group) => group.key === selectedGroupKey)?.exchanges ?? [];
   const selected = exchanges.find((exchange) => exchange.promptId === selectedPromptId)
     ?? visibleExchanges[0] ?? null;
+  const conversationTurns = useMemo(() => selected
+    ? exchanges.filter((exchange) => exchange.conversationId === selected.conversationId)
+      .sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt) || left.id.localeCompare(right.id))
+    : [], [exchanges, selected]);
   const parsedPlanning = selected?.mode === "planning" && selected.output
     ? parsePlanningReply(selected.output)
     : null;
@@ -148,6 +157,19 @@ export default function AgentOutputViewer({
       && (exchange.status === "failed" || exchange.status === "blocked"),
   ));
   const projectDirectories = Object.keys(projects);
+
+  useEffect(() => {
+    if (!isOpen || !accessToken || !selected?.conversationId) return;
+    let active = true;
+    void fetchAgentOutputConversation(
+      supabaseUrl, supabasePublishableKey, accessToken, selected.conversationId,
+    ).then((turns) => {
+      if (active) setArchive((current) => dedupeAgentOutputs([...current, ...turns]));
+    }).catch((error) => {
+      if (active) setFetchError(error instanceof Error ? error.message : "Unable to load this conversation.");
+    });
+    return () => { active = false; };
+  }, [accessToken, isOpen, selected?.conversationId, supabasePublishableKey, supabaseUrl]);
 
   useEffect(() => {
     if (selected?.mode === "planning" && selected.status === "completed" && selected.output && publishedPlanningPromptRef.current !== selected.promptId) {
@@ -264,7 +286,7 @@ export default function AgentOutputViewer({
       <div className={`${mobileDetail ? "flex" : "hidden md:flex"} min-w-0 flex-1 flex-col`}>
         <div className="flex items-start justify-between gap-4 border-b border-white/10 p-4">
           <button type="button" onClick={() => setMobileDetail(false)} className="rounded-full border border-white/10 px-3 py-2 text-xs font-semibold text-slate-200 md:hidden">Back</button>
-          <div className="min-w-0 flex-1"><p className="text-[11px] uppercase tracking-[0.24em] text-slate-400">Selected exchange</p><h2 className="mt-1 truncate text-lg font-semibold text-white">{selected?.prompt || "Select a prompt"}</h2></div>
+          <div className="min-w-0 flex-1"><p className="text-[11px] uppercase tracking-[0.24em] text-slate-400">Selected conversation</p><h2 className="mt-1 truncate text-lg font-semibold text-white">{conversationTurns[0]?.prompt || selected?.prompt || "Select a prompt"}</h2></div>
           <button type="button" onClick={onClose} className="hidden rounded-full border border-white/10 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10 md:block">Close</button>
         </div>
         <div className="agent-chat-scrollbar min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
@@ -295,9 +317,13 @@ export default function AgentOutputViewer({
                     <TrashIcon />
                   </button>
                 ) : null}
-                <AgentOutputDetail label="Prompt" value={selected.prompt} />
-                {selected.output ? <AgentOutputDetail label="Agent output" value={selected.output} markdown /> : <p className="rounded-xl border border-dashed border-white/10 p-4 text-sm text-slate-400">No output has been published yet.</p>}
-                {selected.error ? <section className="rounded-xl border border-rose-400/25 bg-rose-500/10 p-4"><h3 className="text-[11px] uppercase tracking-[0.24em] text-rose-200">Terminal error</h3><pre className="mt-3 whitespace-pre-wrap break-words text-sm text-rose-100">{selected.error}</pre></section> : null}
+                {conversationTurns.map((turn, index) => <div key={turn.promptId} className="grid min-w-0 gap-4 border-b border-white/10 pb-4 last:border-0 last:pb-0">
+                  {index === 0 ? <AgentOutputDetail label="Initial prompt" value={turn.prompt} /> : null}
+                  {turn.mode === "planning" && index > 0 ? <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-cyan-200">Planning refinement</p> : null}
+                  {turn.source === "durable_task" ? <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-200">Plan implementation</p> : null}
+                  {turn.output ? turn.mode === "planning" ? <PlanningResponse value={turn.output} /> : <AgentOutputDetail label="Implementation response" value={turn.output} markdown /> : <p className="rounded-xl border border-dashed border-white/10 p-4 text-sm text-slate-400">{turn === selected ? "No output has been published yet." : "This stage ended before output was published."}</p>}
+                  {turn.error ? <section className="rounded-xl border border-rose-400/25 bg-rose-500/10 p-4"><h3 className="text-[11px] uppercase tracking-[0.24em] text-rose-200">Terminal error</h3><pre className="mt-3 whitespace-pre-wrap break-words text-sm text-rose-100">{turn.error}</pre></section> : null}
+                </div>)}
               </div>
               {selected.statusDetail && selected.statusDetail !== selected.error ? <p className="rounded-xl border border-white/10 p-3 text-sm text-slate-300">{selected.statusDetail}</p> : null}
               {selected.mode === "planning" && parsedPlanning ? <section className="grid gap-3 rounded-xl border border-cyan-300/20 bg-cyan-300/[0.05] p-4"><h3 className="font-semibold text-white">Planning workflow</h3>{planningQuestion ? <><p className="text-sm text-slate-200">{planningQuestion.question}</p><div className="flex flex-wrap gap-2">{planningQuestion.options.map((option) => <button key={option} type="button" onClick={() => onAnswerPlanningQuestion(option)} className="rounded-full border border-cyan-300/25 px-3 py-2 text-xs text-cyan-100">{option}</button>)}</div><div className="flex gap-2"><input value={otherAnswer} onChange={(event) => setOtherAnswer(event.target.value)} placeholder="Other answer" className="min-w-0 flex-1 rounded-full border border-white/10 bg-black/30 px-3 py-2 text-sm text-white" /><button type="button" onClick={() => { onAnswerPlanningQuestion(otherAnswer); setOtherAnswer(""); }} disabled={!otherAnswer.trim()} className="rounded-full bg-cyan-300 px-3 py-2 text-xs font-semibold text-slate-950 disabled:opacity-50">Answer</button></div></> : canImplement ? <button type="button" onClick={onImplementPlan} className="w-fit rounded-full bg-cyan-300 px-4 py-2 text-sm font-semibold text-slate-950">Implement Plan</button> : <p className="text-sm text-slate-400">The selected plan is ready for review.</p>}</section> : null}
@@ -313,6 +339,14 @@ export default function AgentOutputViewer({
       </div>
     </aside>
   );
+}
+
+function PlanningResponse({ value }: { value: string }) {
+  const { plan, questions } = parsePlanningReply(value);
+  return <>
+    {questions.length > 0 ? <section className="rounded-[1.25rem] border border-cyan-300/20 bg-cyan-300/[0.05] p-4"><h3 className="text-[11px] font-semibold uppercase tracking-[0.24em] text-cyan-100">Planning questions</h3><ol className="mt-3 grid gap-3 text-sm text-slate-200">{questions.map((question, index) => <li key={`${question.question}-${index}`}><p>{question.question}</p><ul className="mt-1 flex flex-wrap gap-2">{question.options.map((option) => <li key={option} className="rounded-full border border-white/10 px-2.5 py-1 text-xs text-slate-300">{option}</li>)}</ul></li>)}</ol></section> : null}
+    <AgentOutputDetail label="Agent plan" value={plan} markdown />
+  </>;
 }
 
 function GroupButton({ label, detail, count, active, onClick }: { label: string; detail?: string; count: number; active: boolean; onClick: () => void }) {

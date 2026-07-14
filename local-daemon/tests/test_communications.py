@@ -275,6 +275,7 @@ class UpdateCurrentMessageTests(unittest.TestCase):
                 "p_provider": "codex",
                 "p_model": "",
                 "p_reasoning": "",
+                "p_conversation_id": None,
                 "p_mode": "planning",
                 "p_targeted_feature_paths": [],
                 "p_status": "completed",
@@ -320,6 +321,7 @@ class UpdateCurrentMessageTests(unittest.TestCase):
                 "p_provider": "codex",
                 "p_model": "",
                 "p_reasoning": "",
+                "p_conversation_id": None,
                 "p_mode": "planning",
                 "p_targeted_feature_paths": [
                         "feature_files/agent-prompt-chat.md",

@@ -13,6 +13,7 @@ export type AgentOutputHistoryRow = {
   id: string;
   prompt_id: string;
   task_id: string | null;
+  conversation_id: string | null;
   repository: string;
   prompt: string;
   output: string;
@@ -35,6 +36,7 @@ export type AgentOutputExchange = {
   id: string;
   promptId: string;
   taskId: string | null;
+  conversationId: string;
   repository: string;
   prompt: string;
   output: string;
@@ -90,6 +92,7 @@ export function normalizeAgentOutputRow(row: AgentOutputHistoryRow): AgentOutput
     id: row.id,
     promptId: row.prompt_id,
     taskId: row.task_id,
+    conversationId: row.conversation_id || row.prompt_id,
     repository: row.repository,
     prompt: row.prompt,
     output: row.output ?? "",
@@ -127,6 +130,16 @@ export function dedupeAgentOutputs(exchanges: AgentOutputExchange[]) {
     if (!byPromptId.has(exchange.promptId)) byPromptId.set(exchange.promptId, exchange);
   }
   return [...byPromptId.values()];
+}
+
+export function dedupeAgentOutputConversations(exchanges: AgentOutputExchange[]) {
+  const byConversationId = new Map<string, AgentOutputExchange>();
+  for (const exchange of sortAgentOutputsRecentFirst(exchanges)) {
+    if (!byConversationId.has(exchange.conversationId)) {
+      byConversationId.set(exchange.conversationId, exchange);
+    }
+  }
+  return [...byConversationId.values()];
 }
 
 export function mergeAgentOutputRecords(
@@ -283,6 +296,22 @@ export async function fetchRecentAgentOutputHistory(
   url.searchParams.set("order", "updated_at.desc");
   url.searchParams.set("limit", "50");
   return (await readRows(await fetch(url, { headers: historyHeaders(publishableKey, accessToken), cache: "no-store" }))).map(normalizeAgentOutputRow);
+}
+
+export async function fetchAgentOutputConversation(
+  supabaseUrl: string,
+  publishableKey: string,
+  accessToken: string,
+  conversationId: string,
+) {
+  const url = new URL("/rest/v1/agent_output_history", supabaseUrl);
+  url.searchParams.set("select", "*");
+  url.searchParams.set("conversation_id", `eq.${conversationId}`);
+  url.searchParams.set("order", "created_at.asc,id.asc");
+  const rows = await readRows(await fetch(url, {
+    headers: historyHeaders(publishableKey, accessToken), cache: "no-store",
+  }));
+  return rows.map(normalizeAgentOutputRow);
 }
 
 export async function fetchAgentOutputByPromptId(

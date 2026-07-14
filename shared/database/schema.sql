@@ -158,6 +158,7 @@ create table agent_tasks (
   provider text not null,
   model text not null default '',
   reasoning text not null default '',
+  conversation_id text,
   planning_mode boolean not null default false,
   targeted_feature_paths jsonb not null default '[]'::jsonb,
   status text not null default 'queued' check (status in ('queued', 'running', 'verifying', 'ready', 'failed', 'integrating', 'resolving', 'completed', 'blocked', 'cancelled')),
@@ -202,6 +203,7 @@ create table daemon_events (
   user_id uuid not null references auth.users(id) on delete cascade,
   repository text not null,
   task_id uuid references agent_tasks(id) on delete set null,
+  conversation_id text,
   batch_id uuid references orchestration_batches(id) on delete set null,
   severity text not null check (severity in ('info', 'warning', 'error')),
   message text not null check (message in ('daemon_review', 'client_review', 'client_complete', 'daemon_complete')),
@@ -325,6 +327,7 @@ create index agent_output_history_archive_idx on agent_output_history (user_id, 
 create index agent_output_history_recent_idx on agent_output_history (user_id, updated_at desc);
 create index agent_output_history_repository_idx on agent_output_history (user_id, repository);
 create index agent_output_history_features_idx on agent_output_history using gin (targeted_feature_paths);
+create index agent_output_history_conversation_idx on agent_output_history (user_id, conversation_id, created_at, id);
 
 create or replace function daemon_get_communication(
   p_user_id uuid,
@@ -399,7 +402,7 @@ grant execute on function daemon_upsert_payload(uuid, text, jsonb) to anon;
 create or replace function daemon_upsert_agent_output_history(
   p_user_id uuid, p_prompt_id text, p_repository text, p_prompt text,
   p_output text, p_error text, p_provider text, p_model text, p_reasoning text,
-  p_mode text, p_targeted_feature_paths jsonb, p_status text,
+  p_conversation_id text, p_mode text, p_targeted_feature_paths jsonb, p_status text,
   p_status_detail text default null, p_started_at timestamptz default null,
   p_completed_at timestamptz default null
 )
@@ -409,18 +412,18 @@ begin
   if p_status not in ('running', 'completed', 'failed', 'cancelled') then raise exception 'Unsupported direct prompt history status: %', p_status; end if;
   if nullif(trim(p_prompt_id), '') is null then raise exception 'Prompt ID is required'; end if;
   insert into agent_output_history (
-    user_id, prompt_id, repository, prompt, output, error, provider, model,
+    user_id, prompt_id, conversation_id, repository, prompt, output, error, provider, model,
     reasoning, mode, source, targeted_feature_paths, status, status_detail,
     started_at, completed_at
   ) values (
-    p_user_id, p_prompt_id, p_repository, p_prompt, coalesce(p_output, ''),
+    p_user_id, p_prompt_id, coalesce(nullif(trim(p_conversation_id), ''), p_prompt_id), p_repository, p_prompt, coalesce(p_output, ''),
     coalesce(p_error, ''), coalesce(p_provider, ''), coalesce(p_model, ''),
     coalesce(p_reasoning, ''), p_mode, 'direct_prompt',
     coalesce(p_targeted_feature_paths, '[]'::jsonb), p_status,
     left(p_status_detail, 500), coalesce(p_started_at, now()),
     case when p_status in ('completed', 'failed', 'cancelled') then coalesce(p_completed_at, now()) else p_completed_at end
   ) on conflict (user_id, prompt_id) do update set
-    repository = excluded.repository, prompt = excluded.prompt,
+    conversation_id = excluded.conversation_id, repository = excluded.repository, prompt = excluded.prompt,
     output = excluded.output, error = excluded.error, provider = excluded.provider,
     model = excluded.model, reasoning = excluded.reasoning, mode = excluded.mode,
     targeted_feature_paths = excluded.targeted_feature_paths,
@@ -430,8 +433,8 @@ begin
 end;
 $$;
 
-revoke all on function daemon_upsert_agent_output_history(uuid, text, text, text, text, text, text, text, text, text, jsonb, text, text, timestamptz, timestamptz) from public;
-grant execute on function daemon_upsert_agent_output_history(uuid, text, text, text, text, text, text, text, text, text, jsonb, text, text, timestamptz, timestamptz) to anon;
+revoke all on function daemon_upsert_agent_output_history(uuid, text, text, text, text, text, text, text, text, text, text, jsonb, text, text, timestamptz, timestamptz) from public;
+grant execute on function daemon_upsert_agent_output_history(uuid, text, text, text, text, text, text, text, text, text, text, jsonb, text, text, timestamptz, timestamptz) to anon;
 
 create or replace function search_agent_output_history(p_query text, p_limit integer default 50)
 returns setof agent_output_history language sql stable security definer set search_path = public as $$
@@ -465,17 +468,17 @@ create or replace function project_agent_task_to_output_history()
 returns trigger language plpgsql security definer set search_path = public as $$
 begin
   insert into agent_output_history (
-    user_id, prompt_id, task_id, repository, prompt, output, error, provider,
+    user_id, prompt_id, task_id, conversation_id, repository, prompt, output, error, provider,
     model, reasoning, mode, source, targeted_feature_paths, status,
     status_detail, created_at, started_at, completed_at, updated_at
   ) values (
-    new.user_id, new.id::text, new.id, new.repository, new.prompt,
+    new.user_id, new.id::text, new.id, coalesce(nullif(new.conversation_id, ''), new.id::text), new.repository, new.prompt,
     coalesce(new.result, ''), coalesce(new.error, ''), new.provider, new.model,
     new.reasoning, 'standard', 'durable_task', new.targeted_feature_paths,
     new.status, left(nullif(coalesce(new.error, ''), ''), 500), new.created_at,
     new.started_at, new.completed_at, new.updated_at
   ) on conflict (user_id, prompt_id) do update set
-    task_id = excluded.task_id, repository = excluded.repository,
+    task_id = excluded.task_id, conversation_id = excluded.conversation_id, repository = excluded.repository,
     prompt = excluded.prompt, output = excluded.output, error = excluded.error,
     provider = excluded.provider, model = excluded.model,
     reasoning = excluded.reasoning,

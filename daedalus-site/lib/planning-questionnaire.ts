@@ -11,6 +11,7 @@ export type PlanningAnswer = {
 };
 
 export type PlanningSession = {
+  conversationId: string;
   originalPrompt: string;
   directory: string;
   provider: string;
