@@ -44,6 +44,7 @@ export default function DaemonManagerPanel({
   const [online, setOnline] = useState(false);
   const [pendingAction, setPendingAction] = useState(false);
   const [error, setError] = useState("");
+  const [isExpanded, setIsExpanded] = useState(false);
   const statusRef = useRef<DaemonManagerStatus | null>(null);
 
   useEffect(() => {
@@ -128,14 +129,39 @@ export default function DaemonManagerPanel({
     ...Object.entries(blockers.communications ?? {}).map(([purpose, count]) => [purpose, count] as [string, number]),
   ].filter(([, count]) => Number(count) > 0) : [];
 
+  if (!isExpanded) {
+    return (
+      <button
+        type="button"
+        aria-expanded="false"
+        aria-label={`Open execution manager (${online ? status?.state ?? "running" : "offline"})`}
+        onClick={() => setIsExpanded(true)}
+        className="pointer-events-auto fixed bottom-4 right-4 z-20 inline-flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-slate-950/94 text-xl shadow-[0_20px_60px_rgba(2,6,23,0.55)] backdrop-blur transition hover:scale-105 hover:bg-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300"
+      >
+        <span aria-hidden="true">🤖</span>
+        <span className={`absolute right-0.5 top-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-slate-950 ${online ? "bg-emerald-300" : "bg-rose-300"}`} />
+      </button>
+    );
+  }
+
   return (
-    <aside className="pointer-events-auto fixed bottom-4 right-4 z-30 w-[min(24rem,calc(100vw-2rem))] rounded-[1.35rem] border border-white/10 bg-slate-950/94 p-4 text-sm text-slate-200 shadow-[0_24px_80px_rgba(2,6,23,0.55)] backdrop-blur">
+    <aside className="pointer-events-auto fixed bottom-4 right-4 z-20 w-[min(24rem,calc(100vw-2rem))] rounded-[1.35rem] border border-white/10 bg-slate-950/94 p-4 text-sm text-slate-200 shadow-[0_24px_80px_rgba(2,6,23,0.55)] backdrop-blur">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-[11px] uppercase tracking-[0.24em] text-slate-400">Execution manager</p>
           <p className="mt-1 font-semibold text-white">{online ? status?.state ?? "running" : "offline"}</p>
         </div>
-        <span className={`mt-1 h-2.5 w-2.5 rounded-full ${online ? "bg-emerald-300" : "bg-rose-300"}`} />
+        <div className="flex items-center gap-3">
+          <span className={`h-2.5 w-2.5 rounded-full ${online ? "bg-emerald-300" : "bg-rose-300"}`} />
+          <button
+            type="button"
+            aria-label="Minimize execution manager"
+            onClick={() => setIsExpanded(false)}
+            className="rounded-full border border-white/10 px-2.5 py-1 text-xs font-semibold text-slate-300 transition hover:bg-white/10"
+          >
+            −
+          </button>
+        </div>
       </div>
       <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-400">
         <p>Admission <span className="text-slate-100">{status ? (status.accepts_work ? "open" : "paused") : "open (compatibility)"}</span></p>

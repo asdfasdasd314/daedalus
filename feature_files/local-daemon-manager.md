@@ -22,3 +22,4 @@ HACKING
 ## State Log
 - 2026-07-13: Initialized the local daemon manager feature for implementation of supervised execution restarts, crash recovery, and shared work admission.
 - 2026-07-13: Implemented the lease-backed manager control plane, fixed execution-child supervisor, graceful drain/cancel/replacement flow, crash recovery, frontend controls, and shared admission gating.
+- 2026-07-14: Made the execution manager retractable behind a status-bearing robot launcher and lowered its layer beneath agent prompt overlays.
