@@ -48,3 +48,4 @@ HACKING
 - 2026-07-11: Wired the feature-search fuzzy finder as a shell overlay opened from the workspace menu and ⌘/Ctrl+K, reusing graph feature-node selection for result opens.
 - 2026-07-12: Documented the canonical project payload behavior that removes duplicate graph clusters created by linked Git worktrees.
 - 2026-07-13: Added the upper-left History control and responsive drawer routing, moved mobile Ventures below it, and renamed the feature-detail Chat tab to prompt-only Edit.
+- 2026-07-13: Mounted the workspace-level daemon manager health, restart, cancellation, and drain-blocker panel independently from execution-specific overlays.

@@ -7,6 +7,7 @@ import { getCompactProjectLabel, getProjectLabel } from "./feature-workspace-uti
 type AgentPromptMode = "standard" | "planning" | "ask";
 
 type AgentSessionPanelProps = {
+  acceptsWork: boolean;
   agentModels: AgentModelsConfig;
   availableProjectDirectories: string[];
   defaultProjectDirectory: string;
@@ -30,7 +31,7 @@ type AgentSessionPanelProps = {
 };
 
 export default function AgentSessionPanel({
-  agentModels, availableProjectDirectories, defaultProjectDirectory,
+  acceptsWork, agentModels, availableProjectDirectories, defaultProjectDirectory,
   onOpenFeatureTagSearch, onProviderChange, onPromptTextChange,
   onRemoveTargetedFeature, onSelectedModeChange,
   onSelectedProjectDirectoryChange, onSelectedReasoningChange, onSelectModel,
@@ -78,7 +79,8 @@ export default function AgentSessionPanel({
 
       <label htmlFor="agent-prompt" className="text-[11px] uppercase tracking-[0.28em] text-slate-400">Agent prompt</label>
       <textarea id="agent-prompt" value={promptText} onChange={(event) => onPromptTextChange(event.target.value)} placeholder="Describe what you want the agent to do..." className="agent-chat-scrollbar min-h-28 min-w-0 rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-500" />
-      <button type="button" onClick={onSendPrompt} disabled={!promptText.trim()} className="w-fit rounded-full bg-cyan-300 px-5 py-3 text-sm font-semibold text-slate-950 hover:bg-cyan-200 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400">Send prompt</button>
+      <button type="button" onClick={onSendPrompt} disabled={!promptText.trim() || !acceptsWork} className="w-fit rounded-full bg-cyan-300 px-5 py-3 text-sm font-semibold text-slate-950 hover:bg-cyan-200 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400">Send prompt</button>
+      {!acceptsWork ? <p className="text-sm text-amber-200">The execution daemon is draining for restart. New work will resume after the restart completes or is cancelled.</p> : null}
       {submissionError ? <p className="text-sm text-rose-200">{submissionError}</p> : null}
     </div>
   );

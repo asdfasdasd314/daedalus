@@ -23,3 +23,4 @@ HACKING
 ## State Log
 - 2026-07-12: Added the missing Git Sync result-payload database permission and response-body diagnostics for rejected Supabase requests.
 - 2026-07-13: Added on-demand Git status and suppressed successful commit/sync command output from Supabase results.
+- 2026-07-13: Disabled new Git operations while manager admission is closed and exposed active Git Sync communications as graceful-restart blockers.

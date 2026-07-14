@@ -35,3 +35,4 @@ HACKING
 - 2026-07-07: Replaced the raw parameter TOML view with a variable selector that parses leading comments, validates typed edits, and writes saved changes back to the matching `.toml` file.
 - 2026-07-08: Moved parameter-file payload delivery and typed variable saves into user-scoped Supabase rows with local daemon execution for filesystem edits.
 - 2026-07-09: Moved parameter-file display into the feature-detail `Params` tab so the graph can stay canvas-focused while the workspace shell owns the selected-feature overlay.
+- 2026-07-13: Paused feature/parameter reloads and mutations during manager drains, then refreshed both payloads after a successful execution-generation change.

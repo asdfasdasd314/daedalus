@@ -46,3 +46,4 @@ HACKING
 - 2026-07-13: Added hard cancel for agent-mode worktree tasks with process-group kill, cancel_requested signaling, cancelled terminal status, force worktree reclaim, and dashboard Cancel controls.
 - 2026-07-13: Fixed planning-mode Codex cycle test expectation to include PLANNING_PROMPT_SUFFIX so verification matches build_codex_prompt.
 - 2026-07-13: Added trigger-owned durable history projection and removed the orchestrator's duplicate latest-chat result publication path.
+- 2026-07-13: Added database admission gating for new durable tasks while exposing all accepted nonterminal task and batch states to manager drain coordination.

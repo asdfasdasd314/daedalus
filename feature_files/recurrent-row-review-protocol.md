@@ -29,3 +29,4 @@ TESTING
 - 2026-07-13: Added an idempotent follow-up migration for the partially committed protocol migration and surfaced Supabase response details for failed load requests.
 - 2026-07-13: Fixed payload-free load requests so a present `daemon_review` row with null content is distinguishable from no review row and reaches the daemon scanner.
 - 2026-07-13: Made orchestration-batch review state derive from terminal status and added a migration to complete stale terminal batch rows.
+- 2026-07-13: Gated execution-producing `daemon_review` writes during manager drains while preserving client acknowledgements and daemon completion publication.

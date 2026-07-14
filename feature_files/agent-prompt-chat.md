@@ -30,3 +30,5 @@ HACKING
 - 2026-07-13: Added Ask mode, planning refinement context, and cancellation-aware durable submissions.
 - 2026-07-13: Reduced Agent Prompt Chat to the prompt-only Edit surface, retired agent-chat payload output, and handed all lifecycle and response presentation to Agent Output Viewer.
 - 2026-07-13: Updated Ask-mode Codex execution to use the supported read-only sandbox option without the removed approval flag.
+- 2026-07-13: Paused standard submissions and direct Planning/Ask dispatch while manager admission is closed, preserving unsent direct prompts in the browser queue for resumption.
+- 2026-07-13: Resolved the integration conflict by preserving both Ask-mode compatibility and manager-admission queue behavior.
