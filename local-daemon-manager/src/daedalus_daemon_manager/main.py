@@ -37,12 +37,12 @@ def utc_now() -> str:
 
 
 def start_execution_child(config: dict) -> tuple[subprocess.Popen, str]:
-    repository_root = config["repositoryRoot"]
-    entrypoint = repository_root / "local-daemon" / "src" / "daedalus_daemon" / "main.py"
+    code_root = config["codeRoot"]
+    entrypoint = code_root / "local-daemon" / "src" / "daedalus_daemon" / "main.py"
     started_at = utc_now()
     child = subprocess.Popen(
         [sys.executable, str(entrypoint)],
-        cwd=repository_root,
+        cwd=config["executionRoot"],
         shell=False,
         start_new_session=True,
     )

@@ -4,18 +4,20 @@ from pathlib import Path
 
 
 def load_manager_config() -> dict:
-    repository_root = Path(__file__).resolve().parents[3]
+    code_root = Path(__file__).resolve().parents[3]
+    execution_root = Path.cwd().resolve()
     env_values = load_env_files([
-        repository_root / ".env",
-        repository_root / "local-daemon" / ".env",
-        repository_root / "local-daemon-manager" / ".env",
+        code_root / ".env",
+        code_root / "local-daemon" / ".env",
+        code_root / "local-daemon-manager" / ".env",
     ])
     parameters = load_parameter_file(
-        repository_root / "parameter_files" / "local-daemon-manager.toml",
+        code_root / "parameter_files" / "local-daemon-manager.toml",
     )
 
     config = {
-        "repositoryRoot": repository_root,
+        "codeRoot": code_root,
+        "executionRoot": execution_root,
         "daemonUserId": environment_value(env_values, "DAEDALUS_USER_ID"),
         "supabaseUrl": environment_value(env_values, "SUPABASE_URL"),
         "supabasePublishableKey": environment_value(
