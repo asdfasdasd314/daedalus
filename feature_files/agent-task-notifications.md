@@ -25,3 +25,4 @@ HACKING
 - 2026-07-12: Added the bell UI, first-poll seed guard, and finalized-status transition inbox wired beside the workspace menu.
 - 2026-07-13: Included cancelled durable-task outcomes in the finalized notification set.
 - 2026-07-13: Connected notification selection to the matching durable exchange in Agent Output Viewer and removed the Edit-surface presentation dependency.
+- 2026-07-13: Recorded the dashboard mobile viewport containment adjustment; the Ventures feature owns the affected drawer implementation.

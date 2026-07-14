@@ -43,3 +43,4 @@ HACKING
 - 2026-07-09: Clamped the ventures drawer inputs and tag rows to the drawer width and switched venture project labels back to the same root-relative naming used by the shared feature tagger.
 - 2026-07-09: Simplified the ventures bulk-clear flow so `Clear completed` flips inline into `Confirm` and `Undo` actions instead of opening a separate confirmation panel.
 - 2026-07-12: Documented the shared inline confirmation pattern used by durable agent-task clearing.
+- 2026-07-13: Anchored the mobile Ventures sheet to the device viewport so the graph canvas cannot shift it horizontally off-screen.
