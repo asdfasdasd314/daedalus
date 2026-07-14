@@ -1009,7 +1009,7 @@ def run_codex_exec(
         f'model_reasoning_effort="{codex_reasoning}"',
     ]
     if ask_mode:
-        command.extend(["--sandbox", "read-only", "--ask-for-approval", "on-request"])
+        command.extend(["--sandbox", "read-only"])
     command.append(prompt)
 
     try:

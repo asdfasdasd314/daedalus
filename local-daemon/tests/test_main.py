@@ -1007,7 +1007,7 @@ class RunCodexExecTests(unittest.TestCase):
             "Codex failed with exit code 1\n\nSTDOUT:\npartial\n\nSTDERR:\nboom",
         )
 
-    def test_runs_ask_with_read_only_sandbox_and_on_request_approval(self):
+    def test_runs_ask_with_read_only_sandbox(self):
         class FakeProcess:
             returncode = 0
             stdout = "answer"
@@ -1022,8 +1022,6 @@ class RunCodexExecTests(unittest.TestCase):
         command = mocked_run.call_args.args[0]
         self.assertEqual(command.count("--sandbox"), 1)
         self.assertEqual(command[command.index("--sandbox") + 1], "read-only")
-        self.assertEqual(command.count("--ask-for-approval"), 1)
-        self.assertEqual(command[command.index("--ask-for-approval") + 1], "on-request")
         self.assertEqual(reply, "answer")
 
 
