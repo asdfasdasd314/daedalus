@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   dedupeAgentOutputs,
+  dedupeAgentOutputConversations,
   groupAgentOutputsByFeature,
   mergeAgentOutputRecords,
   rerankAgentOutputSearch,
@@ -10,7 +11,7 @@ import {
 
 function exchange(overrides: Partial<AgentOutputExchange> = {}): AgentOutputExchange {
   return {
-    id: "row-1", promptId: "prompt-1", taskId: null,
+    id: "row-1", promptId: "prompt-1", taskId: null, conversationId: "prompt-1",
     repository: "/projects/one", prompt: "Build viewer", output: "Done",
     error: "", provider: "codex", model: "gpt", reasoning: "medium",
     mode: "standard", source: "durable_task", targetedFeaturePaths: [],
@@ -64,4 +65,13 @@ test("deduplicates prompt IDs and fuzzy reranks current feature names", () => {
   assert.equal(dedupeAgentOutputs([exchange(), exchange({ id: "row-old" })]).length, 1);
   const results = rerankAgentOutputSearch("Output Viewer", [exchange({ targetedFeaturePaths: ["feature_files/viewer.md"] })], projects);
   assert.equal(results[0]?.promptId, "prompt-1");
+});
+
+test("groups planning refinements and implementation into one conversation", () => {
+  const conversations = dedupeAgentOutputConversations([
+    exchange({ promptId: "plan-1", conversationId: "chat-1", completedAt: "2026-01-01T00:01:00Z" }),
+    exchange({ promptId: "implementation-1", conversationId: "chat-1", completedAt: "2026-01-01T00:02:00Z" }),
+  ]);
+  assert.equal(conversations.length, 1);
+  assert.equal(conversations[0]?.promptId, "implementation-1");
 });

@@ -151,6 +151,7 @@ const MAX_AGENT_TASK_NOTIFICATIONS = 50;
 
 type AgentPromptPayload = {
   promptId: string;
+  conversationId?: string;
   directory: string;
   prompt: string;
   provider: string;
@@ -1608,6 +1609,7 @@ export default function FeatureFilesDashboard({
     const askMode = selectedAgentMode === "ask";
     const nextPromptPayload: AgentPromptQueueEntry = {
       promptId,
+      conversationId: planningMode ? promptId : undefined,
       directory: selectedProjectDirectory,
       prompt: nextPrompt,
       provider: selectedProvider,
@@ -1640,6 +1642,7 @@ export default function FeatureFilesDashboard({
     setAgentPromptMessage("");
     if (planningMode) {
       setPlanningSession({
+        conversationId: promptId,
         originalPrompt: nextPrompt,
         directory: selectedProjectDirectory,
         provider: selectedProvider,
@@ -1724,6 +1727,7 @@ export default function FeatureFilesDashboard({
     const promptId = createPromptId();
     const nextPromptPayload: AgentPromptQueueEntry = {
       promptId,
+      conversationId: planningSession.conversationId,
       directory: planningSession.directory,
       prompt: planningSession.originalPrompt,
       provider: planningSession.provider,
@@ -1769,6 +1773,7 @@ export default function FeatureFilesDashboard({
     );
     const task: AgentPromptPayload = {
       promptId,
+      conversationId: planningSession.conversationId,
       directory: planningSession.directory,
       prompt: implementationPrompt,
       provider: planningSession.provider,
@@ -1918,6 +1923,7 @@ export default function FeatureFilesDashboard({
         AGENT_PROMPT_PURPOSE,
         JSON.stringify({
           promptId: queueEntry.promptId,
+          conversationId: queueEntry.conversationId,
           directory: queueEntry.directory,
           provider: queueEntry.provider,
           model: queueEntry.model,
@@ -2083,6 +2089,7 @@ export default function FeatureFilesDashboard({
       model: entry.model,
       reasoning: entry.reasoning,
       mode: entry.askMode ? "ask" : entry.planningMode ? "planning" : "standard",
+      conversationId: entry.conversationId ?? entry.promptId,
       source,
       targetedFeaturePaths: entry.targetedFeaturePaths,
       status: normalizeStatus(entry.status),
@@ -4539,6 +4546,7 @@ async function insertAgentTask(
       provider: task.provider,
       model: task.model,
       reasoning: task.reasoning,
+      conversation_id: task.conversationId ?? null,
       planning_mode: false,
       targeted_feature_paths: task.targetedFeaturePaths,
       status: "queued",
