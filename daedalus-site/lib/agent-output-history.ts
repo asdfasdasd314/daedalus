@@ -323,3 +323,28 @@ export async function fetchAgentOutputFeatureSummaries(
   if (!response.ok) throw new Error(await response.text());
   return response.json() as Promise<Array<{repository: string; feature_path: string; result_count: number; latest_activity: string}>>;
 }
+
+export function canDeleteAgentOutput(exchange: Pick<AgentOutputExchange, "status">) {
+  return exchange.status === "completed" || exchange.status === "failed";
+}
+
+export async function deleteAgentOutputHistory(
+  supabaseUrl: string,
+  publishableKey: string,
+  accessToken: string,
+  promptId: string,
+) {
+  const url = new URL("/rest/v1/agent_output_history", supabaseUrl);
+  url.searchParams.set("prompt_id", `eq.${promptId}`);
+  url.searchParams.set("status", "in.(completed,failed)");
+  const response = await fetch(url, {
+    method: "DELETE",
+    headers: {
+      ...historyHeaders(publishableKey, accessToken),
+      Prefer: "return=minimal",
+    },
+  });
+  if (!response.ok) {
+    throw new Error((await response.text()) || `History delete failed (${response.status}).`);
+  }
+}

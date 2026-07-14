@@ -9,11 +9,13 @@ The Agent Output Viewer is the durable, authenticated history and live-status su
 - **Feature Discovery**: A multi-feature prompt remains one database record and is presented beneath every repository-qualified targeted feature, with separate All activity and Unscoped groups.
 - **Planning Ownership**: Planning output, questionnaires, refinements, and implementation handoff are presented from the selected history exchange while the prompt composer retains submission ownership.
 - **Workspace Drawer**: A true upper-left history control opens a responsive drawer that is mutually exclusive with Ventures and supports notification deep links.
-- **Archive Controls**: The viewer owns formatted/raw output, copying, search, stable pagination, retry, abandon, cancel, and finalized-task cleanup without deleting archived history.
+- **Archive Controls**: The viewer owns formatted/raw output, copying, search, stable pagination, retry, abandon, cancel, finalized-task cleanup, and per-exchange delete for Completed/Failed prompt-answer pairs.
 
 ## Relevant Files
 - `shared/database/migrations/018_agent_output_history.sql`: Durable history table, policies, RPCs, task projection trigger, and recoverable backfills.
+- `shared/database/migrations/019_allow_agent_output_history_delete.sql`: Owner delete policy for Completed/Failed history rows.
 - `shared/database/schema.sql`: Current database schema snapshot.
+- `parameter_files/agent-output-viewer.toml`: Viewer-owned tunable settings.
 - `local-daemon/src/daedalus_daemon/communications.py`: Narrow direct-prompt history upsert transport.
 - `local-daemon/src/daedalus_daemon/main.py`: Direct planning and ask execution publication.
 - `daedalus-site/lib/agent-output-history.ts`: History types, normalization, grouping, merging, pagination, and search helpers.
@@ -28,3 +30,4 @@ HACKING
 ## State Log
 - 2026-07-13: Initialized the Agent Output Viewer ownership boundary, durable-history architecture, workspace placement, and prompt-only Edit relationship.
 - 2026-07-13: Implemented owner-scoped durable history projection and backfill, direct planning/ask publication, the unified responsive History drawer, planning and task controls, archive search/pagination, Edit cutover, and notification deep links.
+- 2026-07-13: Added Completed/Failed-only trash delete on each prompt-answer chat box with owner-scoped history and matching durable-task cleanup.

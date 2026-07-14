@@ -8,7 +8,9 @@ import {
   AGENT_OUTPUT_MODE_LABELS,
   AGENT_OUTPUT_SOURCE_LABELS,
   AGENT_OUTPUT_STATUS_LABELS,
+  canDeleteAgentOutput,
   dedupeAgentOutputs,
+  deleteAgentOutputHistory,
   findMatchingAgentOutputFeaturePaths,
   fetchAgentOutputHistoryPage,
   fetchAgentOutputFeatureSummaries,
@@ -33,6 +35,7 @@ type AgentOutputViewerProps = {
   onCancelDurableTask: (promptId: string) => void;
   onClearFinalizedTasks: () => void;
   onClose: () => void;
+  onDeletedExchange: (exchange: AgentOutputExchange) => void;
   onImplementPlan: () => void;
   onPlanningReply: (exchange: AgentOutputExchange) => void;
   onRetryDirectPrompt: (exchange: AgentOutputExchange) => void;
@@ -48,7 +51,7 @@ type AgentOutputViewerProps = {
 export default function AgentOutputViewer({
   accessToken, activitySummary, isOpen, liveExchanges, onAbandonDirectPrompt,
   onAnswerPlanningQuestion, onCancelDurableTask, onClearFinalizedTasks,
-  onClose, onImplementPlan, onPlanningReply, onRetryDirectPrompt,
+  onClose, onDeletedExchange, onImplementPlan, onPlanningReply, onRetryDirectPrompt,
   onSelectedPromptIdChange, planningSession, pollIntervalMs, projects,
   selectedPromptId, supabasePublishableKey, supabaseUrl,
 }: AgentOutputViewerProps) {
@@ -57,6 +60,8 @@ export default function AgentOutputViewer({
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [deletingPromptId, setDeletingPromptId] = useState("");
+  const [deletedPromptIds, setDeletedPromptIds] = useState<string[]>([]);
   const [fetchError, setFetchError] = useState("");
   const [search, setSearch] = useState("");
   const [searchResults, setSearchResults] = useState<AgentOutputExchange[] | null>(null);
@@ -113,8 +118,12 @@ export default function AgentOutputViewer({
     return () => window.clearTimeout(timer);
   }, [accessToken, isOpen, projects, search, supabasePublishableKey, supabaseUrl]);
 
-  const exchanges = useMemo(() => mergeAgentOutputRecords(archive, liveExchanges), [archive, liveExchanges]);
-  const activeSearchResults = search.trim() ? searchResults : null;
+  const deletedPromptIdSet = useMemo(() => new Set(deletedPromptIds), [deletedPromptIds]);
+  const exchanges = useMemo(
+    () => mergeAgentOutputRecords(archive, liveExchanges).filter((exchange) => !deletedPromptIdSet.has(exchange.promptId)),
+    [archive, deletedPromptIdSet, liveExchanges],
+  );
+  const activeSearchResults = search.trim() ? searchResults?.filter((exchange) => !deletedPromptIdSet.has(exchange.promptId)) ?? null : null;
   const visibleSource = activeSearchResults ?? exchanges;
   const groups = useMemo(() => groupAgentOutputsByFeature(visibleSource, projects), [projects, visibleSource]);
   const visibleExchanges = selectedGroupKey === "all"
@@ -162,6 +171,37 @@ export default function AgentOutputViewer({
     }
   }
 
+  async function deleteExchange(exchange: AgentOutputExchange) {
+    if (!canDeleteAgentOutput(exchange) || deletingPromptId) return;
+    setDeletingPromptId(exchange.promptId);
+    setFetchError("");
+    try {
+      if (!exchange.localOnly) {
+        await deleteAgentOutputHistory(supabaseUrl, supabasePublishableKey, accessToken, exchange.promptId);
+      }
+      setDeletedPromptIds((current) => current.includes(exchange.promptId) ? current : [...current, exchange.promptId]);
+      setArchive((current) => current.filter((item) => item.promptId !== exchange.promptId));
+      setSearchResults((current) => current ? current.filter((item) => item.promptId !== exchange.promptId) : null);
+      setFeatureSummaryCounts((current) => {
+        const next = { ...current };
+        for (const featurePath of exchange.targetedFeaturePaths) {
+          const key = `${exchange.repository}\u0000${featurePath}`;
+          if (key in next) next[key] = Math.max(0, (next[key] ?? 0) - 1);
+        }
+        return next;
+      });
+      if (selectedPromptId === exchange.promptId) {
+        onSelectedPromptIdChange("");
+        setMobileDetail(false);
+      }
+      onDeletedExchange(exchange);
+    } catch (error) {
+      setFetchError(error instanceof Error ? error.message : "Unable to delete this exchange.");
+    } finally {
+      setDeletingPromptId("");
+    }
+  }
+
   if (!isOpen) return null;
 
   return (
@@ -185,12 +225,37 @@ export default function AgentOutputViewer({
           <div className="grid gap-2 border-t border-white/10 pt-3">
             {loading ? <p className="p-3 text-sm text-slate-400">Loading history...</p> : null}
             {!loading && visibleExchanges.length === 0 ? <p className="p-3 text-sm text-slate-400">{search.trim() ? "No archived prompts match this search." : "No agent output has been archived yet."}</p> : null}
-            {visibleExchanges.map((exchange) => (
-              <button key={exchange.promptId} type="button" onClick={() => { onSelectedPromptIdChange(exchange.promptId); setMobileDetail(true); }} className={`min-w-0 rounded-xl border p-3 text-left transition ${selected?.promptId === exchange.promptId ? "border-cyan-300/40 bg-cyan-300/10" : "border-white/8 bg-white/[0.03] hover:bg-white/[0.06]"}`}>
-                <div className="flex items-center justify-between gap-2"><span className="rounded-full bg-white/8 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-100">{AGENT_OUTPUT_STATUS_LABELS[exchange.status]}</span><time className="text-[10px] text-slate-500">{formatTime(exchange.completedAt ?? exchange.updatedAt)}</time></div>
-                <p className="mt-2 line-clamp-2 break-words text-sm text-slate-200">{exchange.prompt}</p>
-              </button>
-            ))}
+            {visibleExchanges.map((exchange) => {
+              const canDelete = canDeleteAgentOutput(exchange);
+              const isDeleting = deletingPromptId === exchange.promptId;
+              return (
+                <div
+                  key={exchange.promptId}
+                  className={`relative min-w-0 rounded-xl border transition ${selected?.promptId === exchange.promptId ? "border-cyan-300/40 bg-cyan-300/10" : "border-white/8 bg-white/[0.03] hover:bg-white/[0.06]"}`}
+                >
+                  {canDelete ? (
+                    <button
+                      type="button"
+                      aria-label="Delete exchange"
+                      title="Delete exchange"
+                      disabled={isDeleting}
+                      onClick={() => void deleteExchange(exchange)}
+                      className="absolute right-2 top-2 z-10 rounded-lg border border-white/10 bg-black/45 p-1.5 text-slate-300 hover:border-rose-400/30 hover:bg-rose-500/20 hover:text-rose-100 disabled:opacity-50"
+                    >
+                      <TrashIcon />
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => { onSelectedPromptIdChange(exchange.promptId); setMobileDetail(true); }}
+                    className={`w-full min-w-0 p-3 text-left ${canDelete ? "pr-10" : ""}`}
+                  >
+                    <div className="flex items-center justify-between gap-2"><span className="rounded-full bg-white/8 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-100">{AGENT_OUTPUT_STATUS_LABELS[exchange.status]}</span><time className={`text-[10px] text-slate-500 ${canDelete ? "mr-6" : ""}`}>{formatTime(exchange.completedAt ?? exchange.updatedAt)}</time></div>
+                    <p className="mt-2 line-clamp-2 break-words text-sm text-slate-200">{exchange.prompt}</p>
+                  </button>
+                </div>
+              );
+            })}
             {hasMore && !activeSearchResults ? <div className="grid gap-2"><p className="text-center text-[11px] text-slate-500">Showing the newest archived exchanges.</p><button type="button" onClick={() => void loadMore()} disabled={loadingMore} className="rounded-full border border-white/10 px-4 py-2 text-xs font-semibold text-slate-200 disabled:opacity-50">{loadingMore ? "Loading..." : "Load more"}</button></div> : null}
           </div>
         </div>
@@ -217,9 +282,23 @@ export default function AgentOutputViewer({
                 <div><dt className="text-slate-500">Completed</dt><dd className="mt-1 text-slate-200">{selected.completedAt ? formatTime(selected.completedAt) : "In progress"}</dd></div>
                 <div className="sm:col-span-2"><dt className="text-slate-500">Features</dt><dd className="mt-1 break-words text-slate-200">{selected.targetedFeaturePaths.join(", ") || "Unscoped"}</dd></div>
               </dl>
-              <AgentOutputDetail label="Prompt" value={selected.prompt} />
-              {selected.output ? <AgentOutputDetail label="Agent output" value={selected.output} markdown /> : <p className="rounded-xl border border-dashed border-white/10 p-4 text-sm text-slate-400">No output has been published yet.</p>}
-              {selected.error ? <section className="rounded-xl border border-rose-400/25 bg-rose-500/10 p-4"><h3 className="text-[11px] uppercase tracking-[0.24em] text-rose-200">Terminal error</h3><pre className="mt-3 whitespace-pre-wrap break-words text-sm text-rose-100">{selected.error}</pre></section> : null}
+              <div className="relative grid min-w-0 gap-4 rounded-[1.5rem] border border-white/10 bg-white/[0.02] p-4 pt-12">
+                {canDeleteAgentOutput(selected) ? (
+                  <button
+                    type="button"
+                    aria-label="Delete exchange"
+                    title="Delete exchange"
+                    disabled={deletingPromptId === selected.promptId}
+                    onClick={() => void deleteExchange(selected)}
+                    className="absolute right-3 top-3 rounded-lg border border-white/10 bg-black/45 p-2 text-slate-300 hover:border-rose-400/30 hover:bg-rose-500/20 hover:text-rose-100 disabled:opacity-50"
+                  >
+                    <TrashIcon />
+                  </button>
+                ) : null}
+                <AgentOutputDetail label="Prompt" value={selected.prompt} />
+                {selected.output ? <AgentOutputDetail label="Agent output" value={selected.output} markdown /> : <p className="rounded-xl border border-dashed border-white/10 p-4 text-sm text-slate-400">No output has been published yet.</p>}
+                {selected.error ? <section className="rounded-xl border border-rose-400/25 bg-rose-500/10 p-4"><h3 className="text-[11px] uppercase tracking-[0.24em] text-rose-200">Terminal error</h3><pre className="mt-3 whitespace-pre-wrap break-words text-sm text-rose-100">{selected.error}</pre></section> : null}
+              </div>
               {selected.statusDetail && selected.statusDetail !== selected.error ? <p className="rounded-xl border border-white/10 p-3 text-sm text-slate-300">{selected.statusDetail}</p> : null}
               {selected.mode === "planning" && parsedPlanning ? <section className="grid gap-3 rounded-xl border border-cyan-300/20 bg-cyan-300/[0.05] p-4"><h3 className="font-semibold text-white">Planning workflow</h3>{planningQuestion ? <><p className="text-sm text-slate-200">{planningQuestion.question}</p><div className="flex flex-wrap gap-2">{planningQuestion.options.map((option) => <button key={option} type="button" onClick={() => onAnswerPlanningQuestion(option)} className="rounded-full border border-cyan-300/25 px-3 py-2 text-xs text-cyan-100">{option}</button>)}</div><div className="flex gap-2"><input value={otherAnswer} onChange={(event) => setOtherAnswer(event.target.value)} placeholder="Other answer" className="min-w-0 flex-1 rounded-full border border-white/10 bg-black/30 px-3 py-2 text-sm text-white" /><button type="button" onClick={() => { onAnswerPlanningQuestion(otherAnswer); setOtherAnswer(""); }} disabled={!otherAnswer.trim()} className="rounded-full bg-cyan-300 px-3 py-2 text-xs font-semibold text-slate-950 disabled:opacity-50">Answer</button></div></> : canImplement ? <button type="button" onClick={onImplementPlan} className="w-fit rounded-full bg-cyan-300 px-4 py-2 text-sm font-semibold text-slate-950">Implement Plan</button> : <p className="text-sm text-slate-400">The selected plan is ready for review.</p>}</section> : null}
               <div className="flex flex-wrap gap-2 border-t border-white/10 pt-4">
@@ -238,6 +317,14 @@ export default function AgentOutputViewer({
 
 function GroupButton({ label, detail, count, active, onClick }: { label: string; detail?: string; count: number; active: boolean; onClick: () => void }) {
   return <button type="button" onClick={onClick} className={`flex items-center justify-between gap-3 rounded-xl px-3 py-2 text-left ${active ? "bg-white/10 text-white" : "text-slate-300 hover:bg-white/[0.05]"}`}><span className="min-w-0"><span className="block truncate text-sm font-semibold">{label}</span>{detail ? <span className="block truncate text-[10px] text-slate-500">{detail}</span> : null}</span><span className="rounded-full bg-black/30 px-2 py-1 text-[10px]">{count}</span></button>;
+}
+
+function TrashIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4" aria-hidden="true">
+      <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.341 10.338A2.75 2.75 0 007.085 19h5.83a2.75 2.75 0 002.735-2.464l.341-10.338.149.022a.75.75 0 00.23-1.482A41.033 41.033 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.784 0 1.569.032 2.35.094v.277a41.723 41.723 0 00-4.7 0v-.277A40.135 40.135 0 0110 4zm-1.5 4.75a.75.75 0 00-1.5 0v7.5a.75.75 0 001.5 0v-7.5zm4.5 0a.75.75 0 00-1.5 0v7.5a.75.75 0 001.5 0v-7.5z" clipRule="evenodd" />
+    </svg>
+  );
 }
 
 function formatTime(value: string) {

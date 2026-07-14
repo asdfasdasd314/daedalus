@@ -176,7 +176,7 @@ alter table orchestration_batches enable row level security;
 alter table daemon_events enable row level security;
 alter table agent_output_history enable row level security;
 revoke all on agent_output_history from anon, authenticated;
-grant select on agent_output_history to authenticated;
+grant select, delete on agent_output_history to authenticated;
 
 create policy "authenticated users can read own daemon payloads"
 on daemon_payloads
@@ -220,6 +220,9 @@ using (user_id = auth.uid() and message = 'client_review')
 with check (user_id = auth.uid() and message = 'client_complete');
 create policy "authenticated users can read own agent output history"
 on agent_output_history for select to authenticated using (user_id = auth.uid());
+create policy "authenticated users can delete own completed agent output history"
+on agent_output_history for delete to authenticated
+using (user_id = auth.uid() and status in ('completed', 'failed'));
 
 create or replace function set_updated_at()
 returns trigger
