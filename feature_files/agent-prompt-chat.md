@@ -6,7 +6,7 @@ Agent Prompt Chat is the prompt-only Edit surface shared by new-feature and feat
 ## Key Points
 - **Prompt-Only Edit**: The feature-detail tab is labeled `Edit` and contains no transcript, agent reply, task status, completion, retry, cancellation, or cleanup UI.
 - **Submission Split**: Standard mode inserts authenticated `agent_tasks`; planning and ask modes enqueue `communications(purpose = "agent_prompt")` requests.
-- **History Handoff**: A successful submission clears the textarea and opens Agent Output Viewer at the submitted prompt ID.
+- **History Handoff**: A successful submission clears the textarea and remembers the submitted prompt ID for the manually opened Agent Output Viewer.
 - **Targeting**: Each submission carries project-relative targeted feature paths and may reference multiple features without creating multiple history records.
 - **Planning Composition**: Planning refinements continue to reuse the local direct queue and persisted `PlanningSession` context, while durable planning output and interaction presentation belong to the viewer.
 - **Retired Chat Payload**: The frontend and daemon no longer read or write `daemon_payloads(kind = "agent_chat")`; direct results publish to `agent_output_history`.
@@ -35,3 +35,5 @@ HACKING
 - 2026-07-13: Integrated Ask-mode compatibility, manager admission, and independent direct-prompt supervision without changing their ownership boundaries.
 - 2026-07-13: Confirmed a failed Cursor standard submission did not enter the separate Planning transport; the agent itself returned planning narration despite an implementation task.
 - 2026-07-14: Restored normal letter spacing for provider, model, and reasoning select values in the Edit form.
+- 2026-07-14: Kept prompt submission and planning handoffs in the composer without automatically opening the output viewer; the latest prompt remains selected when the viewer is opened manually.
+- 2026-07-14: Resolved the integration merge by retaining both the Edit-form typography restoration and manual output-viewer handoff.
