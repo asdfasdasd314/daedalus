@@ -9,7 +9,6 @@ import uuid
 from .communications import (
     list_agent_tasks,
     list_orchestration_batches,
-    post_agent_chat,
     record_daemon_event,
     update_agent_task,
     upsert_orchestration_batch,
@@ -589,18 +588,6 @@ class GitWorktreeOrchestrator:
                 "error": outcome.get("error", ""),
                 **({"completed_at": utc_now()} if not outcome["ok"] else {}),
             })
-            post_agent_chat(
-                self.config,
-                task_id,
-                str(task["repository"]),
-                str(task["prompt"]),
-                outcome.get("reply", "") if outcome["ok"] else outcome.get("error", ""),
-                str(task["provider"]),
-                str(task["model"]),
-                str(task["reasoning"]),
-                False,
-                task.get("targeted_feature_paths") or [],
-            )
             if not outcome["ok"]:
                 record_daemon_event(
                     self.config,

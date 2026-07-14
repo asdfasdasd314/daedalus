@@ -1,17 +1,18 @@
 # Feature File Communications System
 
 ## Summary
-The feature file communications system uses Supabase as a user-scoped message bus between the authenticated Next.js frontend and the local daemon. The frontend polls its own `feature_file_load` communication row and daemon payload rows with a frontend-owned interval, while the daemon polls the same user-scoped purpose through trusted RPC helpers and uses its own parameter-file interval before writing scanned feature-file payloads back to Supabase.
+The feature file communications system uses Supabase as a user-scoped message bus between the authenticated Next.js frontend and the local daemon. Communications remain the transient queue and pickup protocol for direct planning and ask prompts, while completed prompt output is published separately to durable Agent Output Viewer history.
 
 ## Key Points
 - **Message Bus**: Supabase stores communication messages in a `communications` table with separate rows keyed by `user_id` and `purpose`.
 - **Split Polling Ownership**: The frontend keeps its own committed poll interval, while the daemon reads `poll_interval_ms` from `parameter_files/feature-file-communications-system.toml`.
 - **Transient Network Tolerance**: The daemon communications client retries short-lived Supabase HTTPS failures with a small timeout and backoff budget before giving up on that poll cycle.
 - **Outage Cooldown**: When Supabase stays unreachable after the retry budget is exhausted, the daemon pauses the current poll pass and waits on a longer cooldown before trying again.
-- **Daemon Delivery**: The daemon writes feature-file payloads, parameter-file payloads, and latest agent chat replies into the user-owned `daemon_payloads` table.
+- **Daemon Delivery**: The daemon writes feature-file, parameter-file, and Git Sync payloads into `daemon_payloads`; agent responses are not payload messages.
 - **Schema Tracking**: Every database change must add a numbered migration and update the checked-in schema snapshot.
 - **Protocol Messages**: The feature-file load flow uses `purpose = "feature_file_load"` with `client_load_feature_files`, `daemon_received_message`, and `daemon_sent_feature_files`.
 - **Agent Status Messages**: The prompt flow uses `purpose = "agent_prompt"` with queued JSON payloads plus daemon-written status markers while `codex exec` is running.
+- **Durable Direct Output**: Planning and ask requests remain communications rows until `agent_output_history` publication succeeds, after which the frontend may acknowledge completion.
 
 ## Relevant Files
 - `shared/database/migrations/001_create_communications_table.sql`: First migration for the communications table.
@@ -40,3 +41,4 @@ HACKING
 - 2026-07-09: Added daemon-side Supabase request retries and per-cycle crash guards so transient HTTPS connection resets no longer stop the background polling loop.
 - 2026-07-09: Added an explicit network-outage cooldown so exhausted Supabase retries now pause the daemon briefly instead of immediately hammering the remaining poll cycles.
 - 2026-07-12: Updated daemon communications and config tests to accept urlopen timeouts and assert the new retry/cooldown defaults.
+- 2026-07-13: Retained communications as the direct planning/ask pickup protocol while moving response publication out of daemon payloads and into durable agent output history.

@@ -5,7 +5,6 @@ from urllib import request
 from urllib.error import HTTPError, URLError
 
 
-AGENT_CHAT_PAYLOAD_KIND = "agent_chat"
 AGENT_PROMPT_PURPOSE = "agent_prompt"
 GIT_SYNC_PAYLOAD_KIND = "git_sync_result"
 GIT_SYNC_PURPOSE = "git_sync_request"
@@ -113,30 +112,35 @@ def post_git_sync_result(config: dict, result: dict) -> None:
     upsert_daemon_payload(config, GIT_SYNC_PAYLOAD_KIND, result)
 
 
-def post_agent_chat(
+def upsert_agent_output_history(
     config: dict,
     prompt_id: str,
-    directory: str,
+    repository: str,
     prompt: str,
-    reply: str,
+    output: str,
+    error: str,
     provider: str = "codex",
     model: str = "",
     reasoning: str = "",
-    planning_mode: bool = False,
+    mode: str = "planning",
     targeted_feature_paths: list[str] | None = None,
-    ask_mode: bool = False,
+    status: str = "running",
+    status_detail: str | None = None,
 ) -> None:
-    upsert_daemon_payload(config, AGENT_CHAT_PAYLOAD_KIND, {
-        "promptId": prompt_id,
-        "directory": directory,
-        "prompt": prompt,
-        "reply": reply,
-        "provider": provider,
-        "model": model,
-        "reasoning": reasoning,
-        "planningMode": planning_mode,
-        "askMode": ask_mode,
-        "targetedFeaturePaths": targeted_feature_paths or [],
+    call_daemon_rpc(config, "daemon_upsert_agent_output_history", {
+        "p_user_id": config["daemonUserId"],
+        "p_prompt_id": prompt_id,
+        "p_repository": repository,
+        "p_prompt": prompt,
+        "p_output": output,
+        "p_error": error,
+        "p_provider": provider,
+        "p_model": model,
+        "p_reasoning": reasoning,
+        "p_mode": mode,
+        "p_targeted_feature_paths": targeted_feature_paths or [],
+        "p_status": status,
+        "p_status_detail": status_detail,
     })
 
 

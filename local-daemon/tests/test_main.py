@@ -898,6 +898,61 @@ class CursorProviderRoutingTests(unittest.TestCase):
         self.assertEqual(writes, [(AGENT_PROMPT_PURPOSE, DAEMON_COMPLETE)])
 
 
+class AgentOutputHistoryPublicationTests(unittest.TestCase):
+    def test_publishes_running_then_completed_before_completing_communication(self):
+        publications: list[dict] = []
+        writes: list[tuple] = []
+
+        def publish(*args, **kwargs):
+            publications.append({
+                "prompt_id": args[1], "output": args[4], "error": args[5],
+                "mode": args[9], "features": args[10], "status": kwargs["status"],
+            })
+
+        run_agent_prompt_cycle(
+            {"pollIntervalMs": 5000},
+            read_message=lambda *_args: json.dumps({
+                "promptId": "plan-1", "directory": "/workspace/project",
+                "prompt": "Plan it", "planningMode": True,
+                "targetedFeaturePaths": ["feature_files/agent-prompt-chat.md"],
+            }),
+            write_message=lambda *args: writes.append(args[1:]),
+            publish_history=publish,
+            run_codex_prompt=lambda *_args: "## Plan\n\nKeep the raw plan.",
+        )
+
+        self.assertEqual([item["status"] for item in publications], ["running", "completed"])
+        self.assertEqual(publications[-1]["output"], "## Plan\n\nKeep the raw plan.")
+        self.assertEqual(publications[-1]["features"], ["feature_files/agent-prompt-chat.md"])
+        self.assertEqual(writes[0][0], AGENT_PROMPT_PURPOSE)
+        self.assertEqual(writes[0][1], CLIENT_REVIEW)
+        self.assertEqual(json.loads(writes[0][2])["promptId"], "plan-1")
+
+    def test_publishes_provider_exception_as_separate_terminal_error(self):
+        publications: list[dict] = []
+
+        def publish(*args, **kwargs):
+            publications.append({"output": args[4], "error": args[5], "status": kwargs["status"]})
+
+        def fail(*_args):
+            raise RuntimeError("provider exploded")
+
+        run_agent_prompt_cycle(
+            {"pollIntervalMs": 5000},
+            read_message=lambda *_args: json.dumps({
+                "promptId": "ask-2", "directory": "/workspace/project",
+                "prompt": "Explain it", "askMode": True,
+            }),
+            write_message=lambda *_args: None,
+            publish_history=publish,
+            run_codex_prompt=fail,
+        )
+
+        self.assertEqual(publications[-1], {
+            "output": "", "error": "provider exploded", "status": "failed",
+        })
+
+
 class RunCodexExecTests(unittest.TestCase):
     def test_returns_stdout_for_success(self):
         class FakeProcess:

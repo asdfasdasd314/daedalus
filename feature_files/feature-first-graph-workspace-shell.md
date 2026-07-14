@@ -1,14 +1,15 @@
 # Feature-First Graph Workspace Shell
 
 ## Summary
-The feature-first graph workspace shell owns the responsive workspace framing around the feature graph in the Next.js frontend. It keeps the graph mounted as the background canvas, routes the ventures drawer and primary overlays, surfaces a compact hamburger menu for refresh, physics, zoom-rail visibility, and sign-out controls, reuses the shared agent session UI for both new-feature creation and node-focused feature editing, and depends on true SVG-space coordinate mapping so mobile taps stay aligned when the graph is letterboxed inside the fullscreen shell.
+The feature-first graph workspace shell owns the responsive workspace framing around the feature graph, including primary overlays, Ventures, the prompt-only Edit surface, and the left-side Agent Output Viewer drawer.
 
 ## Key Points
 - **Graph-First Default**: The feature graph remains visible as the base workspace on desktop and mobile instead of living under a persistent left control panel.
 - **Overlay Routing**: The shell owns `venturesDrawerOpen`, the active primary overlay, the selected feature session, and the current feature-detail tab.
 - **Responsive Rules**: On mobile, only one overlay can stay open at a time, while desktop can keep the ventures drawer open beside the graph.
 - **Device Zoom Profiles**: The shell chooses separate mobile and desktop zoom defaults and bounds so smaller screens stay closer to the same graph world instead of zooming the node system itself.
-- **Shared Chat Session UI**: The shell mounts the same agent session panel in both the new-feature overlay and the feature-detail chat tab so prompt transport stays unchanged.
+- **Shared Edit UI**: The shell mounts the same prompt-only agent session panel in both the new-feature overlay and feature-detail Edit tab.
+- **History Routing**: The upper-left clock control opens Agent Output Viewer; History and Ventures are mutually exclusive, and mobile primary overlays close when History opens.
 - **Workspace Utilities**: A compact hamburger menu now owns refresh, physics, and sign-out actions while the inline load-error state stays in the same utility area instead of a persistent message HUD or settings panel.
 - **Zoom Visibility Toggle**: The same hamburger menu can hide or restore the graph's right-edge zoom slider while leaving wheel, pinch, and keyboard zoom paths active.
 - **Physics Toggle Ownership**: The shell owns the current graph-physics enablement flag and passes it into the graph so the menu can freeze or resume node motion without changing the graph's drag and zoom affordances.
@@ -46,3 +47,4 @@ HACKING
 - 2026-07-10: Removed the fullscreen graph viewport dead zone by measuring the SVG, sizing its viewBox and culling bounds responsively, and preserving the centered world point across browser resizes.
 - 2026-07-11: Wired the feature-search fuzzy finder as a shell overlay opened from the workspace menu and ⌘/Ctrl+K, reusing graph feature-node selection for result opens.
 - 2026-07-12: Documented the canonical project payload behavior that removes duplicate graph clusters created by linked Git worktrees.
+- 2026-07-13: Added the upper-left History control and responsive drawer routing, moved mobile Ventures below it, and renamed the feature-detail Chat tab to prompt-only Edit.
