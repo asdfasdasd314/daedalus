@@ -11,14 +11,14 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from daedalus_daemon_manager.communications import (
         acquire_lease, begin_restart, claim_restart, complete_recovery,
-        complete_restart, get_active_request, get_drain_summary,
+        complete_control_request, complete_restart, get_active_request, get_drain_summary,
         publish_candidate, publish_degraded, publish_heartbeat, update_blockers,
     )
     from daedalus_daemon_manager.config import load_manager_config
 else:
     from .communications import (
         acquire_lease, begin_restart, claim_restart, complete_recovery,
-        complete_restart, get_active_request, get_drain_summary,
+        complete_control_request, complete_restart, get_active_request, get_drain_summary,
         publish_candidate, publish_degraded, publish_heartbeat, update_blockers,
     )
     from .config import load_manager_config
@@ -123,6 +123,11 @@ def process_requested_restart(
     if not active_request:
         return child, child_started_at
     request_id = active_request["id"]
+    if active_request["status"] == "cancelled":
+        complete_control_request(
+            config, instance_id, request_id, active_request["updated_at"],
+        )
+        return child, child_started_at
     if active_request["status"] == "requested":
         claim_restart(config, instance_id, request_id)
 
@@ -134,6 +139,11 @@ def process_requested_restart(
             return recovered if recovered is not None else (child, child_started_at)
         current_request = get_active_request(config, instance_id)
         if not current_request or current_request["id"] != request_id:
+            return child, child_started_at
+        if current_request["status"] == "cancelled":
+            complete_control_request(
+                config, instance_id, request_id, current_request["updated_at"],
+            )
             return child, child_started_at
         if current_request["status"] == "restarting":
             break

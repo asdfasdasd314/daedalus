@@ -44,6 +44,16 @@ def fetch_current_message(config: dict, purpose: str) -> str | None:
     return rows[0].get("content") or ""
 
 
+def fetch_current_messages(config: dict) -> dict[str, str]:
+    rows = call_daemon_rpc(config, "daemon_list_communication_reviews", {
+        "p_user_id": config["daemonUserId"],
+    })
+    return {
+        str(row["purpose"]): str(row.get("content") or "")
+        for row in (rows if isinstance(rows, list) else [])
+    }
+
+
 def fetch_communication_rows(config: dict, purpose: str) -> list[dict]:
     body = json.dumps({
         "p_purpose": purpose,

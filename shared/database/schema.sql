@@ -3,6 +3,7 @@ create table daemon_manager_requests (
   user_id uuid not null references auth.users(id) on delete cascade,
   action text not null default 'restart_execution' check (action = 'restart_execution'),
   status text not null default 'requested' check (status in ('requested', 'draining', 'restarting', 'completed', 'failed', 'cancelled')),
+  message text not null default 'daemon_complete' check (message in ('daemon_review', 'client_review', 'client_complete', 'daemon_complete')),
   blockers jsonb not null default '{"total":0,"agentTasks":0,"orchestrationBatches":0,"featureExecutions":0,"communications":{}}'::jsonb,
   requested_at timestamptz not null default now(),
   claimed_at timestamptz,
@@ -15,6 +16,7 @@ create table daemon_manager_requests (
 create table daemon_manager_state (
   user_id uuid primary key references auth.users(id) on delete cascade,
   state text not null default 'running' check (state in ('running', 'draining', 'restarting', 'degraded')),
+  message text not null default 'client_complete' check (message in ('daemon_review', 'client_review', 'client_complete', 'daemon_complete')),
   accepts_work boolean not null default true,
   active_request_id uuid references daemon_manager_requests(id) on delete set null,
   manager_instance_id uuid,
@@ -30,17 +32,40 @@ create table daemon_manager_state (
 create unique index daemon_manager_one_active_request_idx on daemon_manager_requests (user_id)
 where status in ('requested', 'draining', 'restarting');
 create index daemon_manager_requests_history_idx on daemon_manager_requests (user_id, requested_at desc);
+create index daemon_manager_requests_review_idx on daemon_manager_requests (user_id, updated_at, id)
+where message = 'daemon_review';
+create index daemon_manager_state_review_idx on daemon_manager_state (user_id, updated_at)
+where message = 'client_review';
+
+create function mark_daemon_manager_state_for_client_review()
+returns trigger language plpgsql set search_path = public as $$
+begin
+  if tg_op = 'UPDATE' and old.message = 'client_review' and new.message = 'client_complete' then
+    return new;
+  end if;
+  new.message = 'client_review';
+  return new;
+end;
+$$;
+create trigger mark_daemon_manager_state_review
+before insert or update on daemon_manager_state
+for each row execute function mark_daemon_manager_state_for_client_review();
 
 alter table daemon_manager_state enable row level security;
 alter table daemon_manager_requests enable row level security;
 revoke all on daemon_manager_state from anon, authenticated;
 revoke all on daemon_manager_requests from anon, authenticated;
 grant select on daemon_manager_state to authenticated;
+grant update (message) on daemon_manager_state to authenticated;
 grant select on daemon_manager_requests to authenticated;
 create policy "authenticated users can read own manager state" on daemon_manager_state
 for select to authenticated using (user_id = auth.uid());
 create policy "authenticated users can read own manager requests" on daemon_manager_requests
 for select to authenticated using (user_id = auth.uid());
+create policy "authenticated users can acknowledge own manager state" on daemon_manager_state
+for update to authenticated
+using (user_id = auth.uid() and message = 'client_review')
+with check (user_id = auth.uid() and message = 'client_complete');
 
 create function daemon_accepts_work(p_user_id uuid)
 returns boolean language sql stable security definer set search_path = public as $$
@@ -320,6 +345,8 @@ before update on agent_output_history for each row execute function set_updated_
 create index communications_review_idx on communications (user_id, purpose, message);
 create index daemon_payloads_review_idx on daemon_payloads (user_id, kind, message);
 create index agent_tasks_review_idx on agent_tasks (user_id, message, queue_sequence);
+create index agent_tasks_client_review_idx on agent_tasks (user_id, updated_at, id)
+where message = 'client_review';
 create index orchestration_batches_review_idx on orchestration_batches (user_id, message, created_at);
 create index daemon_events_review_idx on daemon_events (user_id, created_at desc)
 where message = 'client_review';
@@ -328,6 +355,16 @@ create index agent_output_history_recent_idx on agent_output_history (user_id, u
 create index agent_output_history_repository_idx on agent_output_history (user_id, repository);
 create index agent_output_history_features_idx on agent_output_history using gin (targeted_feature_paths);
 create index agent_output_history_conversation_idx on agent_output_history (user_id, conversation_id, created_at, id);
+
+create or replace function daemon_list_communication_reviews(p_user_id uuid)
+returns table(purpose text, content text, updated_at timestamptz)
+language sql security definer set search_path = public as $$
+  select communications.purpose, communications.content, communications.updated_at
+  from communications
+  where communications.user_id = p_user_id and communications.message = 'daemon_review'
+    and communications.purpose in ('agent_prompt', 'git_sync_request', 'feature_file_load', 'parameter_file_load', 'parameter_file_update', 'entry_point_update')
+  order by communications.purpose;
+$$;
 
 create or replace function daemon_get_communication(
   p_user_id uuid,
@@ -398,6 +435,7 @@ $$;
 grant execute on function daemon_get_communication(uuid, text) to anon;
 grant execute on function daemon_upsert_communication(uuid, text, text, text) to anon;
 grant execute on function daemon_upsert_payload(uuid, text, jsonb) to anon;
+grant execute on function daemon_list_communication_reviews(uuid) to anon;
 
 create or replace function daemon_upsert_agent_output_history(
   p_user_id uuid, p_prompt_id text, p_repository text, p_prompt text,
@@ -494,7 +532,8 @@ for each row execute function project_agent_task_to_output_history();
 
 create or replace function daemon_list_agent_tasks(p_user_id uuid)
 returns setof agent_tasks language sql security definer set search_path = public as $$
-  select * from agent_tasks where user_id = p_user_id and message = 'daemon_review' order by queue_sequence;
+  select * from agent_tasks where user_id = p_user_id and message = 'daemon_review'
+  order by queue_sequence limit 100;
 $$;
 
 create or replace function daemon_update_agent_task(p_user_id uuid, p_task_id uuid, p_expected_status text, p_updates jsonb)
@@ -528,7 +567,8 @@ $$;
 
 create or replace function daemon_list_orchestration_batches(p_user_id uuid)
 returns setof orchestration_batches language sql security definer set search_path = public as $$
-  select * from orchestration_batches where user_id = p_user_id and message = 'daemon_review' order by created_at;
+  select * from orchestration_batches where user_id = p_user_id and message = 'daemon_review'
+  order by created_at limit 100;
 $$;
 
 create or replace function daemon_record_event(p_user_id uuid, p_repository text, p_task_id uuid, p_batch_id uuid, p_severity text, p_message text)
@@ -569,6 +609,10 @@ create index feature_execution_runs_active_idx on feature_execution_runs (user_i
 create unique index feature_execution_runs_one_active_feature_idx
 on feature_execution_runs (user_id, project_directory, feature_file_path)
 where status in ('queued', 'running');
+create index feature_execution_runs_client_review_idx on feature_execution_runs (user_id, updated_at, id)
+where message = 'client_review';
+create index feature_execution_runs_daemon_review_idx on feature_execution_runs (user_id, status, created_at)
+where message = 'daemon_review';
 alter table feature_execution_runs enable row level security;
 create policy "authenticated users can insert own feature runs" on feature_execution_runs
 for insert to authenticated with check (
@@ -623,7 +667,9 @@ end;
 $$;
 create function daemon_list_active_feature_execution_runs(p_user_id uuid)
 returns setof feature_execution_runs language sql security definer set search_path = public as $$
-  select * from feature_execution_runs where user_id = p_user_id and status in ('queued', 'running') order by created_at;
+  select * from feature_execution_runs
+  where user_id = p_user_id and message = 'daemon_review' and status in ('queued', 'running')
+  order by created_at limit 100;
 $$;
 grant execute on function daemon_claim_feature_execution_run(uuid) to anon;
 grant execute on function daemon_update_feature_execution_run(uuid, uuid, text, jsonb) to anon;
@@ -638,12 +684,17 @@ begin
   select * into restart_request from daemon_manager_requests
   where user_id = owner_id and status in ('requested', 'draining', 'restarting')
   order by requested_at limit 1 for update;
-  if not found then insert into daemon_manager_requests (user_id) values (owner_id) returning * into restart_request; end if;
-  insert into daemon_manager_state (user_id, state, accepts_work, active_request_id, status_detail)
-  values (owner_id, 'draining', false, restart_request.id, 'Restart requested; waiting for accepted work.')
+  if not found then
+    insert into daemon_manager_requests (user_id, message) values (owner_id, 'daemon_review') returning * into restart_request;
+  else
+    update daemon_manager_requests set message = 'daemon_review', updated_at = now()
+    where id = restart_request.id returning * into restart_request;
+  end if;
+  insert into daemon_manager_state (user_id, state, accepts_work, active_request_id, status_detail, message)
+  values (owner_id, 'draining', false, restart_request.id, 'Restart requested; waiting for accepted work.', 'client_review')
   on conflict (user_id) do update set
     state = case when daemon_manager_state.state = 'restarting' then 'restarting' else 'draining' end,
-    accepts_work = false, active_request_id = restart_request.id,
+    accepts_work = false, active_request_id = restart_request.id, message = 'client_review',
     status_detail = case when daemon_manager_state.state = 'restarting' then daemon_manager_state.status_detail else 'Restart requested; waiting for accepted work.' end,
     updated_at = now();
   return to_jsonb(restart_request);
@@ -653,22 +704,46 @@ create function cancel_execution_restart(request_id uuid)
 returns jsonb language plpgsql security definer set search_path = public as $$
 declare cancelled_request daemon_manager_requests;
 begin
-  update daemon_manager_requests set status = 'cancelled', completed_at = now(), updated_at = now()
+  update daemon_manager_requests set status = 'cancelled', message = 'daemon_review', completed_at = now(), updated_at = now()
   where id = request_id and user_id = auth.uid() and status in ('requested', 'draining') returning * into cancelled_request;
   if not found then raise exception 'Restart can no longer be cancelled'; end if;
-  update daemon_manager_state set state = 'running', accepts_work = true, active_request_id = null,
-    status_detail = 'Restart cancelled.', updated_at = now()
+  update daemon_manager_state set state = 'running', accepts_work = true,
+    status_detail = 'Restart cancelled.', message = 'client_review', updated_at = now()
   where user_id = auth.uid() and active_request_id = request_id and state = 'draining';
   if not found then raise exception 'Restart replacement has already begun'; end if;
   return to_jsonb(cancelled_request);
 end;
 $$;
+create function daemon_manager_complete_control_request(p_user_id uuid, p_manager_instance_id uuid, p_request_id uuid, p_expected_updated_at timestamptz)
+returns boolean language plpgsql security definer set search_path = public as $$
+begin
+  update daemon_manager_requests manager_request set message = 'daemon_complete', updated_at = now()
+  from daemon_manager_state manager_state
+  where manager_request.id = p_request_id and manager_request.user_id = p_user_id
+    and manager_request.status = 'cancelled' and manager_request.message = 'daemon_review'
+    and manager_request.updated_at = p_expected_updated_at
+    and manager_state.user_id = p_user_id and manager_state.manager_instance_id = p_manager_instance_id
+    and manager_state.active_request_id = p_request_id;
+  if not found then return false; end if;
+  update daemon_manager_state set active_request_id = null, message = 'client_review', updated_at = now()
+  where user_id = p_user_id and manager_instance_id = p_manager_instance_id and active_request_id = p_request_id;
+  return found;
+end;
+$$;
 create function get_daemon_manager_status()
 returns jsonb language sql stable security definer set search_path = public as $$
-  select case when manager_state.user_id is null then null else to_jsonb(manager_state) || jsonb_build_object(
-    'activeRequest', case when manager_request.id is null then null else to_jsonb(manager_request) end) end
+  select case when manager_state.user_id is null then null else jsonb_build_object(
+    'state', manager_state.state, 'accepts_work', manager_state.accepts_work,
+    'manager_heartbeat_at', manager_state.manager_heartbeat_at,
+    'execution_process_id', manager_state.execution_process_id,
+    'execution_generation', manager_state.execution_generation,
+    'execution_started_at', manager_state.execution_started_at,
+    'last_successful_restart_at', manager_state.last_successful_restart_at,
+    'status_detail', manager_state.status_detail, 'updated_at', manager_state.updated_at,
+    'activeRequest', case when manager_request.id is null then null else jsonb_build_object(
+      'id', manager_request.id, 'status', manager_request.status, 'blockers', manager_request.blockers) end) end
   from (select auth.uid() user_id) owner
-  left join daemon_manager_state manager_state on manager_state.user_id = owner.user_id
+  left join daemon_manager_state manager_state on manager_state.user_id = owner.user_id and manager_state.message = 'client_review'
   left join daemon_manager_requests manager_request on manager_request.id = manager_state.active_request_id;
 $$;
 revoke all on function request_execution_restart() from public;
@@ -681,10 +756,10 @@ grant execute on function get_daemon_manager_status() to authenticated;
 create function daemon_manager_acquire_lease(p_user_id uuid, p_manager_instance_id uuid, p_stale_after_seconds integer)
 returns boolean language plpgsql security definer set search_path = public as $$
 begin
-  insert into daemon_manager_state (user_id, manager_instance_id, manager_heartbeat_at, status_detail)
-  values (p_user_id, p_manager_instance_id, now(), 'Manager connected.')
+  insert into daemon_manager_state (user_id, manager_instance_id, manager_heartbeat_at, status_detail, message)
+  values (p_user_id, p_manager_instance_id, now(), 'Manager connected.', 'client_review')
   on conflict (user_id) do update set manager_instance_id = excluded.manager_instance_id,
-    manager_heartbeat_at = now(), updated_at = now()
+    manager_heartbeat_at = now(), message = 'client_review', updated_at = now()
   where daemon_manager_state.manager_instance_id = p_manager_instance_id
     or daemon_manager_state.manager_instance_id is null or daemon_manager_state.manager_heartbeat_at is null
     or daemon_manager_state.manager_heartbeat_at < now() - make_interval(secs => greatest(p_stale_after_seconds, 1));
@@ -695,15 +770,19 @@ create function daemon_manager_publish_heartbeat(p_user_id uuid, p_manager_insta
 returns boolean language plpgsql security definer set search_path = public as $$
 begin
   update daemon_manager_state set manager_heartbeat_at = now(), execution_process_id = p_execution_process_id,
-    execution_started_at = p_execution_started_at, status_detail = coalesce(p_status_detail, status_detail), updated_at = now()
+    execution_started_at = p_execution_started_at, status_detail = coalesce(p_status_detail, status_detail),
+    message = 'client_review', updated_at = now()
   where user_id = p_user_id and manager_instance_id = p_manager_instance_id;
   return found;
 end;
 $$;
 create function daemon_manager_get_active_request(p_user_id uuid, p_manager_instance_id uuid)
 returns jsonb language sql security definer set search_path = public as $$
-  select case when manager_request.id is null then null else to_jsonb(manager_request) end
-  from daemon_manager_state manager_state left join daemon_manager_requests manager_request on manager_request.id = manager_state.active_request_id
+  select case when manager_request.id is null then null else jsonb_build_object(
+    'id', manager_request.id, 'status', manager_request.status,
+    'updated_at', manager_request.updated_at) end
+  from daemon_manager_state manager_state left join daemon_manager_requests manager_request
+    on manager_request.id = manager_state.active_request_id and manager_request.message = 'daemon_review'
   where manager_state.user_id = p_user_id and manager_state.manager_instance_id = p_manager_instance_id;
 $$;
 create function daemon_manager_claim_restart(p_user_id uuid, p_manager_instance_id uuid, p_request_id uuid)
@@ -726,15 +805,15 @@ begin
     'agentTasks', agent_count, 'orchestrationBatches', batch_count, 'featureExecutions', feature_count,
     'communications', communication_counts,
     'identifiers', jsonb_build_object(
-      'agentTasks', coalesce((select jsonb_agg(id order by queue_sequence) from agent_tasks where user_id = p_user_id and status in ('queued','running','verifying','ready','integrating','resolving')), '[]'::jsonb),
-      'orchestrationBatches', coalesce((select jsonb_agg(id order by created_at) from orchestration_batches where user_id = p_user_id and status in ('collecting','integrating','resolving')), '[]'::jsonb),
-      'featureExecutions', coalesce((select jsonb_agg(id order by created_at) from feature_execution_runs where user_id = p_user_id and status in ('queued','running')), '[]'::jsonb),
+      'agentTasks', coalesce((select jsonb_agg(id order by queue_sequence) from (select id, queue_sequence from agent_tasks where user_id = p_user_id and message = 'daemon_review' and status in ('queued','running','verifying','ready','integrating','resolving') order by queue_sequence limit 100) task_rows), '[]'::jsonb),
+      'orchestrationBatches', coalesce((select jsonb_agg(id order by created_at) from (select id, created_at from orchestration_batches where user_id = p_user_id and message = 'daemon_review' and status in ('collecting','integrating','resolving') order by created_at limit 100) batch_rows), '[]'::jsonb),
+      'featureExecutions', coalesce((select jsonb_agg(id order by created_at) from (select id, created_at from feature_execution_runs where user_id = p_user_id and message = 'daemon_review' and status in ('queued','running') order by created_at limit 100) run_rows), '[]'::jsonb),
       'communications', coalesce((select jsonb_agg(jsonb_build_object('purpose', purpose, 'updatedAt', updated_at) order by purpose) from communications where user_id = p_user_id and message = 'daemon_review' and purpose in ('agent_prompt','git_sync_request','feature_file_load','parameter_file_load','parameter_file_update','entry_point_update')), '[]'::jsonb)
     )) into result
   from (select
-    (select count(*) from agent_tasks where user_id = p_user_id and status in ('queued','running','verifying','ready','integrating','resolving')) agent_count,
-    (select count(*) from orchestration_batches where user_id = p_user_id and status in ('collecting','integrating','resolving')) batch_count,
-    (select count(*) from feature_execution_runs where user_id = p_user_id and status in ('queued','running')) feature_count,
+    (select count(*) from agent_tasks where user_id = p_user_id and message = 'daemon_review' and status in ('queued','running','verifying','ready','integrating','resolving')) agent_count,
+    (select count(*) from orchestration_batches where user_id = p_user_id and message = 'daemon_review' and status in ('collecting','integrating','resolving')) batch_count,
+    (select count(*) from feature_execution_runs where user_id = p_user_id and message = 'daemon_review' and status in ('queued','running')) feature_count,
     (select count(*) from communications where user_id = p_user_id and message = 'daemon_review' and purpose in ('agent_prompt','git_sync_request','feature_file_load','parameter_file_load','parameter_file_update','entry_point_update')) communication_count,
     coalesce((select jsonb_object_agg(purpose, purpose_count) from (
       select purpose, count(*) purpose_count from communications where user_id = p_user_id and message = 'daemon_review'
@@ -803,14 +882,14 @@ $$;
 create function daemon_manager_complete_restart(p_user_id uuid, p_manager_instance_id uuid, p_request_id uuid)
 returns boolean language plpgsql security definer set search_path = public as $$
 begin
-  update daemon_manager_requests manager_request set status = 'completed', completed_at = now(), failure_detail = null, updated_at = now()
+  update daemon_manager_requests manager_request set status = 'completed', message = 'daemon_complete', completed_at = now(), failure_detail = null, updated_at = now()
   from daemon_manager_state manager_state where manager_request.id = p_request_id and manager_request.user_id = p_user_id
     and manager_request.status = 'restarting' and manager_state.user_id = p_user_id
     and manager_state.manager_instance_id = p_manager_instance_id and manager_state.active_request_id = p_request_id;
   if not found then return false; end if;
   update daemon_manager_state set state = 'running', accepts_work = true, active_request_id = null,
     execution_generation = execution_generation + 1, last_successful_restart_at = now(),
-    status_detail = 'Execution restart completed.', manager_heartbeat_at = now(), updated_at = now()
+    status_detail = 'Execution restart completed.', message = 'client_review', manager_heartbeat_at = now(), updated_at = now()
   where user_id = p_user_id and manager_instance_id = p_manager_instance_id and active_request_id = p_request_id;
   return found;
 end;
@@ -827,6 +906,7 @@ revoke all on function daemon_manager_publish_degraded(uuid, uuid, text) from pu
 revoke all on function daemon_manager_publish_candidate(uuid, uuid, integer, timestamptz) from public;
 revoke all on function daemon_manager_complete_recovery(uuid, uuid) from public;
 revoke all on function daemon_manager_complete_restart(uuid, uuid, uuid) from public;
+revoke all on function daemon_manager_complete_control_request(uuid, uuid, uuid, timestamptz) from public;
 grant execute on function daemon_manager_acquire_lease(uuid, uuid, integer) to anon;
 grant execute on function daemon_manager_publish_heartbeat(uuid, uuid, integer, timestamptz, text) to anon;
 grant execute on function daemon_manager_get_active_request(uuid, uuid) to anon;
@@ -838,3 +918,4 @@ grant execute on function daemon_manager_publish_degraded(uuid, uuid, text) to a
 grant execute on function daemon_manager_publish_candidate(uuid, uuid, integer, timestamptz) to anon;
 grant execute on function daemon_manager_complete_recovery(uuid, uuid) to anon;
 grant execute on function daemon_manager_complete_restart(uuid, uuid, uuid) to anon;
+grant execute on function daemon_manager_complete_control_request(uuid, uuid, uuid, timestamptz) to anon;

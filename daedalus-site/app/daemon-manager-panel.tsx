@@ -23,6 +23,7 @@ export type DaemonManagerStatus = {
   execution_started_at: string | null;
   last_successful_restart_at: string | null;
   status_detail: string | null;
+  updated_at: string;
   activeRequest: DaemonManagerRequest | null;
 };
 
@@ -54,16 +55,22 @@ export default function DaemonManagerPanel({
           "get_daemon_manager_status", {},
         );
         if (!mounted) return;
-        const heartbeatTime = nextStatus?.manager_heartbeat_at
-          ? new Date(nextStatus.manager_heartbeat_at).valueOf()
+        const currentStatus = nextStatus ?? statusRef.current;
+        const heartbeatTime = currentStatus?.manager_heartbeat_at
+          ? new Date(currentStatus.manager_heartbeat_at).valueOf()
           : 0;
         const nextOnline = Boolean(
-          nextStatus && heartbeatTime && Date.now() - heartbeatTime <= HEARTBEAT_STALE_AFTER_MS,
+          currentStatus && heartbeatTime && Date.now() - heartbeatTime <= HEARTBEAT_STALE_AFTER_MS,
         );
-        setStatus(nextStatus);
-        statusRef.current = nextStatus;
+        if (nextStatus) {
+          setStatus(nextStatus);
+          statusRef.current = nextStatus;
+          void acknowledgeManagerStatus(
+            supabaseUrl, supabasePublishableKey, accessToken, nextStatus.updated_at,
+          ).catch(() => undefined);
+        }
         setOnline(nextOnline);
-        onStatusChange(nextStatus, nextOnline);
+        onStatusChange(currentStatus, nextOnline);
         setError("");
       } catch {
         if (!mounted) return;
@@ -148,6 +155,26 @@ export default function DaemonManagerPanel({
       </div>
     </aside>
   );
+}
+
+async function acknowledgeManagerStatus(
+  supabaseUrl: string, supabasePublishableKey: string, accessToken: string,
+  expectedUpdatedAt: string,
+) {
+  const url = new URL("/rest/v1/daemon_manager_state", supabaseUrl);
+  url.searchParams.set("message", "eq.client_review");
+  url.searchParams.set("updated_at", `eq.${expectedUpdatedAt}`);
+  const response = await fetch(url, {
+    method: "PATCH",
+    headers: {
+      apikey: supabasePublishableKey,
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ message: "client_complete" }),
+    cache: "no-store",
+  });
+  if (!response.ok) throw new Error("Manager status acknowledgement failed.");
 }
 
 function formatTime(value: string | null | undefined) {

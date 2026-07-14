@@ -16,7 +16,6 @@ import {
   fetchAgentOutputHistoryPage,
   fetchAgentOutputFeatureSummaries,
   fetchAgentOutputConversation,
-  fetchRecentAgentOutputHistory,
   groupAgentOutputsByFeature,
   mergeAgentOutputRecords,
   rerankAgentOutputSearch,
@@ -54,7 +53,7 @@ export default function AgentOutputViewer({
   accessToken, activitySummary, isOpen, liveExchanges, onAbandonDirectPrompt,
   onAnswerPlanningQuestion, onCancelDurableTask, onClearFinalizedTasks,
   onClose, onDeletedExchange, onImplementPlan, onPlanningReply, onRetryDirectPrompt,
-  onSelectedPromptIdChange, planningSession, pollIntervalMs, projects,
+  onSelectedPromptIdChange, planningSession, projects,
   selectedPromptId, supabasePublishableKey, supabaseUrl,
 }: AgentOutputViewerProps) {
   const [archive, setArchive] = useState<AgentOutputExchange[]>([]);
@@ -72,9 +71,11 @@ export default function AgentOutputViewer({
   const [mobileDetail, setMobileDetail] = useState(false);
   const [otherAnswer, setOtherAnswer] = useState("");
   const publishedPlanningPromptRef = useRef("");
+  const initialHistoryLoadTokenRef = useRef("");
 
   useEffect(() => {
-    if (!isOpen || !accessToken || archive.length > 0 || loading) return;
+    if (!isOpen || !accessToken || initialHistoryLoadTokenRef.current === accessToken) return;
+    initialHistoryLoadTokenRef.current = accessToken;
     setLoading(true);
     setFetchError("");
     void fetchAgentOutputHistoryPage(supabaseUrl, supabasePublishableKey, accessToken)
@@ -91,23 +92,7 @@ export default function AgentOutputViewer({
         summaries.map((summary) => [`${summary.repository}\u0000${summary.feature_path}`, Number(summary.result_count)]),
       )))
       .catch(() => undefined);
-  }, [accessToken, archive.length, isOpen, loading, onSelectedPromptIdChange, selectedPromptId, supabasePublishableKey, supabaseUrl]);
-
-  useEffect(() => {
-    if (!isOpen || !accessToken) return;
-    let active = true;
-    async function refresh() {
-      try {
-        const recent = await fetchRecentAgentOutputHistory(supabaseUrl, supabasePublishableKey, accessToken);
-        if (active) setArchive((current) => dedupeAgentOutputs([...recent, ...current]));
-      } catch {
-        return;
-      }
-    }
-    void refresh();
-    const interval = window.setInterval(refresh, pollIntervalMs);
-    return () => { active = false; window.clearInterval(interval); };
-  }, [accessToken, isOpen, pollIntervalMs, supabasePublishableKey, supabaseUrl]);
+  }, [accessToken, isOpen, onSelectedPromptIdChange, selectedPromptId, supabasePublishableKey, supabaseUrl]);
 
   useEffect(() => {
     if (!isOpen || !search.trim()) return;
@@ -193,6 +178,24 @@ export default function AgentOutputViewer({
     }
   }
 
+  async function refreshHistory() {
+    if (loading) return;
+    setLoading(true);
+    setFetchError("");
+    try {
+      const page = await fetchAgentOutputHistoryPage(
+        supabaseUrl, supabasePublishableKey, accessToken,
+      );
+      setArchive((current) => dedupeAgentOutputs([...page.exchanges, ...current]));
+      setCursor(page.cursor);
+      setHasMore(page.hasMore);
+    } catch (error) {
+      setFetchError(error instanceof Error ? error.message : "Unable to refresh history.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function deleteExchange(exchange: AgentOutputExchange) {
     if (!canDeleteAgentOutput(exchange) || deletingPromptId) return;
     setDeletingPromptId(exchange.promptId);
@@ -232,7 +235,10 @@ export default function AgentOutputViewer({
         <div className="border-b border-white/10 p-4">
           <div className="flex items-center justify-between gap-3">
             <div><p className="text-[11px] uppercase tracking-[0.28em] text-cyan-200">History</p><h2 className="mt-1 text-xl font-semibold text-white">Agent output</h2>{activitySummary ? <p className="mt-1 line-clamp-2 text-xs text-slate-400">{activitySummary}</p> : null}</div>
-            <button type="button" onClick={onClose} className="rounded-full border border-white/10 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10">Close</button>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => void refreshHistory()} disabled={loading} className="rounded-full border border-white/10 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10 disabled:opacity-50">Refresh</button>
+              <button type="button" onClick={onClose} className="rounded-full border border-white/10 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10">Close</button>
+            </div>
           </div>
           <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search complete archive..." className="mt-4 w-full rounded-full border border-white/10 bg-black/35 px-4 py-2.5 text-sm text-white outline-none placeholder:text-slate-500" />
         </div>

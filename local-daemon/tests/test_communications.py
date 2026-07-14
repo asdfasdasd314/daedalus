@@ -17,6 +17,7 @@ from daedalus_daemon.communications import (
     PARAMETER_FILES_PAYLOAD_KIND,
     PARAMETER_FILE_LOAD_PURPOSE,
     fetch_current_message,
+    fetch_current_messages,
     upsert_agent_output_history,
     post_feature_files,
     post_git_sync_result,
@@ -130,6 +131,31 @@ class UpdateCurrentMessageTests(unittest.TestCase):
             request_bodies,
             [{"p_purpose": PARAMETER_FILE_LOAD_PURPOSE, "p_user_id": "user-1"}],
         )
+
+    def test_reads_all_daemon_review_communications_in_one_rpc(self):
+        request_urls: list[str] = []
+
+        def fake_urlopen(http_request, timeout=None):
+            request_urls.append(http_request.full_url)
+            return FakeResponse([
+                {"purpose": FEATURE_FILE_LOAD_PURPOSE, "content": None},
+                {"purpose": AGENT_PROMPT_PURPOSE, "content": "prompt payload"},
+            ])
+
+        with patch("daedalus_daemon.communications.request.urlopen", side_effect=fake_urlopen):
+            reviews = fetch_current_messages({
+                "supabaseUrl": "https://example.supabase.co",
+                "supabasePublishableKey": "publishable-key",
+                "daemonUserId": "user-1",
+            })
+
+        self.assertEqual(request_urls, [
+            "https://example.supabase.co/rest/v1/rpc/daemon_list_communication_reviews",
+        ])
+        self.assertEqual(reviews, {
+            FEATURE_FILE_LOAD_PURPOSE: "",
+            AGENT_PROMPT_PURPOSE: "prompt payload",
+        })
 
     def test_terminal_batch_overrides_stale_daemon_review_state(self):
         request_bodies: list[dict] = []

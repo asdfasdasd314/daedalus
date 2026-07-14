@@ -115,3 +115,13 @@ def complete_restart(config: dict, instance_id: str, request_id: str) -> bool:
     return bool(call_manager_rpc(config, "daemon_manager_complete_restart", {
         **lease_values(config, instance_id), "p_request_id": request_id,
     }))
+
+
+def complete_control_request(
+    config: dict, instance_id: str, request_id: str, expected_updated_at: str,
+) -> bool:
+    return bool(call_manager_rpc(config, "daemon_manager_complete_control_request", {
+        **lease_values(config, instance_id),
+        "p_request_id": request_id,
+        "p_expected_updated_at": expected_updated_at,
+    }))

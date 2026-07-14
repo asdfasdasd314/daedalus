@@ -76,6 +76,7 @@ if __package__ in {None, ""}:
         SupabaseUnavailableError,
         GIT_SYNC_PURPOSE,
         fetch_current_message,
+        fetch_current_messages,
         upsert_agent_output_history,
         post_feature_files,
         post_git_sync_result,
@@ -106,6 +107,7 @@ else:
         SupabaseUnavailableError,
         GIT_SYNC_PURPOSE,
         fetch_current_message,
+        fetch_current_messages,
         upsert_agent_output_history,
         post_feature_files,
         post_git_sync_result,
@@ -128,13 +130,15 @@ class DirectPromptSupervisor:
         self.executor = ThreadPoolExecutor(max_workers=1)
         self.active_future: Future | None = None
 
-    def run_cycle(self, _config: dict | None = None) -> None:
+    def run_cycle(self, _config: dict | None = None, read_message=fetch_current_message) -> None:
         if self.active_future:
             if not self.active_future.done():
                 return
             self.active_future.result()
 
-        self.active_future = self.executor.submit(run_agent_prompt_cycle, self.config)
+        self.active_future = self.executor.submit(
+            run_agent_prompt_cycle, self.config, read_message
+        )
 
 
 def register_agent_process(task_id: str, process: subprocess.Popen) -> None:
@@ -1253,13 +1257,27 @@ def main() -> None:
             time.sleep(config["pollIntervalMs"] / 1000)
             continue
 
-        if not run_cycle_safely("feature_file_load", run_poll_cycle, config):
+        try:
+            communication_reviews = fetch_current_messages(config)
+        except SupabaseUnavailableError as error:
+            cooldown_ms = config.get("networkOutageCooldownMs", 15000)
+            print(
+                "Daemon communication inbox unavailable: "
+                f"{error}. Waiting {cooldown_ms}ms before retrying."
+            )
+            time.sleep(cooldown_ms / 1000)
+            continue
+
+        def read_review(_config: dict, purpose: str) -> str | None:
+            return communication_reviews.get(purpose)
+
+        if not run_cycle_safely("feature_file_load", lambda current: run_poll_cycle(current, read_message=read_review), config):
             time.sleep(config["pollIntervalMs"] / 1000)
             continue
 
         if not run_cycle_safely(
             "parameter_file_load",
-            run_parameter_file_poll_cycle,
+            lambda current: run_parameter_file_poll_cycle(current, read_message=read_review),
             config,
         ):
             time.sleep(config["pollIntervalMs"] / 1000)
@@ -1267,21 +1285,21 @@ def main() -> None:
 
         if not run_cycle_safely(
             "parameter_file_update",
-            run_parameter_file_update_cycle,
+            lambda current: run_parameter_file_update_cycle(current, read_message=read_review),
             config,
         ):
             time.sleep(config["pollIntervalMs"] / 1000)
             continue
 
-        if not run_cycle_safely("entry_point_update", run_entry_point_update_cycle, config):
+        if not run_cycle_safely("entry_point_update", lambda current: run_entry_point_update_cycle(current, read_message=read_review), config):
             time.sleep(config["pollIntervalMs"] / 1000)
             continue
 
-        if not run_cycle_safely("agent_prompt", direct_prompt_supervisor.run_cycle, config):
+        if not run_cycle_safely("agent_prompt", lambda current: direct_prompt_supervisor.run_cycle(current, read_message=read_review), config):
             time.sleep(config["pollIntervalMs"] / 1000)
             continue
 
-        if not run_cycle_safely("git_sync", run_git_sync_cycle, config):
+        if not run_cycle_safely("git_sync", lambda current: run_git_sync_cycle(current, read_message=read_review), config):
             time.sleep(config["pollIntervalMs"] / 1000)
             continue
 

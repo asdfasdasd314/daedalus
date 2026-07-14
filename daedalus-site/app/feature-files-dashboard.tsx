@@ -192,12 +192,14 @@ type AgentTaskRow = {
   verification_attempts: number;
   cancel_requested?: boolean;
   message?: string;
+  updated_at: string;
 };
 
 type DaemonEventRow = {
   id: number;
   severity: "info" | "warning" | "error";
   content: string;
+  created_at: string;
 };
 
 type ParsedAgentPromptRow = {
@@ -206,7 +208,9 @@ type ParsedAgentPromptRow = {
 };
 
 type DaemonPayloadRow<TPayload> = {
+  kind: string;
   payload: TPayload;
+  updated_at: string;
 };
 
 type ParameterUpdateRequest = {
@@ -228,7 +232,8 @@ type FeatureExecutionRunRow = {
   id: string; project_directory: string; feature_file_path: string;
   status: FeatureExecutionStatus; cancel_requested: boolean; command: string[]; parameter_file_path: string; entry_point_path: string;
   started_at: string | null; completed_at: string | null; exit_code: number | null;
-  stdout_tail: string; stderr_tail: string; error: string; message: string;
+  stdout_tail: string; stderr_tail: string; error: string; message: string; updated_at: string;
+  detail_loaded?: boolean;
 };
 
 export default function FeatureFilesDashboard({
@@ -635,12 +640,11 @@ export default function FeatureFilesDashboard({
       const pollStartedAt = Date.now();
 
       try {
-        const nextMessage = await fetchCurrentMessage(
+        const reviews = await fetchCommunicationReviews(
           supabaseUrl,
           supabasePublishableKey,
           accessToken,
           currentUserId,
-          FEATURE_FILE_LOAD_PURPOSE,
         );
 
         if (!isMounted) {
@@ -651,14 +655,23 @@ export default function FeatureFilesDashboard({
           return;
         }
 
-        setError("");
-        setMessage(nextMessage);
-        if (nextMessage) {
-          await completeCommunicationReview(
-            supabaseUrl, supabasePublishableKey, accessToken, currentUserId,
-            FEATURE_FILE_LOAD_PURPOSE,
-          );
+        for (const review of reviews) {
+          const content = review.content ?? "";
+          if (review.purpose === FEATURE_FILE_LOAD_PURPOSE) setMessage(content);
+          if (review.purpose === PARAMETER_FILE_LOAD_PURPOSE) setParameterFileMessage(content);
+          if (review.purpose === PARAMETER_FILE_UPDATE_PURPOSE) setParameterUpdateMessage(content);
+          if (review.purpose === ENTRY_POINT_UPDATE_PURPOSE) setEntryPointUpdateMessage(content);
+          if (review.purpose === AGENT_PROMPT_PURPOSE) {
+            setAgentPromptMessage(content);
+            // eslint-disable-next-line react-hooks/immutability
+            syncAgentPromptQueueFromRowMessage(content);
+          }
         }
+        setError("");
+        await Promise.all(reviews.map((review) => completeCommunicationReview(
+          supabaseUrl, supabasePublishableKey, accessToken, currentUserId,
+          review.purpose, review.updated_at,
+        )));
       } catch {
         if (!isMounted) {
           return;
@@ -675,6 +688,7 @@ export default function FeatureFilesDashboard({
       isMounted = false;
       window.clearInterval(intervalId);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     accessToken,
     currentUser,
@@ -683,22 +697,6 @@ export default function FeatureFilesDashboard({
     supabasePublishableKey,
     supabaseUrl,
   ]);
-
-  useEffect(() => {
-    if (!currentUser || !accessToken) return;
-    let isMounted = true;
-    async function pollEntryPointUpdateMessage() {
-      try {
-        const nextMessage = await fetchCurrentMessage(supabaseUrl, supabasePublishableKey, accessToken, currentUserId, ENTRY_POINT_UPDATE_PURPOSE);
-        if (!isMounted || !nextMessage) return;
-        setEntryPointUpdateMessage(nextMessage);
-        await completeCommunicationReview(supabaseUrl, supabasePublishableKey, accessToken, currentUserId, ENTRY_POINT_UPDATE_PURPOSE);
-      } catch { return; }
-    }
-    void pollEntryPointUpdateMessage();
-    const intervalId = window.setInterval(pollEntryPointUpdateMessage, pollIntervalMs);
-    return () => { isMounted = false; window.clearInterval(intervalId); };
-  }, [accessToken, currentUser, currentUserId, pollIntervalMs, supabasePublishableKey, supabaseUrl]);
 
   useEffect(() => {
     const result = parseParameterUpdateRowMessage(entryPointUpdateMessage) as { state?: string; error?: string } | null;
@@ -735,6 +733,15 @@ export default function FeatureFilesDashboard({
     let requestGeneration = 0;
     const pollUserId = currentUserId;
 
+    void fetchActiveAgentTaskSummaries(
+      supabaseUrl, supabasePublishableKey, accessToken, pollUserId,
+    ).then((rows) => {
+      if (!isMounted) return;
+      setDurableAgentTasks(rows.map(mapAgentTaskRowToQueueEntry));
+      for (const row of rows) previousDurableTaskStatusesRef.current.set(row.id, row.status);
+      hasSeededDurableTaskStatusesRef.current = true;
+    }).catch(() => undefined);
+
     async function pollDurableAgentTasks() {
       if (isPollInFlight) {
         return;
@@ -744,25 +751,19 @@ export default function FeatureFilesDashboard({
       const acceptedGeneration = ++requestGeneration;
 
       try {
-        const [rows, latestEvent, latestIntegrationEvent] = await Promise.all([
+        const [rows, events] = await Promise.all([
           fetchAgentTasks(
             supabaseUrl,
             supabasePublishableKey,
             accessToken,
             pollUserId,
           ),
-          fetchLatestDaemonEvent(
+          fetchDaemonEvents(
             supabaseUrl,
             supabasePublishableKey,
             accessToken,
             pollUserId,
-          ).catch(() => null),
-          fetchLatestSuccessfulIntegrationEvent(
-            supabaseUrl,
-            supabasePublishableKey,
-            accessToken,
-            pollUserId,
-          ).catch(() => null),
+          ).catch(() => []),
         ]);
 
         if (
@@ -774,7 +775,11 @@ export default function FeatureFilesDashboard({
         }
 
         const durableQueue = rows.map(mapAgentTaskRowToQueueEntry);
-        const reviewRows = rows.filter((row) => row.message === CLIENT_REVIEW);
+        const latestEvent = events[0] ?? null;
+        const latestIntegrationEvent = events.find((event) =>
+          event.severity === "info" && event.content.includes("integrated successfully into the repository"),
+        ) ?? null;
+        let finalizedTransitionCount = 0;
 
         if (!hasSeededDurableTaskStatusesRef.current) {
           for (const entry of durableQueue) {
@@ -817,6 +822,7 @@ export default function FeatureFilesDashboard({
           }
 
           if (nextNotifications.length > 0) {
+            finalizedTransitionCount = nextNotifications.length;
             setAgentTaskNotifications((currentNotifications) =>
               [...nextNotifications.reverse(), ...currentNotifications].slice(
                 0,
@@ -826,10 +832,14 @@ export default function FeatureFilesDashboard({
           }
         }
 
-        setFinalizedDurableTaskCount(
-          rows.filter((row) => isFinalizedAgentTaskStatus(row.status)).length,
+        setFinalizedDurableTaskCount((currentCount) =>
+          currentCount + finalizedTransitionCount,
         );
-        setDurableAgentTasks(durableQueue);
+        setDurableAgentTasks((currentRows) => {
+          const nextRows = new Map(currentRows.map((row) => [row.promptId, row]));
+          for (const row of durableQueue) nextRows.set(row.promptId, row);
+          return [...nextRows.values()].sort((left, right) => left.enqueuedAt - right.enqueuedAt);
+        });
         if (latestIntegrationEvent) {
           setLastIntegratedBatchStatus(
             `Daemon: ${latestIntegrationEvent.content}`,
@@ -843,12 +853,12 @@ export default function FeatureFilesDashboard({
           setPromptStatus(`Daemon: ${latestEvent.content}`);
         }
         await Promise.all([
-          ...reviewRows.map((row) => completeAgentTaskReview(
-            supabaseUrl, supabasePublishableKey, accessToken, pollUserId, row.id,
+          ...rows.map((row) => completeAgentTaskReview(
+            supabaseUrl, supabasePublishableKey, accessToken, pollUserId, row.id, row.updated_at,
           )),
-          ...(latestEvent ? [completeDaemonEventReview(
-            supabaseUrl, supabasePublishableKey, accessToken, pollUserId, latestEvent.id,
-          )] : []),
+          ...events.map((event) => completeDaemonEventReview(
+            supabaseUrl, supabasePublishableKey, accessToken, pollUserId, event.id,
+          )),
         ]);
       } catch {
         return;
@@ -911,16 +921,30 @@ export default function FeatureFilesDashboard({
   useEffect(() => {
     if (!currentUser || !accessToken) return;
     let mounted = true;
+    void Promise.all([
+      fetchFeatureExecutionHydration(
+        supabaseUrl, supabasePublishableKey, accessToken, currentUserId,
+      ),
+      fetchFeatureExecutionHistorySummaries(
+        supabaseUrl, supabasePublishableKey, accessToken, currentUserId,
+      ),
+    ]).then(([activeRows, historyRows]) => {
+      if (mounted) setFeatureExecutionRuns([...activeRows, ...historyRows]);
+    }).catch(() => undefined);
     async function pollFeatureRuns() {
       try {
         const rows = await fetchFeatureExecutionRuns(
           supabaseUrl, supabasePublishableKey, accessToken, currentUserId,
         );
         if (!mounted) return;
-        setFeatureExecutionRuns(rows);
-        await Promise.all(rows.filter((row) => row.message === CLIENT_REVIEW).map((row) =>
+        setFeatureExecutionRuns((currentRows) => {
+          const nextRows = new Map(currentRows.map((row) => [row.id, row]));
+          for (const row of rows) nextRows.set(row.id, row);
+          return [...nextRows.values()];
+        });
+        await Promise.all(rows.map((row) =>
           completeFeatureExecutionReview(
-            supabaseUrl, supabasePublishableKey, accessToken, currentUserId, row.id,
+            supabaseUrl, supabasePublishableKey, accessToken, currentUserId, row.id, row.updated_at,
           ),
         ));
       } catch {
@@ -931,6 +955,22 @@ export default function FeatureFilesDashboard({
     const interval = window.setInterval(pollFeatureRuns, pollIntervalMs);
     return () => { mounted = false; window.clearInterval(interval); };
   }, [accessToken, currentUser, currentUserId, pollIntervalMs, supabasePublishableKey, supabaseUrl]);
+
+  useEffect(() => {
+    if (!currentUser || !accessToken || !selectedFeatureSession) return;
+    const summary = featureExecutionRuns.find((run) =>
+      run.project_directory === selectedFeatureSession.projectPath &&
+      normalizeFeatureFilePath(run.feature_file_path) === selectedFeatureSession.filePath &&
+      !run.detail_loaded && ["completed", "failed", "cancelled"].includes(run.status),
+    );
+    if (!summary) return;
+    void fetchFeatureExecutionRunDetail(
+      supabaseUrl, supabasePublishableKey, accessToken, currentUserId, summary.id,
+    ).then((detail) => {
+      if (!detail) return;
+      setFeatureExecutionRuns((rows) => rows.map((row) => row.id === detail.id ? detail : row));
+    }).catch(() => undefined);
+  }, [accessToken, currentUser, currentUserId, featureExecutionRuns, selectedFeatureSession, supabasePublishableKey, supabaseUrl]);
 
   useEffect(() => {
     if (parameterFileMessage !== DAEMON_SENT_PARAMETER_FILES) {
@@ -973,31 +1013,34 @@ export default function FeatureFilesDashboard({
     let isMounted = true;
 
     async function pollProjectPayloads() {
-      const [featurePayload, parameterPayload] = await Promise.all([
-        fetchDaemonPayload<{ projects?: FeatureFileProjects }>(
-          supabaseUrl, supabasePublishableKey, accessToken, currentUserId,
-          FEATURE_FILES_PAYLOAD_KIND,
-        ),
-        fetchDaemonPayload<{ projects?: ParameterFileProjects }>(
-          supabaseUrl, supabasePublishableKey, accessToken, currentUserId,
-          PARAMETER_FILES_PAYLOAD_KIND,
-        ),
-      ]);
+      const reviews = await fetchDaemonPayloadReviews(
+        supabaseUrl, supabasePublishableKey, accessToken, currentUserId,
+      );
       if (!isMounted) return;
-      if (featurePayload) {
-        setProjects(featurePayload.projects ?? {});
-        setIsLoadingFeatureFiles(false);
+      for (const review of reviews) {
+        if (review.kind === FEATURE_FILES_PAYLOAD_KIND) {
+          const payload = review.payload as { projects?: FeatureFileProjects };
+          setProjects(payload.projects ?? {});
+          setIsLoadingFeatureFiles(false);
+        } else if (review.kind === PARAMETER_FILES_PAYLOAD_KIND) {
+          const payload = review.payload as { projects?: ParameterFileProjects };
+          setParameterProjects(payload.projects ?? {});
+          setIsLoadingParameterFiles(false);
+        } else if (review.kind === GIT_SYNC_PAYLOAD_KIND) {
+          const nextResult = review.payload as GitSyncResult;
+          const currentRequestId = activeGitSyncRequestId.current;
+          if (!currentRequestId || nextResult.requestId === currentRequestId) {
+            setGitSyncResult(nextResult);
+            setGitSyncStatus(nextResult.status === "success"
+              ? `${nextResult.operation} completed successfully.`
+              : `${nextResult.operation} failed. Review the command output below.`);
+            setIsGitSyncRequestInFlight(false);
+            activeGitSyncRequestId.current = "";
+          }
+        }
         await completeDaemonPayloadReview(
           supabaseUrl, supabasePublishableKey, accessToken, currentUserId,
-          FEATURE_FILES_PAYLOAD_KIND,
-        );
-      }
-      if (parameterPayload) {
-        setParameterProjects(parameterPayload.projects ?? {});
-        setIsLoadingParameterFiles(false);
-        await completeDaemonPayloadReview(
-          supabaseUrl, supabasePublishableKey, accessToken, currentUserId,
-          PARAMETER_FILES_PAYLOAD_KIND,
+          review.kind, review.updated_at,
         );
       }
     }
@@ -1109,182 +1152,6 @@ export default function FeatureFilesDashboard({
   ]);
 
   useEffect(() => {
-    if (!currentUser || !accessToken) {
-      return;
-    }
-
-    let isMounted = true;
-
-    async function pollAgentPromptMessage() {
-      try {
-        const nextMessage = await fetchCurrentMessage(
-          supabaseUrl,
-          supabasePublishableKey,
-          accessToken,
-          currentUserId,
-          AGENT_PROMPT_PURPOSE,
-        );
-
-        if (!isMounted) {
-          return;
-        }
-
-        setAgentPromptMessage(nextMessage);
-        if (nextMessage) {
-          await completeCommunicationReview(
-            supabaseUrl, supabasePublishableKey, accessToken, currentUserId,
-            AGENT_PROMPT_PURPOSE,
-          );
-        }
-        // eslint-disable-next-line react-hooks/immutability
-        syncAgentPromptQueueFromRowMessage(nextMessage);
-      } catch {
-        return;
-      }
-    }
-
-    void pollAgentPromptMessage();
-    const intervalId = window.setInterval(
-      pollAgentPromptMessage,
-      pollIntervalMs,
-    );
-
-    return () => {
-      isMounted = false;
-      window.clearInterval(intervalId);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    accessToken,
-    currentUser,
-    currentUserId,
-    pollIntervalMs,
-    supabasePublishableKey,
-    supabaseUrl,
-  ]);
-
-  useEffect(() => {
-    if (!currentUser || !accessToken) {
-      return;
-    }
-
-    let isMounted = true;
-
-    async function pollParameterFileMessage() {
-      const pollStartedAt = Date.now();
-
-      try {
-        const nextMessage = await fetchCurrentMessage(
-          supabaseUrl,
-          supabasePublishableKey,
-          accessToken,
-          currentUserId,
-          PARAMETER_FILE_LOAD_PURPOSE,
-        );
-
-        if (!isMounted) {
-          return;
-        }
-
-        if (pollStartedAt < latestLocalWriteStartedAt.current) {
-          return;
-        }
-
-        setError("");
-        setParameterFileMessage(nextMessage);
-        if (nextMessage) {
-          await completeCommunicationReview(
-            supabaseUrl, supabasePublishableKey, accessToken, currentUserId,
-            PARAMETER_FILE_LOAD_PURPOSE,
-          );
-        }
-      } catch {
-        if (!isMounted) {
-          return;
-        }
-
-        setError("Unable to reach Supabase right now.");
-      }
-    }
-
-    void pollParameterFileMessage();
-    const intervalId = window.setInterval(
-      pollParameterFileMessage,
-      pollIntervalMs,
-    );
-
-    return () => {
-      isMounted = false;
-      window.clearInterval(intervalId);
-    };
-  }, [
-    accessToken,
-    currentUser,
-    currentUserId,
-    pollIntervalMs,
-    supabasePublishableKey,
-    supabaseUrl,
-  ]);
-
-  useEffect(() => {
-    if (!currentUser || !accessToken) {
-      return;
-    }
-
-    let isMounted = true;
-
-    async function pollParameterUpdateMessage() {
-      const pollStartedAt = Date.now();
-
-      try {
-        const nextMessage = await fetchCurrentMessage(
-          supabaseUrl,
-          supabasePublishableKey,
-          accessToken,
-          currentUserId,
-          PARAMETER_FILE_UPDATE_PURPOSE,
-        );
-
-        if (!isMounted) {
-          return;
-        }
-
-        if (pollStartedAt < latestParameterUpdateWriteStartedAt.current) {
-          return;
-        }
-
-        setParameterUpdateMessage(nextMessage);
-        if (nextMessage) {
-          await completeCommunicationReview(
-            supabaseUrl, supabasePublishableKey, accessToken, currentUserId,
-            PARAMETER_FILE_UPDATE_PURPOSE,
-          );
-        }
-      } catch {
-        return;
-      }
-    }
-
-    void pollParameterUpdateMessage();
-    const intervalId = window.setInterval(
-      pollParameterUpdateMessage,
-      pollIntervalMs,
-    );
-
-    return () => {
-      isMounted = false;
-      window.clearInterval(intervalId);
-    };
-  }, [
-    accessToken,
-    currentUser,
-    currentUserId,
-    pollIntervalMs,
-    supabasePublishableKey,
-    supabaseUrl,
-  ]);
-
-  useEffect(() => {
     const parsedMessage = parseParameterUpdateRowMessage(parameterUpdateMessage);
 
     if (parsedMessage?.state !== DAEMON_SENT_PARAMETER_FILES) {
@@ -1351,65 +1218,6 @@ export default function FeatureFilesDashboard({
     currentUser,
     daemonAcceptsWork,
     isAgentPromptQueueHydrated,
-  ]);
-
-  useEffect(() => {
-    if (!currentUser || !accessToken) {
-      return;
-    }
-
-    let isMounted = true;
-
-    async function pollGitSyncResult() {
-      try {
-        const nextResult = await fetchLatestGitSyncResult(
-          supabaseUrl,
-          supabasePublishableKey,
-          accessToken,
-          currentUserId,
-        );
-
-        if (!isMounted || !nextResult) {
-          return;
-        }
-
-        const currentRequestId = activeGitSyncRequestId.current;
-
-        if (currentRequestId && nextResult.requestId !== currentRequestId) {
-          return;
-        }
-
-        setGitSyncResult(nextResult);
-        setGitSyncStatus(
-          nextResult.status === "success"
-            ? `${nextResult.operation} completed successfully.`
-            : `${nextResult.operation} failed. Review the command output below.`,
-        );
-        setIsGitSyncRequestInFlight(false);
-        activeGitSyncRequestId.current = "";
-        await completeDaemonPayloadReview(
-          supabaseUrl, supabasePublishableKey, accessToken, currentUserId,
-          GIT_SYNC_PAYLOAD_KIND,
-        );
-      } catch {
-        return;
-      }
-    }
-
-    void pollGitSyncResult();
-    const intervalId = window.setInterval(pollGitSyncResult, pollIntervalMs);
-
-    return () => {
-      isMounted = false;
-      window.clearInterval(intervalId);
-    };
-  }, [
-    accessToken,
-    currentUser,
-    currentUserId,
-    pollIntervalMs,
-    supabasePublishableKey,
-    supabaseUrl,
   ]);
 
   useEffect(() => {
@@ -4007,19 +3815,18 @@ export default function FeatureFilesDashboard({
   );
 }
 
-async function fetchCurrentMessage(
+async function fetchCommunicationReviews(
   supabaseUrl: string,
   supabasePublishableKey: string,
   accessToken: string,
   userId: string,
-  purpose: string,
 ) {
   const url = new URL("/rest/v1/communications", supabaseUrl);
-  url.searchParams.set("select", "content,purpose");
+  url.searchParams.set("select", "content,purpose,updated_at");
   url.searchParams.set("user_id", `eq.${userId}`);
-  url.searchParams.set("purpose", `eq.${purpose}`);
+  url.searchParams.set("purpose", `in.(${[FEATURE_FILE_LOAD_PURPOSE, PARAMETER_FILE_LOAD_PURPOSE, PARAMETER_FILE_UPDATE_PURPOSE, ENTRY_POINT_UPDATE_PURPOSE, AGENT_PROMPT_PURPOSE].join(",")})`);
   url.searchParams.set("message", `eq.${CLIENT_REVIEW}`);
-  url.searchParams.set("limit", "1");
+  url.searchParams.set("limit", "10");
   const response = await fetch(url, {
     headers: getAuthenticatedSupabaseHeaders(
       supabasePublishableKey,
@@ -4032,8 +3839,7 @@ async function fetchCurrentMessage(
     throw new Error("communications message fetch failed");
   }
 
-  const rows = (await response.json()) as Array<{ content?: string | null }>;
-  return rows[0]?.content ?? "";
+  return (await response.json()) as Array<{ content: string | null; purpose: string; updated_at: string }>;
 }
 
 async function updateMessage(
@@ -4103,11 +3909,13 @@ async function completeCommunicationReview(
   accessToken: string,
   userId: string,
   purpose: string,
+  expectedUpdatedAt?: string,
 ) {
   const url = new URL("/rest/v1/communications", supabaseUrl);
   url.searchParams.set("user_id", `eq.${userId}`);
   url.searchParams.set("purpose", `eq.${purpose}`);
   url.searchParams.set("message", `eq.${CLIENT_REVIEW}`);
+  if (expectedUpdatedAt) url.searchParams.set("updated_at", `eq.${expectedUpdatedAt}`);
   const response = await fetch(url, {
     method: "PATCH",
     headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
@@ -4152,17 +3960,36 @@ async function fetchDaemonPayload<TPayload>(
   return row.payload;
 }
 
+async function fetchDaemonPayloadReviews(
+  supabaseUrl: string, supabasePublishableKey: string, accessToken: string, userId: string,
+) {
+  const url = new URL("/rest/v1/daemon_payloads", supabaseUrl);
+  url.searchParams.set("select", "kind,payload,updated_at");
+  url.searchParams.set("user_id", `eq.${userId}`);
+  url.searchParams.set("kind", `in.(${FEATURE_FILES_PAYLOAD_KIND},${PARAMETER_FILES_PAYLOAD_KIND},${GIT_SYNC_PAYLOAD_KIND})`);
+  url.searchParams.set("message", `eq.${CLIENT_REVIEW}`);
+  url.searchParams.set("limit", "10");
+  const response = await fetch(url, {
+    headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
+    cache: "no-store",
+  });
+  if (!response.ok) throw new Error("daemon payload review fetch failed");
+  return (await response.json()) as Array<DaemonPayloadRow<unknown>>;
+}
+
 async function completeDaemonPayloadReview(
   supabaseUrl: string,
   supabasePublishableKey: string,
   accessToken: string,
   userId: string,
   kind: string,
+  expectedUpdatedAt?: string,
 ) {
   const url = new URL("/rest/v1/daemon_payloads", supabaseUrl);
   url.searchParams.set("user_id", `eq.${userId}`);
   url.searchParams.set("kind", `eq.${kind}`);
   url.searchParams.set("message", `eq.${CLIENT_REVIEW}`);
+  if (expectedUpdatedAt) url.searchParams.set("updated_at", `eq.${expectedUpdatedAt}`);
   const response = await fetch(url, {
     method: "PATCH",
     headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
@@ -4586,11 +4413,60 @@ async function fetchFeatureExecutionRuns(
   supabaseUrl: string, supabasePublishableKey: string, accessToken: string, userId: string,
 ) {
   const url = new URL("/rest/v1/feature_execution_runs", supabaseUrl);
+  url.searchParams.set("select", "id,project_directory,feature_file_path,status,cancel_requested,command,parameter_file_path,entry_point_path,started_at,completed_at,exit_code,stdout_tail,stderr_tail,error,message,updated_at");
   url.searchParams.set("user_id", `eq.${userId}`);
-  url.searchParams.set("order", "created_at.desc");
+  url.searchParams.set("message", `eq.${CLIENT_REVIEW}`);
+  url.searchParams.set("order", "updated_at.asc");
+  url.searchParams.set("limit", "50");
   const response = await fetch(url, { headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken) });
   if (!response.ok) throw new Error("feature execution run query failed");
-  return await response.json() as FeatureExecutionRunRow[];
+  const rows = await response.json() as FeatureExecutionRunRow[];
+  return rows.map((row) => ({ ...row, detail_loaded: true }));
+}
+
+async function fetchFeatureExecutionHydration(
+  supabaseUrl: string, supabasePublishableKey: string, accessToken: string, userId: string,
+) {
+  const url = new URL("/rest/v1/feature_execution_runs", supabaseUrl);
+  url.searchParams.set("select", "id,project_directory,feature_file_path,status,cancel_requested,command,parameter_file_path,entry_point_path,started_at,completed_at,exit_code,error,message,updated_at");
+  url.searchParams.set("user_id", `eq.${userId}`);
+  url.searchParams.set("status", "in.(queued,running)");
+  url.searchParams.set("message", `eq.${DAEMON_REVIEW}`);
+  url.searchParams.set("order", "created_at.desc");
+  url.searchParams.set("limit", "50");
+  const response = await fetch(url, { headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken), cache: "no-store" });
+  if (!response.ok) throw new Error("feature execution hydration query failed");
+  const rows = await response.json() as Array<Omit<FeatureExecutionRunRow, "stdout_tail" | "stderr_tail">>;
+  return rows.map((row) => ({ ...row, stdout_tail: "", stderr_tail: "", detail_loaded: true }));
+}
+
+async function fetchFeatureExecutionHistorySummaries(
+  supabaseUrl: string, supabasePublishableKey: string, accessToken: string, userId: string,
+) {
+  const url = new URL("/rest/v1/feature_execution_runs", supabaseUrl);
+  url.searchParams.set("select", "id,project_directory,feature_file_path,status,cancel_requested,command,parameter_file_path,entry_point_path,started_at,completed_at,exit_code,error,message,updated_at");
+  url.searchParams.set("user_id", `eq.${userId}`);
+  url.searchParams.set("status", "in.(completed,failed,cancelled)");
+  url.searchParams.set("order", "created_at.desc");
+  url.searchParams.set("limit", "50");
+  const response = await fetch(url, { headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken), cache: "no-store" });
+  if (!response.ok) throw new Error("feature execution history query failed");
+  const rows = await response.json() as Array<Omit<FeatureExecutionRunRow, "stdout_tail" | "stderr_tail">>;
+  return rows.map((row) => ({ ...row, stdout_tail: "", stderr_tail: "", detail_loaded: false }));
+}
+
+async function fetchFeatureExecutionRunDetail(
+  supabaseUrl: string, supabasePublishableKey: string, accessToken: string, userId: string, runId: string,
+) {
+  const url = new URL("/rest/v1/feature_execution_runs", supabaseUrl);
+  url.searchParams.set("select", "id,project_directory,feature_file_path,status,cancel_requested,command,parameter_file_path,entry_point_path,started_at,completed_at,exit_code,stdout_tail,stderr_tail,error,message,updated_at");
+  url.searchParams.set("user_id", `eq.${userId}`);
+  url.searchParams.set("id", `eq.${runId}`);
+  url.searchParams.set("limit", "1");
+  const response = await fetch(url, { headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken), cache: "no-store" });
+  if (!response.ok) throw new Error("feature execution detail query failed");
+  const rows = await response.json() as FeatureExecutionRunRow[];
+  return rows[0] ? { ...rows[0], detail_loaded: true } : null;
 }
 
 async function requestFeatureExecutionCancel(
@@ -4609,11 +4485,13 @@ async function requestFeatureExecutionCancel(
 
 async function completeFeatureExecutionReview(
   supabaseUrl: string, supabasePublishableKey: string, accessToken: string, userId: string, runId: string,
+  expectedUpdatedAt: string,
 ) {
   const url = new URL("/rest/v1/feature_execution_runs", supabaseUrl);
   url.searchParams.set("id", `eq.${runId}`);
   url.searchParams.set("user_id", `eq.${userId}`);
   url.searchParams.set("message", `eq.${CLIENT_REVIEW}`);
+  url.searchParams.set("updated_at", `eq.${expectedUpdatedAt}`);
   const response = await fetch(url, {
     method: "PATCH", headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
     body: JSON.stringify({ message: CLIENT_COMPLETE }),
@@ -4633,8 +4511,11 @@ async function fetchAgentTasks(
   userId: string,
 ) {
   const url = new URL("/rest/v1/agent_tasks", supabaseUrl);
+  url.searchParams.set("select", "id,repository,prompt,provider,model,reasoning,planning_mode,targeted_feature_paths,status,queue_sequence,created_at,started_at,completed_at,error,verification_attempts,cancel_requested,message,updated_at");
   url.searchParams.set("user_id", `eq.${userId}`);
-  url.searchParams.set("order", "queue_sequence.asc");
+  url.searchParams.set("message", `eq.${CLIENT_REVIEW}`);
+  url.searchParams.set("order", "updated_at.asc");
+  url.searchParams.set("limit", "50");
   const response = await fetch(url, {
     headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
   });
@@ -4644,14 +4525,30 @@ async function fetchAgentTasks(
   return (await response.json()) as AgentTaskRow[];
 }
 
+async function fetchActiveAgentTaskSummaries(
+  supabaseUrl: string, supabasePublishableKey: string, accessToken: string, userId: string,
+) {
+  const url = new URL("/rest/v1/agent_tasks", supabaseUrl);
+  url.searchParams.set("select", "id,repository,prompt,provider,model,reasoning,planning_mode,targeted_feature_paths,status,queue_sequence,created_at,started_at,completed_at,error,verification_attempts,cancel_requested,message,updated_at");
+  url.searchParams.set("user_id", `eq.${userId}`);
+  url.searchParams.set("message", `eq.${DAEMON_REVIEW}`);
+  url.searchParams.set("status", "in.(queued,running,verifying,ready,integrating,resolving)");
+  url.searchParams.set("order", "queue_sequence.asc");
+  url.searchParams.set("limit", "50");
+  const response = await fetch(url, { headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken), cache: "no-store" });
+  if (!response.ok) throw new Error("agent task hydration query failed");
+  return (await response.json()) as AgentTaskRow[];
+}
+
 async function completeAgentTaskReview(
   supabaseUrl: string, supabasePublishableKey: string, accessToken: string,
-  userId: string, taskId: string,
+  userId: string, taskId: string, expectedUpdatedAt: string,
 ) {
   const url = new URL("/rest/v1/agent_tasks", supabaseUrl);
   url.searchParams.set("id", `eq.${taskId}`);
   url.searchParams.set("user_id", `eq.${userId}`);
   url.searchParams.set("message", `eq.${CLIENT_REVIEW}`);
+  url.searchParams.set("updated_at", `eq.${expectedUpdatedAt}`);
   const response = await fetch(url, {
     method: "PATCH",
     headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
@@ -4733,53 +4630,25 @@ async function requestAgentTaskCancel(
   }
 }
 
-async function fetchLatestDaemonEvent(
+async function fetchDaemonEvents(
   supabaseUrl: string,
   supabasePublishableKey: string,
   accessToken: string,
   userId: string,
 ) {
   const url = new URL("/rest/v1/daemon_events", supabaseUrl);
+  url.searchParams.set("select", "id,severity,content,created_at");
   url.searchParams.set("user_id", `eq.${userId}`);
   url.searchParams.set("message", `eq.${CLIENT_REVIEW}`);
   url.searchParams.set("order", "created_at.desc");
-  url.searchParams.set("limit", "1");
+  url.searchParams.set("limit", "50");
   const response = await fetch(url, {
     headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
   });
   if (!response.ok) {
     throw new Error("daemon event query failed");
   }
-  const rows = (await response.json()) as DaemonEventRow[];
-  return rows[0] ?? null;
-}
-
-async function fetchLatestSuccessfulIntegrationEvent(
-  supabaseUrl: string,
-  supabasePublishableKey: string,
-  accessToken: string,
-  userId: string,
-) {
-  const url = new URL("/rest/v1/daemon_events", supabaseUrl);
-  url.searchParams.set("select", "id,severity,content");
-  url.searchParams.set("user_id", `eq.${userId}`);
-  url.searchParams.set("severity", "eq.info");
-  url.searchParams.set("message", `eq.${CLIENT_REVIEW}`);
-  url.searchParams.set(
-    "content",
-    "like.*integrated successfully into the repository.*",
-  );
-  url.searchParams.set("order", "created_at.desc");
-  url.searchParams.set("limit", "1");
-
-  const response = await fetch(url, {
-    headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
-  });
-  if (!response.ok) {
-    throw new Error("successful integration event query failed");
-  }
-  const rows = (await response.json()) as DaemonEventRow[];
-  return rows[0] ?? null;
+  return (await response.json()) as DaemonEventRow[];
 }
 
 async function completeDaemonEventReview(
@@ -4796,25 +4665,6 @@ async function completeDaemonEventReview(
     body: JSON.stringify({ message: CLIENT_COMPLETE }),
   });
   if (!response.ok) throw new Error("daemon event acknowledgement failed");
-}
-
-async function fetchLatestGitSyncResult(
-  supabaseUrl: string,
-  supabasePublishableKey: string,
-  accessToken: string,
-  userId: string,
-) {
-  try {
-    return await fetchDaemonPayload<GitSyncResult>(
-      supabaseUrl,
-      supabasePublishableKey,
-      accessToken,
-      userId,
-      GIT_SYNC_PAYLOAD_KIND,
-    );
-  } catch {
-    return null;
-  }
 }
 
 function parseParameterUpdateRowMessage(message: string): { state?: string; error?: string } | null {
