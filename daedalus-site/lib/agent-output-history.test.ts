@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   dedupeAgentOutputs,
   dedupeAgentOutputConversations,
+  canDeleteAgentOutput,
   groupAgentOutputsByFeature,
   mergeAgentOutputRecords,
   rerankAgentOutputSearch,
@@ -126,4 +127,13 @@ test("groups planning refinements and implementation into one conversation", () 
   ]);
   assert.equal(conversations.length, 1);
   assert.equal(conversations[0]?.promptId, "implementation-1");
+});
+
+test("permits deleting every terminal output while retaining active outputs", () => {
+  for (const status of ["completed", "failed", "blocked", "cancelled"] as const) {
+    assert.equal(canDeleteAgentOutput(exchange({ status })), true);
+  }
+  for (const status of ["queued", "running", "verifying", "ready", "integrating", "resolving"] as const) {
+    assert.equal(canDeleteAgentOutput(exchange({ status })), false);
+  }
 });

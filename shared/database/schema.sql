@@ -311,9 +311,9 @@ using (user_id = auth.uid() and message = 'client_review')
 with check (user_id = auth.uid() and message = 'client_complete');
 create policy "authenticated users can read own agent output history"
 on agent_output_history for select to authenticated using (user_id = auth.uid());
-create policy "authenticated users can delete own completed agent output history"
+create policy "authenticated users can delete own terminal agent output history"
 on agent_output_history for delete to authenticated
-using (user_id = auth.uid() and status in ('completed', 'failed'));
+using (user_id = auth.uid() and status in ('completed', 'failed', 'blocked', 'cancelled'));
 
 create or replace function set_updated_at()
 returns trigger
