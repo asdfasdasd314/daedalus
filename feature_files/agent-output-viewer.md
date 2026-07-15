@@ -10,7 +10,7 @@ The Agent Output Viewer is the durable, authenticated history and live-status su
 - **Planning Conversation**: A planning conversation ID links the initial request, every refinement, and the implementation task so the viewer presents one chronological transcript: initial prompt, planning questions and plan, then the implementation response or terminal error.
 - **Workspace Drawer**: A true upper-left history control opens a responsive drawer that is mutually exclusive with Ventures and supports notification deep links.
 - **Archive Controls**: The viewer owns formatted/raw output, copying, search, stable pagination, retry, abandon, cancel, finalized-task cleanup, and per-exchange delete for every finalized prompt-answer pair (`completed`, `failed`, `blocked`, or `cancelled`).
-- **Summary-First Archive**: Archive pages and searches return fixed-size prompt snippets and lifecycle metadata without output/error bodies; complete bodies are fetched only for a selected exchange, and conversations use stable bounded cursors.
+- **Summary-First Archive**: Archive pages and searches return fixed-size prompt snippets and lifecycle metadata without output/error bodies; selecting a conversation fetches its bounded full prompt, output, and error records so the detail pane renders the original request and complete plan/agent response.
 
 ## Relevant Files
 - `shared/database/migrations/018_agent_output_history.sql`: Durable history table, policies, RPCs, task projection trigger, and recoverable backfills.
@@ -46,3 +46,4 @@ HACKING
 - 2026-07-14: Kept the planning workflow controls driven by the shared normalized questionnaire parser so fenced planner output presents its pending answers instead of an implementation-only action.
 - 2026-07-14: Moved active questionnaire controls into the visible planning response and delayed response publication until its restored session is ready, keeping answer choices and custom submission available.
 - 2026-07-14: Made archive pages and search summary-first, removed duplicate open-time loads, and bounded conversation retrieval with stable `(created_at, id)` pagination.
+- 2026-07-14: Restored full original prompts and agent output in the selected conversation pane through a one-time bounded detail fetch, while preserving summary-only archive and search egress.

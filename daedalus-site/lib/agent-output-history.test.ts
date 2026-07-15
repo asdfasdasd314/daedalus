@@ -120,6 +120,17 @@ test("deduplicates prompt IDs and fuzzy reranks current feature names", () => {
   assert.equal(results[0]?.promptId, "prompt-1");
 });
 
+test("prefers a selected conversation's full record over its archive summary", () => {
+  const summary = exchange({ prompt: "Build viewer…", output: "", error: "" });
+  const detail = exchange({
+    prompt: "Build the complete agent output viewer",
+    output: "## Plan\n\nRestore on-demand detail loading.",
+  });
+  const result = dedupeAgentOutputs([summary, detail]);
+  assert.equal(result[0]?.prompt, detail.prompt);
+  assert.equal(result[0]?.output, detail.output);
+});
+
 test("groups planning refinements and implementation into one conversation", () => {
   const conversations = dedupeAgentOutputConversations([
     exchange({ promptId: "plan-1", conversationId: "chat-1", completedAt: "2026-01-01T00:01:00Z" }),

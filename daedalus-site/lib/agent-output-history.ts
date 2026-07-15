@@ -130,9 +130,21 @@ export function sortAgentOutputsRecentFirst(exchanges: AgentOutputExchange[]) {
 export function dedupeAgentOutputs(exchanges: AgentOutputExchange[]) {
   const byPromptId = new Map<string, AgentOutputExchange>();
   for (const exchange of sortAgentOutputsRecentFirst(exchanges)) {
-    if (!byPromptId.has(exchange.promptId)) byPromptId.set(exchange.promptId, exchange);
+    const existing = byPromptId.get(exchange.promptId);
+    if (!existing || hasMoreAgentOutputContent(exchange, existing)) {
+      byPromptId.set(exchange.promptId, exchange);
+    }
   }
   return [...byPromptId.values()];
+}
+
+function hasMoreAgentOutputContent(
+  candidate: AgentOutputExchange,
+  existing: AgentOutputExchange,
+) {
+  if (candidate.updatedAt !== existing.updatedAt) return false;
+  return candidate.prompt.length + candidate.output.length + candidate.error.length
+    > existing.prompt.length + existing.output.length + existing.error.length;
 }
 
 export function dedupeAgentOutputConversations(exchanges: AgentOutputExchange[]) {
@@ -347,7 +359,9 @@ export async function fetchAgentOutputConversation(
   cursor: { createdAt: string; id: string } | null = null,
 ) {
   const url = new URL("/rest/v1/agent_output_history", supabaseUrl);
-  url.searchParams.set("select", AGENT_OUTPUT_SUMMARY_COLUMNS);
+  // This is user-triggered by selecting a conversation. Unlike archive pages and
+  // searches, it intentionally retrieves the full prompt and response bodies.
+  url.searchParams.set("select", AGENT_OUTPUT_DETAIL_COLUMNS);
   url.searchParams.set("conversation_id", `eq.${conversationId}`);
   url.searchParams.set("order", "created_at.desc,id.desc");
   url.searchParams.set("limit", String(AGENT_OUTPUT_PAGE_SIZE));
