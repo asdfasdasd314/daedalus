@@ -26,3 +26,4 @@ TESTING
 - 2026-07-13: Added mutually exclusive local Ask requests with read-only provider execution, while retaining Planning-only questionnaires and implementation handoff.
 - 2026-07-13: Updated daemon chat RPC regression expectations so legacy calls explicitly preserve `askMode: false`.
 - 2026-07-14: Normalized fully fenced planner responses before terminal-question parsing so closing fences cannot suppress a valid questionnaire.
+- 2026-07-14: Rendered the active planning question inline with its response, with clickable options and an Other field that submits by button or Enter.
