@@ -42,3 +42,4 @@ HACKING
 - 2026-07-14: History open/Refresh now reloads recent in-progress archive rows and rehydrates live durable tasks on demand, with merge preferring fresher terminal history over stale live queued.
 - 2026-07-14: Diagnosed persistent History hydration failures as live Supabase missing `agent_tasks.cancel_requested` (select returns 400); added repair migration 024 and surfaced query error bodies.
 - 2026-07-14: Expanded viewer and owner-scoped archive deletion to every finalized output state, including blocked and cancelled records.
+- 2026-07-14: Kept the planning workflow controls driven by the shared normalized questionnaire parser so fenced planner output presents its pending answers instead of an implementation-only action.

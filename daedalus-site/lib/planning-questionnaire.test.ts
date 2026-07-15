@@ -23,6 +23,29 @@ Build the feature.
   }]);
 });
 
+test("parses terminal questions from a fenced planner response", () => {
+  const parsed = parsePlanningReply(`\`\`\`md
+# Plan: Reduce Recurrent Supabase Egress
+
+## Questions
+
+1. **What maximum delay is acceptable before the manager observes a restart/control request?**
+   - a. 5 seconds (Recommended): aligns with heartbeat cadence.
+   - b. 10 seconds: further reduces egress.
+   - c. Keep 1 second: preserves responsiveness.
+\`\`\``);
+
+  assert.equal(parsed.plan, "# Plan: Reduce Recurrent Supabase Egress");
+  assert.deepEqual(parsed.questions, [{
+    question: "What maximum delay is acceptable before the manager observes a restart/control request?",
+    options: [
+      "5 seconds (Recommended): aligns with heartbeat cadence.",
+      "10 seconds: further reduces egress.",
+      "Keep 1 second: preserves responsiveness.",
+    ],
+  }]);
+});
+
 test("keeps malformed question sections in the visible plan", () => {
   const reply = "## Plan\n\n## Questions\n\n1. **[Use a cache?]**:";
 
