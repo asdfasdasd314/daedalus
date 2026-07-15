@@ -2,6 +2,8 @@ import json
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
+import os
+import re
 import subprocess
 import tomllib
 import uuid
@@ -30,6 +32,8 @@ CANCEL_REPLY_PREFIXES = (
     "Cursor was cancelled",
 )
 CANCELLED_BY_USER = "Cancelled by user"
+MIGRATION_FILE_RE = re.compile(r"^(\d+)_(.+)\.sql$")
+MIGRATION_WALK_SKIP_DIRS = {".git", "node_modules", ".daedalus-worktrees"}
 
 
 class GitWorktreeOrchestrator:
@@ -748,6 +752,8 @@ class GitWorktreeOrchestrator:
                 "worktree": worktree_path,
             }
 
+        reconcile_migration_numbers(worktree_path)
+
         commands = verification_commands_for_worktree(
             worktree_path, settings["verificationCommands"]
         )
@@ -830,6 +836,7 @@ class GitWorktreeOrchestrator:
             except RuntimeError as error:
                 failure = f"Daemon could not commit resolver changes.\n\n{error}"
                 continue
+            reconcile_migration_numbers(worktree_path)
             commands = verification_commands_for_worktree(
                 worktree_path, settings["verificationCommands"]
             )
@@ -1066,6 +1073,71 @@ def commit_worktree_changes(directory: str, message: str) -> bool:
     if commit.returncode != 0:
         raise RuntimeError(format_process_failure(commit.args, commit.stdout, commit.stderr))
     return True
+
+
+def find_migration_directories(root: Path) -> list[Path]:
+    found = []
+    for dirpath, dirnames, _filenames in os.walk(root):
+        dirnames[:] = [name for name in dirnames if name not in MIGRATION_WALK_SKIP_DIRS]
+        current = Path(dirpath)
+        if current.name == "migrations":
+            found.append(current)
+    return sorted(found)
+
+
+def plan_migration_renames(migrations_dir: Path) -> list[tuple[Path, Path]]:
+    entries = []
+    for path in sorted(migrations_dir.iterdir()):
+        if not path.is_file():
+            continue
+        match = MIGRATION_FILE_RE.match(path.name)
+        if not match:
+            continue
+        prefix_text = match.group(1)
+        rest = match.group(2)
+        entries.append((int(prefix_text), prefix_text, rest, path))
+
+    if not entries:
+        return []
+
+    by_prefix: dict[int, list[tuple[str, str, Path]]] = {}
+    for number, prefix_text, rest, path in entries:
+        by_prefix.setdefault(number, []).append((prefix_text, rest, path))
+
+    used = {number for number, _prefix_text, _rest, _path in entries}
+    max_number = max(used)
+    max_width = max(len(prefix_text) for _number, prefix_text, _rest, _path in entries)
+    renames: list[tuple[Path, Path]] = []
+
+    for number in sorted(by_prefix):
+        group = by_prefix[number]
+        if len(group) <= 1:
+            continue
+        group = sorted(group, key=lambda item: item[2].name)
+        for prefix_text, rest, path in group[1:]:
+            width = max(len(prefix_text), max_width)
+            candidate = max_number + 1
+            while True:
+                target = migrations_dir / f"{candidate:0{width}d}_{rest}.sql"
+                if candidate not in used and not target.exists():
+                    break
+                candidate += 1
+            used.add(candidate)
+            max_number = max(max_number, candidate)
+            renames.append((path, target))
+
+    return renames
+
+
+def reconcile_migration_numbers(worktree_path: str) -> bool:
+    changed = False
+    for migrations_dir in find_migration_directories(Path(worktree_path)):
+        for source, target in plan_migration_renames(migrations_dir):
+            source.rename(target)
+            changed = True
+    if changed:
+        commit_worktree_changes(worktree_path, "Daedalus reconcile migration numbers")
+    return changed
 
 
 def run_verification(directory: str, commands: list[list[str]]) -> dict:

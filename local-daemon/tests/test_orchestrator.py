@@ -17,6 +17,7 @@ from daedalus_daemon.orchestrator import (
     create_task_worktree,
     is_clean_worktree,
     load_worktree_settings,
+    plan_migration_renames,
     remove_empty_worktree_directories,
     remove_worktree,
     reply_indicates_cancel,
@@ -326,6 +327,71 @@ class CancelOrchestratorTests(unittest.TestCase):
             "/repo",
             ["git", "worktree", "remove", "--force", "/tmp/worktree"],
         )
+
+
+class MigrationReconcileTests(unittest.TestCase):
+    def test_no_duplicates_yields_empty_plan(self):
+        with tempfile.TemporaryDirectory() as directory:
+            migrations = Path(directory)
+            (migrations / "013_alpha.sql").write_text("-- a\n", encoding="utf-8")
+            (migrations / "014_beta.sql").write_text("-- b\n", encoding="utf-8")
+
+            self.assertEqual(plan_migration_renames(migrations), [])
+
+    def test_triple_prefix_uses_next_free_after_max(self):
+        with tempfile.TemporaryDirectory() as directory:
+            migrations = Path(directory)
+            (migrations / "012_base.sql").write_text("-- base\n", encoding="utf-8")
+            (migrations / "013_keep.sql").write_text("-- keep\n", encoding="utf-8")
+            (migrations / "013_second.sql").write_text("-- second\n", encoding="utf-8")
+            (migrations / "013_third.sql").write_text("-- third\n", encoding="utf-8")
+
+            plan = plan_migration_renames(migrations)
+            mapping = {source.name: target.name for source, target in plan}
+
+            self.assertEqual(
+                mapping,
+                {
+                    "013_second.sql": "014_second.sql",
+                    "013_third.sql": "015_third.sql",
+                },
+            )
+            self.assertTrue((migrations / "013_keep.sql").exists())
+
+    def test_collision_skips_already_used_neighbors(self):
+        with tempfile.TemporaryDirectory() as directory:
+            migrations = Path(directory)
+            (migrations / "015_alpha.sql").write_text("-- alpha\n", encoding="utf-8")
+            (migrations / "015_beta.sql").write_text("-- beta\n", encoding="utf-8")
+            for number in range(16, 26):
+                (migrations / f"{number:03d}_slot.sql").write_text("-- slot\n", encoding="utf-8")
+
+            plan = plan_migration_renames(migrations)
+
+            self.assertEqual(len(plan), 1)
+            source, target = plan[0]
+            self.assertEqual(source.name, "015_beta.sql")
+            self.assertEqual(target.name, "026_beta.sql")
+
+    def test_padding_matches_folder_width(self):
+        with tempfile.TemporaryDirectory() as directory:
+            migrations = Path(directory)
+            (migrations / "013_alpha.sql").write_text("-- alpha\n", encoding="utf-8")
+            (migrations / "013_beta.sql").write_text("-- beta\n", encoding="utf-8")
+
+            plan = plan_migration_renames(migrations)
+            self.assertEqual(len(plan), 1)
+            self.assertEqual(plan[0][1].name, "014_beta.sql")
+
+        with tempfile.TemporaryDirectory() as directory:
+            migrations = Path(directory)
+            (migrations / "015_alpha.sql").write_text("-- alpha\n", encoding="utf-8")
+            (migrations / "015_beta.sql").write_text("-- beta\n", encoding="utf-8")
+            for number in range(16, 26):
+                (migrations / f"{number:03d}_slot.sql").write_text("-- slot\n", encoding="utf-8")
+
+            plan = plan_migration_renames(migrations)
+            self.assertEqual(plan[0][1].name, "026_beta.sql")
 
 
 if __name__ == "__main__":

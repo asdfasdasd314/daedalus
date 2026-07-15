@@ -12,6 +12,7 @@ Daedalus Git Worktrees isolates agent-mode prompts on task branches and uses a d
 - **Task Repair Loop**: Individual verification suites receive up to three total attempts in the same isolated worktree, with later agent repairs informed by the captured failure before a durable terminal error is reported.
 - **Base-State Cohorts**: Tasks admitted from the same `main` commit are verified independently and integrated in submission order after the cohort fills or its quiet window expires.
 - **Safe Promotion**: Combined work is tested on an integration branch and local `main` advances only by a verified fast-forward; no remote push occurs.
+- **Migration Prefix Reconcile**: After merges (and again after each successful resolver commit), the orchestrator renames duplicate `NNN_*.sql` prefixes in `migrations` folders to the next free integers after the folder max, then commits when anything changed.
 - **Resolver Loop**: Merge conflicts and combined-test failures launch a resolver agent up to three times, with daemon warnings for attempts and a blocking error after exhaustion.
 - **Resolver Provider**: The resolver defaults to the first task's provider and can be pinned to Codex or Cursor in the worktree parameter file, keeping resolver capacity independent of the submission UI.
 - **Integration Notification**: A successful promotion records an info event in `daemon_events` after the batch is completed, allowing the dashboard to report completion instead of leaving the last resolver warning visible.
@@ -51,3 +52,4 @@ HACKING
 - 2026-07-13: Added database admission gating for new durable tasks while exposing all accepted nonterminal task and batch states to manager drain coordination.
 - 2026-07-14: Made resolver dispatch provider-aware and added a parameterized Codex/Cursor resolver selection so Cursor tasks never pass empty reasoning into Codex.
 - 2026-07-14: Added migration 024 to repair live databases that never received `agent_tasks.cancel_requested` from 015.
+- 2026-07-14: Added deterministic migration-number reconcile on integration so duplicate `NNN_*.sql` prefixes are renumbered before combined verification and promotion.
