@@ -76,7 +76,8 @@ if __package__ in {None, ""}:
         SupabaseUnavailableError,
         GIT_SYNC_PURPOSE,
         fetch_current_message,
-        fetch_current_messages,
+        fetch_work_snapshot,
+        snapshot_communication_messages,
         upsert_agent_output_history,
         post_feature_files,
         post_git_sync_result,
@@ -107,7 +108,8 @@ else:
         SupabaseUnavailableError,
         GIT_SYNC_PURPOSE,
         fetch_current_message,
-        fetch_current_messages,
+        fetch_work_snapshot,
+        snapshot_communication_messages,
         upsert_agent_output_history,
         post_feature_files,
         post_git_sync_result,
@@ -1246,19 +1248,9 @@ def main() -> None:
     direct_prompt_supervisor = DirectPromptSupervisor(config)
 
     while True:
-        # Durable agent tasks must not wait behind the legacy communications polls.
-        # Those polls can be unavailable while the task scheduler is still able to
-        # claim queued work and report its lifecycle events.
-        if not run_cycle_safely("agent_orchestrator", orchestrator.run_cycle, config):
-            time.sleep(config["pollIntervalMs"] / 1000)
-            continue
-
-        if not run_cycle_safely("feature_execution", execution_supervisor.run_cycle, config):
-            time.sleep(config["pollIntervalMs"] / 1000)
-            continue
-
         try:
-            communication_reviews = fetch_current_messages(config)
+            work_snapshot = fetch_work_snapshot(config)
+            communication_reviews = snapshot_communication_messages(work_snapshot)
         except SupabaseUnavailableError as error:
             cooldown_ms = config.get("networkOutageCooldownMs", 15000)
             print(
@@ -1266,6 +1258,22 @@ def main() -> None:
                 f"{error}. Waiting {cooldown_ms}ms before retrying."
             )
             time.sleep(cooldown_ms / 1000)
+            continue
+
+        if not run_cycle_safely(
+            "agent_orchestrator",
+            lambda _current: orchestrator.run_cycle(work_snapshot),
+            config,
+        ):
+            time.sleep(config["pollIntervalMs"] / 1000)
+            continue
+
+        if not run_cycle_safely(
+            "feature_execution",
+            lambda _current: execution_supervisor.run_cycle(work_snapshot),
+            config,
+        ):
+            time.sleep(config["pollIntervalMs"] / 1000)
             continue
 
         def read_review(_config: dict, purpose: str) -> str | None:

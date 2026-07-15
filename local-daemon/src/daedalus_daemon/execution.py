@@ -73,13 +73,13 @@ class FeatureExecutionSupervisor:
         self.processes: dict[str, dict] = {}
         self.reconciled = False
 
-    def run_cycle(self, _config: dict | None = None) -> None:
-        active_rows = list_active_feature_execution_runs(self.config)
+    def run_cycle(self, snapshot: dict | None = None) -> None:
+        active_rows = snapshot.get("featureRunControls", []) if snapshot is not None else list_active_feature_execution_runs(self.config)
         if not self.reconciled:
             self._reconcile_restart(active_rows)
             self.reconciled = True
         self._poll_processes({row["id"]: row for row in active_rows})
-        self._claim_and_start()
+        self._claim_and_start(snapshot.get("claimedFeatureRun") if snapshot is not None else None)
 
     def _reconcile_restart(self, active_rows: list[dict]) -> None:
         for row in active_rows:
@@ -94,8 +94,8 @@ class FeatureExecutionSupervisor:
                     "completed_at": "now",
                 })
 
-    def _claim_and_start(self) -> None:
-        run = claim_feature_execution_run(self.config)
+    def _claim_and_start(self, claimed_run: dict | None = None) -> None:
+        run = claimed_run if claimed_run is not None else claim_feature_execution_run(self.config)
         if not run:
             return
         if run.get("cancel_requested"):

@@ -5,7 +5,7 @@ The feature file communications system uses Supabase as a user-scoped message bu
 
 ## Key Points
 - **Message Bus**: Supabase stores communication messages in a `communications` table with separate rows keyed by `user_id` and `purpose`.
-- **Split Polling Ownership**: The frontend keeps its own committed poll interval, while the daemon reads `poll_interval_ms` from `parameter_files/feature-file-communications-system.toml`.
+- **Consolidated Polling Ownership**: The browser owns one completion-scheduled review inbox and the daemon owns one bounded work snapshot per configured cycle.
 - **Transient Network Tolerance**: The daemon communications client retries short-lived Supabase HTTPS failures with a small timeout and backoff budget before giving up on that poll cycle.
 - **Outage Cooldown**: When Supabase stays unreachable after the retry budget is exhausted, the daemon pauses the current poll pass and waits on a longer cooldown before trying again.
 - **Daemon Delivery**: The daemon writes feature-file, parameter-file, and Git Sync payloads into `daemon_payloads`; agent responses are not payload messages.
@@ -43,3 +43,4 @@ HACKING
 - 2026-07-12: Updated daemon communications and config tests to accept urlopen timeouts and assert the new retry/cooldown defaults.
 - 2026-07-13: Retained communications as the direct planning/ask pickup protocol while moving response publication out of daemon payloads and into durable agent output history.
 - 2026-07-13: Added manager admission gating for feature-file load requests and exposed in-progress `daemon_review` loads through the authoritative drain interface.
+- 2026-07-14: Replaced independent recurrent reads with one bounded daemon work snapshot and added five-minute aggregate request/response-byte instrumentation.

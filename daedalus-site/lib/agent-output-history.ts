@@ -2,6 +2,8 @@ import Fuse from "fuse.js";
 import type { FeatureFileProjects } from "./feature-file-cache";
 
 export const AGENT_OUTPUT_PAGE_SIZE = 30;
+const AGENT_OUTPUT_SUMMARY_COLUMNS = "id,prompt_id,task_id,conversation_id,repository,prompt,provider,model,reasoning,mode,source,targeted_feature_paths,status,status_detail,created_at,started_at,completed_at,updated_at";
+const AGENT_OUTPUT_DETAIL_COLUMNS = `${AGENT_OUTPUT_SUMMARY_COLUMNS},output,error`;
 
 export type AgentOutputStatus =
   | "queued" | "running" | "verifying" | "ready" | "integrating"
@@ -16,6 +18,7 @@ export type AgentOutputHistoryRow = {
   conversation_id: string | null;
   repository: string;
   prompt: string;
+  prompt_snippet?: string;
   output: string;
   error: string;
   provider: string;
@@ -94,7 +97,7 @@ export function normalizeAgentOutputRow(row: AgentOutputHistoryRow): AgentOutput
     taskId: row.task_id,
     conversationId: row.conversation_id || row.prompt_id,
     repository: row.repository,
-    prompt: row.prompt,
+    prompt: row.prompt ?? row.prompt_snippet ?? "",
     output: row.output ?? "",
     error: row.error ?? "",
     provider: row.provider ?? "",
@@ -310,15 +313,17 @@ export async function fetchAgentOutputHistoryPage(
   accessToken: string,
   cursor: AgentOutputCursor | null = null,
 ): Promise<AgentOutputPage> {
-  const url = new URL("/rest/v1/agent_output_history", supabaseUrl);
-  url.searchParams.set("select", "*");
-  url.searchParams.set("completed_at", "not.is.null");
-  url.searchParams.set("order", "completed_at.desc,id.desc");
-  url.searchParams.set("limit", String(AGENT_OUTPUT_PAGE_SIZE + 1));
-  if (cursor) {
-    url.searchParams.set("or", `(completed_at.lt.${cursor.completedAt},and(completed_at.eq.${cursor.completedAt},id.lt.${cursor.id}))`);
-  }
-  const rows = await readRows(await fetch(url, { headers: historyHeaders(publishableKey, accessToken), cache: "no-store" }));
+  const url = new URL("/rest/v1/rpc/get_agent_output_history_page", supabaseUrl);
+  const rows = await readRows(await fetch(url, {
+    method: "POST",
+    headers: { ...historyHeaders(publishableKey, accessToken), "Content-Type": "application/json" },
+    body: JSON.stringify({
+      p_cursor_completed_at: cursor?.completedAt ?? null,
+      p_cursor_id: cursor?.id ?? null,
+      p_limit: AGENT_OUTPUT_PAGE_SIZE + 1,
+    }),
+    cache: "no-store",
+  }));
   const pageRows = rows.slice(0, AGENT_OUTPUT_PAGE_SIZE);
   const last = pageRows.at(-1);
   return {
@@ -331,11 +336,7 @@ export async function fetchAgentOutputHistoryPage(
 export async function fetchRecentAgentOutputHistory(
   supabaseUrl: string, publishableKey: string, accessToken: string,
 ) {
-  const url = new URL("/rest/v1/agent_output_history", supabaseUrl);
-  url.searchParams.set("select", "*");
-  url.searchParams.set("order", "updated_at.desc");
-  url.searchParams.set("limit", "50");
-  return (await readRows(await fetch(url, { headers: historyHeaders(publishableKey, accessToken), cache: "no-store" }))).map(normalizeAgentOutputRow);
+  return (await fetchAgentOutputHistoryPage(supabaseUrl, publishableKey, accessToken)).exchanges;
 }
 
 export async function fetchAgentOutputConversation(
@@ -343,22 +344,27 @@ export async function fetchAgentOutputConversation(
   publishableKey: string,
   accessToken: string,
   conversationId: string,
+  cursor: { createdAt: string; id: string } | null = null,
 ) {
   const url = new URL("/rest/v1/agent_output_history", supabaseUrl);
-  url.searchParams.set("select", "*");
+  url.searchParams.set("select", AGENT_OUTPUT_SUMMARY_COLUMNS);
   url.searchParams.set("conversation_id", `eq.${conversationId}`);
-  url.searchParams.set("order", "created_at.asc,id.asc");
+  url.searchParams.set("order", "created_at.desc,id.desc");
+  url.searchParams.set("limit", String(AGENT_OUTPUT_PAGE_SIZE));
+  if (cursor) {
+    url.searchParams.set("or", `(created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.lt.${cursor.id}))`);
+  }
   const rows = await readRows(await fetch(url, {
     headers: historyHeaders(publishableKey, accessToken), cache: "no-store",
   }));
-  return rows.map(normalizeAgentOutputRow);
+  return rows.reverse().map(normalizeAgentOutputRow);
 }
 
 export async function fetchAgentOutputByPromptId(
   supabaseUrl: string, publishableKey: string, accessToken: string, promptId: string,
 ) {
   const url = new URL("/rest/v1/agent_output_history", supabaseUrl);
-  url.searchParams.set("select", "*");
+  url.searchParams.set("select", AGENT_OUTPUT_DETAIL_COLUMNS);
   url.searchParams.set("prompt_id", `eq.${promptId}`);
   url.searchParams.set("limit", "1");
   const rows = await readRows(await fetch(url, { headers: historyHeaders(publishableKey, accessToken), cache: "no-store" }));
@@ -374,7 +380,7 @@ export async function searchAgentOutputArchive(
     const response = await fetch(new URL("/rest/v1/rpc/search_agent_output_history", supabaseUrl), {
       method: "POST",
       headers: { ...historyHeaders(publishableKey, accessToken), "Content-Type": "application/json" },
-      body: JSON.stringify({ p_query: searchQuery, p_limit: 100 }),
+      body: JSON.stringify({ p_query: searchQuery, p_limit: 50 }),
     });
     return (await readRows(response)).map(normalizeAgentOutputRow);
   }));

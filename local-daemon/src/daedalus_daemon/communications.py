@@ -33,6 +33,19 @@ class SupabaseUnavailableError(Exception):
     pass
 
 
+_RPC_METRICS = {"started_at": time.monotonic(), "requests": 0, "response_bytes": 0}
+
+
+def record_rpc_metrics(response_bytes: int) -> None:
+    _RPC_METRICS["requests"] += 1
+    _RPC_METRICS["response_bytes"] += response_bytes
+    if time.monotonic() - _RPC_METRICS["started_at"] < 300:
+        return
+    print("Supabase daemon aggregate: "
+          f"requests={_RPC_METRICS['requests']} response_bytes={_RPC_METRICS['response_bytes']}")
+    _RPC_METRICS.update({"started_at": time.monotonic(), "requests": 0, "response_bytes": 0})
+
+
 def fetch_current_message(config: dict, purpose: str) -> str | None:
     rows = fetch_communication_rows(config, purpose)
 
@@ -51,6 +64,33 @@ def fetch_current_messages(config: dict) -> dict[str, str]:
     return {
         str(row["purpose"]): str(row.get("content") or "")
         for row in (rows if isinstance(rows, list) else [])
+    }
+
+
+def fetch_work_snapshot(config: dict) -> dict:
+    """Fetch and normalize the single bounded recurrent response for a cycle."""
+    payload = call_daemon_rpc(config, "daemon_poll_work", {
+        "p_user_id": config["daemonUserId"],
+    })
+    source = payload if isinstance(payload, dict) else {}
+    batches = source.get("orchestrationBatches")
+    normalized_batches = batches if isinstance(batches, list) else []
+    for batch in normalized_batches:
+        batch.setdefault("verification_output", "")
+    return {
+        "communications": source.get("communications") if isinstance(source.get("communications"), list) else [],
+        "agentTasks": source.get("agentTasks") if isinstance(source.get("agentTasks"), list) else [],
+        "orchestrationBatches": normalized_batches,
+        "featureRunControls": source.get("featureRunControls") if isinstance(source.get("featureRunControls"), list) else [],
+        "claimedFeatureRun": source.get("claimedFeatureRun") if isinstance(source.get("claimedFeatureRun"), dict) else None,
+    }
+
+
+def snapshot_communication_messages(snapshot: dict) -> dict[str, str]:
+    return {
+        str(row["purpose"]): str(row.get("content") or "")
+        for row in snapshot.get("communications", [])
+        if isinstance(row, dict) and row.get("purpose")
     }
 
 
@@ -162,6 +202,13 @@ def list_agent_tasks(config: dict) -> list[dict]:
     })
 
 
+def get_agent_task_control(config: dict, task_id: str) -> dict | None:
+    result = call_daemon_rpc(config, "daemon_get_agent_task_control", {
+        "p_user_id": config["daemonUserId"], "p_task_id": task_id,
+    })
+    return result if isinstance(result, dict) else None
+
+
 def update_agent_task(
     config: dict,
     task_id: str,
@@ -252,7 +299,9 @@ def call_daemon_rpc(config: dict, function_name: str, payload: dict):
     )
 
     with open_supabase_request(config, http_request) as response:
-        response_body = response.read().decode("utf-8")
+        raw_response = response.read()
+        record_rpc_metrics(len(raw_response))
+        response_body = raw_response.decode("utf-8")
         return json.loads(response_body) if response_body else None
 
 
