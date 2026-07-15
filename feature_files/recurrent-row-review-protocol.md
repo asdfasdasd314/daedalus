@@ -10,6 +10,7 @@ The recurrent row review protocol prevents the client, daemon, and manager from 
 - **Durable Work**: Active orchestrator tasks and batches remain `daemon_review` until terminal work is ready for the client or fully complete.
 - **Safe Acknowledgements**: Client completion updates include the expected review state, so an older response cannot acknowledge newer content.
 - **No Recurrent Archives**: Historical task, feature-run, and agent-output data loads only during hydration or explicit user requests; idle polling is recipient-filtered and bounded.
+- **Selected Archive Detail**: Archive lists and searches remain summary-only, while selecting an agent-output conversation makes one bounded, on-demand request for its full prompt, output, and error bodies.
 - **Control-Plane Coverage**: Manager heartbeat and restart-control rows use the same protocol and generation-aware client acknowledgement.
 - **Measured Budget**: The pre-remediation baseline was approximately 4,320 browser, 5,040 daemon, and 3,600 manager recurrent requests per hour; acceptance is at most 720 per component and 2,160 combined for one visible idle browser, daemon, and manager.
 - **Consolidated Browser Inbox**: `get_client_review_inbox()` returns six explicitly projected, deterministically ordered, fixed-bound client-review collections, and `acknowledge_client_reviews()` guards mutable receipts by both review state and `updated_at` generation.
@@ -49,3 +50,4 @@ TESTING
 - 2026-07-14: Documented a remediation plan covering idle poll cadence, bounded recurrent RPC projections, one-time large-payload delivery, explicit historical pagination, and egress regression verification.
 - 2026-07-14: Implemented the consolidated browser inbox, daemon work snapshot, five-second manager tick, generation-safe batch acknowledgements, bounded archive and scanner transfers, aggregate egress instrumentation, and static regression assertions.
 - 2026-07-14: Repaired the cancellation-check regression test to mock the new task-scoped control lookup instead of the retired full task-list refresh.
+- 2026-07-14: Preserved summary-only archive transport while allowing a user-selected agent-output conversation to retrieve its full durable prompt and response bodies once.
