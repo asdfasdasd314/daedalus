@@ -29,25 +29,31 @@ const QUESTIONS_HEADING = /^## Questions\s*$/gim;
 const QUESTION_LINE = /^\s*\d+\.\s+\*\*(?:Question:\s*)?(.+?)\*\*:?\s*$/;
 const OPTION_LINE = /^\s*-\s+[a-z]\.\s+(.+?)\s*$/i;
 
+function unwrapMarkdownCodeFence(reply: string) {
+  const fencedReply = reply.match(/^\s*```[^\n]*\n([\s\S]*?)\n```\s*$/);
+  return fencedReply ? fencedReply[1] : reply;
+}
+
 export function parsePlanningReply(reply: string): {
   plan: string;
   questions: PlanningQuestion[];
 } {
-  const headings = [...reply.matchAll(QUESTIONS_HEADING)];
+  const normalizedReply = unwrapMarkdownCodeFence(reply);
+  const headings = [...normalizedReply.matchAll(QUESTIONS_HEADING)];
   const heading = headings.at(-1);
 
   if (heading?.index === undefined) {
-    return { plan: reply, questions: [] };
+    return { plan: normalizedReply, questions: [] };
   }
 
-  const questions = parseQuestionSection(reply.slice(heading.index));
+  const questions = parseQuestionSection(normalizedReply.slice(heading.index));
 
   if (questions.length === 0) {
-    return { plan: reply, questions: [] };
+    return { plan: normalizedReply, questions: [] };
   }
 
   return {
-    plan: reply.slice(0, heading.index).trimEnd(),
+    plan: normalizedReply.slice(0, heading.index).trimEnd(),
     questions,
   };
 }
