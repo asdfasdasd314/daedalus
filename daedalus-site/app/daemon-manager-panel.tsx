@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 export type DaemonManagerRequest = {
   id: string;
@@ -29,60 +29,28 @@ export type DaemonManagerStatus = {
 
 type Props = {
   accessToken: string;
-  pollIntervalMs: number;
   supabasePublishableKey: string;
   supabaseUrl: string;
-  onStatusChange: (status: DaemonManagerStatus | null, online: boolean) => void;
+  status: DaemonManagerStatus | null;
+  onRequestRefresh: () => void;
 };
 
 const HEARTBEAT_STALE_AFTER_MS = 15000;
 
 export default function DaemonManagerPanel({
-  accessToken, pollIntervalMs, supabasePublishableKey, supabaseUrl, onStatusChange,
+  accessToken, supabasePublishableKey, supabaseUrl, status, onRequestRefresh,
 }: Props) {
-  const [status, setStatus] = useState<DaemonManagerStatus | null>(null);
-  const [online, setOnline] = useState(false);
+  const [clock, setClock] = useState(() => Date.now());
   const [pendingAction, setPendingAction] = useState(false);
   const [error, setError] = useState("");
   const [isExpanded, setIsExpanded] = useState(false);
-  const statusRef = useRef<DaemonManagerStatus | null>(null);
 
   useEffect(() => {
-    let mounted = true;
-    async function pollStatus() {
-      try {
-        const nextStatus = await callAuthenticatedRpc<DaemonManagerStatus | null>(
-          supabaseUrl, supabasePublishableKey, accessToken,
-          "get_daemon_manager_status", {},
-        );
-        if (!mounted) return;
-        const currentStatus = nextStatus ?? statusRef.current;
-        const heartbeatTime = currentStatus?.manager_heartbeat_at
-          ? new Date(currentStatus.manager_heartbeat_at).valueOf()
-          : 0;
-        const nextOnline = Boolean(
-          currentStatus && heartbeatTime && Date.now() - heartbeatTime <= HEARTBEAT_STALE_AFTER_MS,
-        );
-        if (nextStatus) {
-          setStatus(nextStatus);
-          statusRef.current = nextStatus;
-          void acknowledgeManagerStatus(
-            supabaseUrl, supabasePublishableKey, accessToken, nextStatus.updated_at,
-          ).catch(() => undefined);
-        }
-        setOnline(nextOnline);
-        onStatusChange(currentStatus, nextOnline);
-        setError("");
-      } catch {
-        if (!mounted) return;
-        setOnline(false);
-        onStatusChange(statusRef.current, false);
-      }
-    }
-    void pollStatus();
-    const interval = window.setInterval(pollStatus, pollIntervalMs);
-    return () => { mounted = false; window.clearInterval(interval); };
-  }, [accessToken, onStatusChange, pollIntervalMs, supabasePublishableKey, supabaseUrl]);
+    const timeout = window.setTimeout(() => setClock(Date.now()), 1000);
+    return () => window.clearTimeout(timeout);
+  }, [clock]);
+  const heartbeatTime = status?.manager_heartbeat_at ? Date.parse(status.manager_heartbeat_at) : 0;
+  const online = Boolean(status && heartbeatTime && clock - heartbeatTime <= HEARTBEAT_STALE_AFTER_MS);
 
   async function requestRestart() {
     const confirmed = window.confirm(
@@ -96,6 +64,7 @@ export default function DaemonManagerPanel({
         supabaseUrl, supabasePublishableKey, accessToken,
         "request_execution_restart", {},
       );
+      onRequestRefresh();
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : "Unable to request restart.");
     } finally {
@@ -112,6 +81,7 @@ export default function DaemonManagerPanel({
         supabaseUrl, supabasePublishableKey, accessToken,
         "cancel_execution_restart", { request_id: status.activeRequest.id },
       );
+      onRequestRefresh();
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : "Unable to cancel restart.");
     } finally {
@@ -181,26 +151,6 @@ export default function DaemonManagerPanel({
       </div>
     </aside>
   );
-}
-
-async function acknowledgeManagerStatus(
-  supabaseUrl: string, supabasePublishableKey: string, accessToken: string,
-  expectedUpdatedAt: string,
-) {
-  const url = new URL("/rest/v1/daemon_manager_state", supabaseUrl);
-  url.searchParams.set("message", "eq.client_review");
-  url.searchParams.set("updated_at", `eq.${expectedUpdatedAt}`);
-  const response = await fetch(url, {
-    method: "PATCH",
-    headers: {
-      apikey: supabasePublishableKey,
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ message: "client_complete" }),
-    cache: "no-store",
-  });
-  if (!response.ok) throw new Error("Manager status acknowledgement failed.");
 }
 
 function formatTime(value: string | null | undefined) {

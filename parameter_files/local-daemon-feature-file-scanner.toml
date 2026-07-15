@@ -1,1 +1,3 @@
-# This feature has no tunable parameters.
+maximum_individual_file_bytes = 262144
+maximum_aggregate_snapshot_bytes = 2097152
+maximum_files_per_snapshot = 500

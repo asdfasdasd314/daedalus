@@ -9,6 +9,7 @@ The feature execution system lets an authenticated user start a Python feature e
 - **Containment checks**: Project roots must come from feature scanning, and feature and parameter paths must stay within the selected project.
 - **Durable lifecycle**: Queued, running, terminal, cancellation, and review acknowledgement states are stored independently from agent tasks.
 - **Non-blocking supervision**: Processes run in their own sessions, with output captured by reader threads and polled by the daemon loop.
+- **Snapshot Controls**: Each daemon cycle receives projected `id`/status/cancellation controls plus at most one atomically claimed launch record, keeping diagnostic tails out of active polling.
 
 ## Relevant Files
 - `local-daemon/src/daedalus_daemon/execution.py`: Validation, process supervision, diagnostics, and cancellation.
@@ -32,3 +33,4 @@ HACKING
 - 2026-07-13: Normalized execution project roots before containment checks so valid entry points resolve correctly in temporary and symlinked workspaces.
 - 2026-07-13: Preserved the configured project-relative entry-point spelling after canonical containment validation for stable Python command previews.
 - 2026-07-13: Gated new run insertion during manager drains and documented active queued/running runs as restart blockers, with startup reconciliation reserved for unexpected crash recovery.
+- 2026-07-14: Moved active controls and one atomic claim into the consolidated daemon snapshot so idle cycles no longer issue separate list and claim RPCs.

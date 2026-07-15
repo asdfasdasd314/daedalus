@@ -85,17 +85,14 @@ export default function AgentOutputViewer({
     let active = true;
     setLoading(true);
     setFetchError("");
-    void Promise.all([
-      fetchRecentAgentOutputHistory(supabaseUrl, supabasePublishableKey, accessToken),
-      fetchAgentOutputHistoryPage(supabaseUrl, supabasePublishableKey, accessToken),
-    ])
-      .then(([recent, page]) => {
+    void fetchAgentOutputHistoryPage(supabaseUrl, supabasePublishableKey, accessToken)
+      .then((page) => {
         if (!active) return;
-        setArchive(dedupeAgentOutputs([...recent, ...page.exchanges]));
+        setArchive(dedupeAgentOutputs(page.exchanges));
         setCursor(page.cursor);
         setHasMore(page.hasMore);
-        if (!selectedPromptId && (recent[0] || page.exchanges[0])) {
-          onSelectedPromptIdChange((recent[0] ?? page.exchanges[0]).promptId);
+        if (!selectedPromptId && page.exchanges[0]) {
+          onSelectedPromptIdChange(page.exchanges[0].promptId);
         }
       })
       .catch((error) => {

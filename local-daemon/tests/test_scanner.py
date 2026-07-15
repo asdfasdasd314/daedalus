@@ -7,9 +7,17 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from daedalus_daemon import scan_feature_file_projects, scan_parameter_file_projects
+from daedalus_daemon.scanner import read_project_file
 
 
 class ScanFeatureFileProjectsTests(unittest.TestCase):
+    def test_rejects_explicit_file_reads_outside_the_project(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "project"
+            root.mkdir()
+            with self.assertRaisesRegex(ValueError, "inside the selected project"):
+                read_project_file(root, "../outside.md")
+
     def test_returns_two_projects_with_feature_files(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

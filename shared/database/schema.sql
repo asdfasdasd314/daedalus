@@ -363,7 +363,8 @@ language sql security definer set search_path = public as $$
   from communications
   where communications.user_id = p_user_id and communications.message = 'daemon_review'
     and communications.purpose in ('agent_prompt', 'git_sync_request', 'feature_file_load', 'parameter_file_load', 'parameter_file_update', 'entry_point_update')
-  order by communications.purpose;
+  order by communications.purpose
+  limit 6;
 $$;
 
 create or replace function daemon_get_communication(
@@ -919,3 +920,96 @@ grant execute on function daemon_manager_publish_candidate(uuid, uuid, integer, 
 grant execute on function daemon_manager_complete_recovery(uuid, uuid) to anon;
 grant execute on function daemon_manager_complete_restart(uuid, uuid, uuid) to anon;
 grant execute on function daemon_manager_complete_control_request(uuid, uuid, uuid, timestamptz) to anon;
+
+-- Consolidated recurrent egress interfaces (migration 027).
+create function get_client_review_inbox()
+returns jsonb language sql stable security definer set search_path = public as $$
+  with owner as (select auth.uid() user_id)
+  select jsonb_build_object(
+    'communications', coalesce((select jsonb_agg(to_jsonb(r) order by purpose) from (select communications.purpose,communications.content,communications.updated_at from communications,owner where communications.user_id=owner.user_id and communications.message='client_review' order by communications.purpose limit 10) r),'[]'),
+    'daemonPayloads', coalesce((select jsonb_agg(to_jsonb(r) order by kind) from (select daemon_payloads.kind,daemon_payloads.payload,daemon_payloads.updated_at from daemon_payloads,owner where daemon_payloads.user_id=owner.user_id and daemon_payloads.message='client_review' order by daemon_payloads.kind limit 3) r),'[]'),
+    'agentTasks', coalesce((select jsonb_agg(to_jsonb(r) order by updated_at,id) from (select agent_tasks.id,agent_tasks.repository,agent_tasks.prompt,agent_tasks.provider,agent_tasks.model,agent_tasks.reasoning,agent_tasks.planning_mode,agent_tasks.targeted_feature_paths,agent_tasks.status,agent_tasks.queue_sequence,agent_tasks.created_at,agent_tasks.started_at,agent_tasks.completed_at,agent_tasks.error,agent_tasks.verification_attempts,agent_tasks.cancel_requested,agent_tasks.updated_at from agent_tasks,owner where agent_tasks.user_id=owner.user_id and agent_tasks.message='client_review' order by agent_tasks.updated_at,agent_tasks.id limit 50) r),'[]'),
+    'featureExecutionRuns', coalesce((select jsonb_agg(to_jsonb(r) order by updated_at,id) from (select feature_execution_runs.id,feature_execution_runs.project_directory,feature_execution_runs.feature_file_path,feature_execution_runs.status,feature_execution_runs.cancel_requested,feature_execution_runs.command,feature_execution_runs.parameter_file_path,feature_execution_runs.entry_point_path,feature_execution_runs.started_at,feature_execution_runs.completed_at,feature_execution_runs.exit_code,feature_execution_runs.stdout_tail,feature_execution_runs.stderr_tail,feature_execution_runs.error,feature_execution_runs.updated_at from feature_execution_runs,owner where feature_execution_runs.user_id=owner.user_id and feature_execution_runs.message='client_review' order by feature_execution_runs.updated_at,feature_execution_runs.id limit 50) r),'[]'),
+    'daemonEvents', coalesce((select jsonb_agg(to_jsonb(r) order by created_at,id) from (select daemon_events.id,daemon_events.severity,daemon_events.content,daemon_events.created_at from daemon_events,owner where daemon_events.user_id=owner.user_id and daemon_events.message='client_review' order by daemon_events.created_at,daemon_events.id limit 50) r),'[]'),
+    'managerStatus',(select case when s.user_id is null then null else jsonb_build_object('state',s.state,'accepts_work',s.accepts_work,'manager_heartbeat_at',s.manager_heartbeat_at,'execution_process_id',s.execution_process_id,'execution_generation',s.execution_generation,'execution_started_at',s.execution_started_at,'last_successful_restart_at',s.last_successful_restart_at,'status_detail',s.status_detail,'updated_at',s.updated_at,'activeRequest',case when q.id is null then null else jsonb_build_object('id',q.id,'status',q.status,'blockers',q.blockers) end) end from owner left join daemon_manager_state s on s.user_id=owner.user_id and s.message='client_review' left join daemon_manager_requests q on q.id=s.active_request_id)
+  );
+$$;
+revoke all on function get_client_review_inbox() from public;
+grant execute on function get_client_review_inbox() to authenticated;
+
+create function acknowledge_client_reviews(receipts jsonb)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare owner_id uuid:=auth.uid(); r jsonb; rid text; ok jsonb:='[]'; stale jsonb:='[]';
+begin
+  if owner_id is null then raise exception 'Authentication required'; end if;
+  if jsonb_typeof(receipts)<>'array' then raise exception 'Receipts must be an array'; end if;
+  for r in select value from jsonb_array_elements(receipts) loop rid:=coalesce(r->>'receiptId','');
+    case r->>'transport'
+    when 'communications' then update communications set message='client_complete' where user_id=owner_id and purpose=r->>'key' and message='client_review' and updated_at=(r->>'updatedAt')::timestamptz;
+    when 'daemonPayloads' then update daemon_payloads set message='client_complete' where user_id=owner_id and kind=r->>'key' and message='client_review' and updated_at=(r->>'updatedAt')::timestamptz;
+    when 'agentTasks' then update agent_tasks set message='client_complete' where user_id=owner_id and id=(r->>'key')::uuid and message='client_review' and updated_at=(r->>'updatedAt')::timestamptz;
+    when 'featureExecutionRuns' then update feature_execution_runs set message='client_complete' where user_id=owner_id and id=(r->>'key')::uuid and message='client_review' and updated_at=(r->>'updatedAt')::timestamptz;
+    when 'managerStatus' then update daemon_manager_state set message='client_complete' where user_id=owner_id and message='client_review' and updated_at=(r->>'updatedAt')::timestamptz;
+    when 'daemonEvents' then update daemon_events set message='client_complete' where user_id=owner_id and id=(r->>'key')::bigint and message='client_review';
+    else stale:=stale||jsonb_build_array(rid); continue; end case;
+    if found then ok:=ok||jsonb_build_array(rid); else stale:=stale||jsonb_build_array(rid); end if;
+  end loop; return jsonb_build_object('acknowledged',ok,'rejected',stale);
+end; $$;
+revoke all on function acknowledge_client_reviews(jsonb) from public;
+grant execute on function acknowledge_client_reviews(jsonb) to authenticated;
+
+create function daemon_poll_work(p_user_id uuid)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare claimed_id uuid; result jsonb;
+begin
+  if p_user_id is null or not exists(select 1 from auth.users where id=p_user_id) then raise exception 'Invalid daemon user scope'; end if;
+  select id into claimed_id from feature_execution_runs where user_id=p_user_id and message='daemon_review' and status='queued' and not cancel_requested order by created_at,id for update skip locked limit 1;
+  if claimed_id is not null then update feature_execution_runs set status='running',started_at=now(),updated_at=now() where id=claimed_id; end if;
+  select jsonb_build_object(
+    'communications',coalesce((select jsonb_agg(to_jsonb(r) order by purpose) from (select purpose,content,updated_at from communications where user_id=p_user_id and message='daemon_review' and purpose in('agent_prompt','git_sync_request','feature_file_load','parameter_file_load','parameter_file_update','entry_point_update') order by purpose limit 6) r),'[]'),
+    'agentTasks',coalesce((select jsonb_agg(to_jsonb(r) order by queue_sequence) from (select id,repository,prompt,provider,model,reasoning,planning_mode,targeted_feature_paths,status,queue_sequence,base_commit,branch_name,worktree_path,batch_id,error,verification_attempts,cancel_requested,created_at,started_at,completed_at,updated_at from agent_tasks where user_id=p_user_id and message='daemon_review' order by queue_sequence limit 100) r),'[]'),
+    'orchestrationBatches',coalesce((select jsonb_agg(to_jsonb(r) order by created_at) from (select id,repository,base_commit,task_ids,integration_branch,integration_worktree_path,status,message,resolver_attempts,quiet_since,created_at,completed_at,updated_at from orchestration_batches where user_id=p_user_id and message='daemon_review' order by created_at limit 100) r),'[]'),
+    'featureRunControls',coalesce((select jsonb_agg(to_jsonb(r) order by created_at,id) from (select id,status,cancel_requested,created_at from feature_execution_runs where user_id=p_user_id and message='daemon_review' and status in('queued','running') and id is distinct from claimed_id order by created_at,id limit 100) r),'[]'),
+    'claimedFeatureRun',(select case when r.id is null then null else to_jsonb(r) end from (select id,project_directory,feature_file_path,status,cancel_requested from feature_execution_runs where id=claimed_id) r)
+  ) into result; return result;
+end; $$;
+revoke all on function daemon_poll_work(uuid) from public;
+grant execute on function daemon_poll_work(uuid) to anon;
+
+create function daemon_get_agent_task_control(p_user_id uuid,p_task_id uuid)
+returns jsonb language sql stable security definer set search_path=public as $$
+ select case when t.id is null then null else jsonb_build_object('id',t.id,'status',t.status,'cancel_requested',t.cancel_requested,'updated_at',t.updated_at) end from (select 1) seed left join agent_tasks t on t.id=p_task_id and t.user_id=p_user_id and t.message='daemon_review';
+$$;
+revoke all on function daemon_get_agent_task_control(uuid,uuid) from public;
+grant execute on function daemon_get_agent_task_control(uuid,uuid) to anon;
+
+create function daemon_manager_tick(p_user_id uuid,p_manager_instance_id uuid,p_execution_process_id integer,p_execution_started_at timestamptz,p_status_detail text default null)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare result jsonb; begin
+ update daemon_manager_state set manager_heartbeat_at=now(),execution_process_id=p_execution_process_id,execution_started_at=p_execution_started_at,status_detail=coalesce(p_status_detail,status_detail),message='client_review',updated_at=now() where user_id=p_user_id and manager_instance_id=p_manager_instance_id;
+ if not found then raise exception 'Manager lease ownership was lost'; end if;
+ select jsonb_build_object('activeRequest',case when q.id is null then null else jsonb_build_object('id',q.id,'status',q.status,'updated_at',q.updated_at) end,'drainSummary',case when q.status<>'draining' then null else jsonb_build_object('total',(select count(*) from agent_tasks where user_id=p_user_id and message='daemon_review')+(select count(*) from orchestration_batches where user_id=p_user_id and message='daemon_review')+(select count(*) from feature_execution_runs where user_id=p_user_id and message='daemon_review' and status in('queued','running'))+(select count(*) from communications where user_id=p_user_id and message='daemon_review'),'agentTasks',(select count(*) from agent_tasks where user_id=p_user_id and message='daemon_review'),'orchestrationBatches',(select count(*) from orchestration_batches where user_id=p_user_id and message='daemon_review'),'featureExecutions',(select count(*) from feature_execution_runs where user_id=p_user_id and message='daemon_review' and status in('queued','running')),'communications',coalesce((select jsonb_object_agg(purpose,count) from (select purpose,count(*) count from communications where user_id=p_user_id and message='daemon_review' group by purpose order by purpose limit 10) counts),'{}'::jsonb)) end) into result from daemon_manager_state s left join daemon_manager_requests q on q.id=s.active_request_id and q.message='daemon_review' where s.user_id=p_user_id and s.manager_instance_id=p_manager_instance_id; return result;
+end; $$;
+revoke all on function daemon_manager_tick(uuid,uuid,integer,timestamptz,text) from public;
+grant execute on function daemon_manager_tick(uuid,uuid,integer,timestamptz,text) to anon;
+
+create type agent_output_history_summary as (
+  id uuid, prompt_id text, task_id uuid, conversation_id text, repository text,
+  prompt_snippet text, provider text, model text, reasoning text, mode text,
+  source text, targeted_feature_paths jsonb, status text, status_detail text,
+  created_at timestamptz, started_at timestamptz, completed_at timestamptz, updated_at timestamptz
+);
+drop function search_agent_output_history(text,integer);
+create function search_agent_output_history(p_query text,p_limit integer default 50)
+returns setof agent_output_history_summary language sql stable security definer set search_path=public as $$
+ select h.id,h.prompt_id,h.task_id,h.conversation_id,h.repository,left(h.prompt,240),h.provider,h.model,h.reasoning,h.mode,h.source,h.targeted_feature_paths,h.status,h.status_detail,h.created_at,h.started_at,h.completed_at,h.updated_at from agent_output_history h where h.user_id=auth.uid() and (nullif(trim(p_query),'') is null or concat_ws(' ',h.prompt,h.repository,h.targeted_feature_paths::text,h.provider,h.model,h.mode,h.status) ilike '%'||trim(p_query)||'%') order by coalesce(h.completed_at,h.updated_at) desc,h.id desc limit least(greatest(p_limit,1),50);
+$$;
+revoke all on function search_agent_output_history(text,integer) from public;
+grant execute on function search_agent_output_history(text,integer) to authenticated;
+
+create function get_agent_output_history_page(p_cursor_completed_at timestamptz default null,p_cursor_id uuid default null,p_limit integer default 31)
+returns setof agent_output_history_summary language sql stable security definer set search_path=public as $$
+ select h.id,h.prompt_id,h.task_id,h.conversation_id,h.repository,left(h.prompt,240),h.provider,h.model,h.reasoning,h.mode,h.source,h.targeted_feature_paths,h.status,h.status_detail,h.created_at,h.started_at,h.completed_at,h.updated_at from agent_output_history h where h.user_id=auth.uid() and h.completed_at is not null and (p_cursor_completed_at is null or (h.completed_at,h.id)<(p_cursor_completed_at,p_cursor_id)) order by h.completed_at desc,h.id desc limit least(greatest(p_limit,1),31);
+$$;
+revoke all on function get_agent_output_history_page(timestamptz,uuid,integer) from public;
+grant execute on function get_agent_output_history_page(timestamptz,uuid,integer) to authenticated;

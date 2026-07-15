@@ -224,12 +224,12 @@ class CancelOrchestratorTests(unittest.TestCase):
         mock_remove.assert_called_once_with("/repo", "/tmp/worktree", force=True)
         mock_event.assert_called_once()
 
-    @patch("daedalus_daemon.orchestrator.list_agent_tasks")
-    def test_run_task_skips_repair_when_cancel_requested(self, mock_list):
-        mock_list.return_value = [{
+    @patch("daedalus_daemon.orchestrator.get_agent_task_control")
+    def test_run_task_skips_repair_when_cancel_requested(self, mock_control):
+        mock_control.return_value = {
             "id": "task-3",
             "cancel_requested": True,
-        }]
+        }
         orchestrator = GitWorktreeOrchestrator({}, lambda *a: "ok", lambda *a: "ok")
         task = {
             "id": "task-3",

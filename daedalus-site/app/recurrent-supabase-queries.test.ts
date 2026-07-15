@@ -14,16 +14,12 @@ const managerSource = readFileSync(
   new URL("./daemon-manager-panel.tsx", import.meta.url),
   "utf8",
 );
-const schemaSource = readFileSync(
-  new URL("../../shared/database/schema.sql", import.meta.url),
-  "utf8",
-);
 const daemonMainSource = readFileSync(
   new URL("../../local-daemon/src/daedalus_daemon/main.py", import.meta.url),
   "utf8",
 );
 const migrationSource = readFileSync(
-  new URL("../../shared/database/migrations/022_complete_recurrent_supabase_read_hardening.sql", import.meta.url),
+  new URL("../../shared/database/migrations/027_recurrent_supabase_egress_remediation.sql", import.meta.url),
   "utf8",
 );
 
@@ -33,31 +29,25 @@ function functionSource(name: string) {
   return dashboardSource.slice(start, next === -1 ? undefined : next);
 }
 
-test("task and feature-run polling is client-review filtered and bounded", () => {
-  for (const name of ["fetchAgentTasks", "fetchFeatureExecutionRuns"]) {
-    const source = functionSource(name);
-    assert.match(source, /url\.searchParams\.set\("select"/);
-    assert.match(source, /url\.searchParams\.set\("message", `eq\.\$\{CLIENT_REVIEW\}`\)/);
-    assert.match(source, /url\.searchParams\.set\("limit", "50"\)/);
-    assert.doesNotMatch(source, /select", "\*"/);
-  }
+test("browser has one completion-scheduled recurrent review owner", () => {
+  assert.match(dashboardSource, /fetchClientReviewInbox/);
+  assert.match(dashboardSource, /acknowledgeClientReviews/);
+  assert.match(dashboardSource, /window\.setTimeout\(\(\) => void pollInbox\(\), delay\)/);
+  assert.doesNotMatch(dashboardSource, /setInterval\(poll(?:Message|DurableAgentTasks|FeatureRuns|ProjectPayloads)/);
 });
 
-test("communications, payloads, and events use consolidated bounded review reads", () => {
-  for (const name of ["fetchCommunicationReviews", "fetchDaemonPayloadReviews", "fetchDaemonEvents"]) {
-    const source = functionSource(name);
-    assert.match(source, /url\.searchParams\.set\("select"/);
-    assert.match(source, /url\.searchParams\.set\("message", `eq\.\$\{CLIENT_REVIEW\}`\)/);
-    assert.match(source, /url\.searchParams\.set\("limit"/);
-    assert.doesNotMatch(source, /select", "\*"/);
-  }
+test("consolidated browser collections are recipient filtered, projected, and bounded", () => {
+  assert.match(migrationSource, /get_client_review_inbox/);
+  assert.equal((migrationSource.match(/message = 'client_review'/g) ?? []).length >= 6, true);
+  for (const limit of ["limit 10", "limit 3", "limit 50"]) assert.match(migrationSource, new RegExp(limit));
+  assert.doesNotMatch(migrationSource.slice(migrationSource.indexOf("get_client_review_inbox"), migrationSource.indexOf("acknowledge_client_reviews")), /select \*/i);
 });
 
-test("task and feature-run acknowledgements are generation guarded", () => {
-  assert.match(functionSource("completeAgentTaskReview"), /url\.searchParams\.set\("updated_at"/);
-  assert.match(functionSource("completeFeatureExecutionReview"), /url\.searchParams\.set\("updated_at"/);
-  assert.match(functionSource("completeCommunicationReview"), /url\.searchParams\.set\("updated_at"/);
-  assert.match(functionSource("completeDaemonPayloadReview"), /url\.searchParams\.set\("updated_at"/);
+test("batched acknowledgements are state and generation guarded", () => {
+  const ack = migrationSource.slice(migrationSource.indexOf("acknowledge_client_reviews"), migrationSource.indexOf("daemon_poll_work"));
+  assert.match(ack, /message = 'client_review'/);
+  assert.equal((ack.match(/updated_at = \(receipt->>'updatedAt'\)::timestamptz/g) ?? []).length, 5);
+  assert.match(ack, /'rejected'/);
 });
 
 test("agent output history is refreshed only on demand", () => {
@@ -81,31 +71,27 @@ test("live durable task rehydrate stays non-recurrent and column-scoped", () => 
   assert.doesNotMatch(byId, /select", "\*"/);
 });
 
-test("manager heartbeats use client review and timestamp-guarded acknowledgement", () => {
-  assert.match(schemaSource, /manager_state\.message = 'client_review'/);
-  assert.match(managerSource, /url\.searchParams\.set\("message", "eq\.client_review"\)/);
-  assert.match(managerSource, /url\.searchParams\.set\("updated_at", `eq\.\$\{expectedUpdatedAt\}`\)/);
+test("manager panel is display/action only", () => {
+  assert.doesNotMatch(managerSource, /get_daemon_manager_status/);
+  assert.doesNotMatch(managerSource, /setInterval/);
+  assert.match(managerSource, /onRequestRefresh/);
 });
 
 test("daemon recurrent work is recipient filtered and communications are consolidated", () => {
-  assert.match(schemaSource, /agent_tasks where user_id = p_user_id and message = 'daemon_review'/);
-  assert.match(schemaSource, /orchestration_batches where user_id = p_user_id and message = 'daemon_review'/);
-  assert.match(schemaSource, /feature_execution_runs[\s\S]*message = 'daemon_review'[\s\S]*status in \('queued', 'running'\)/);
-  assert.match(schemaSource, /daemon_list_communication_reviews/);
-  assert.match(daemonMainSource, /communication_reviews = fetch_current_messages\(config\)/);
+  assert.match(migrationSource, /daemon_poll_work/);
+  assert.match(migrationSource, /agent_tasks where user_id = p_user_id and message = 'daemon_review'/);
+  assert.match(migrationSource, /orchestration_batches where user_id = p_user_id and message = 'daemon_review'/);
+  assert.match(daemonMainSource, /work_snapshot = fetch_work_snapshot\(config\)/);
 });
 
-test("manager restart, heartbeat, and cancellation lifecycles use explicit handoffs", () => {
-  assert.match(migrationSource, /status = 'cancelled', message = 'daemon_review'/);
-  assert.match(migrationSource, /status = 'cancelled' and manager_request\.message = 'daemon_review'/);
-  assert.match(migrationSource, /set message = 'daemon_complete', updated_at = now\(\)/);
-  assert.match(migrationSource, /manager_request\.updated_at = p_expected_updated_at/);
-  assert.match(migrationSource, /manager_state\.message = 'client_review'/);
+test("manager tick owns the idle heartbeat and control response", () => {
+  assert.match(migrationSource, /daemon_manager_tick/);
+  assert.match(migrationSource, /'activeRequest'/);
+  assert.match(migrationSource, /'drainSummary'/);
 });
 
 test("daemon actionable queues and drain identifiers are bounded", () => {
-  assert.match(migrationSource, /daemon_list_agent_tasks[\s\S]*order by queue_sequence limit 100/);
-  assert.match(migrationSource, /daemon_list_orchestration_batches[\s\S]*order by created_at limit 100/);
-  assert.match(migrationSource, /daemon_list_active_feature_execution_runs[\s\S]*order by created_at limit 100/);
-  assert.match(migrationSource, /order by queue_sequence limit 100\) task_rows/);
+  assert.match(migrationSource, /order by queue_sequence limit 100/);
+  assert.match(migrationSource, /order by created_at limit 100/);
+  assert.doesNotMatch(migrationSource.slice(migrationSource.indexOf("daemon_poll_work"), migrationSource.indexOf("daemon_manager_tick")), /select \*/i);
 });

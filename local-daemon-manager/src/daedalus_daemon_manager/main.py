@@ -11,15 +11,15 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from daedalus_daemon_manager.communications import (
         acquire_lease, begin_restart, claim_restart, complete_recovery,
-        complete_control_request, complete_restart, get_active_request, get_drain_summary,
-        publish_candidate, publish_degraded, publish_heartbeat, update_blockers,
+        complete_control_request, complete_restart,
+        manager_tick, publish_candidate, publish_degraded, publish_heartbeat, update_blockers,
     )
     from daedalus_daemon_manager.config import load_manager_config
 else:
     from .communications import (
         acquire_lease, begin_restart, claim_restart, complete_recovery,
-        complete_control_request, complete_restart, get_active_request, get_drain_summary,
-        publish_candidate, publish_degraded, publish_heartbeat, update_blockers,
+        complete_control_request, complete_restart,
+        manager_tick, publish_candidate, publish_degraded, publish_heartbeat, update_blockers,
     )
     from .config import load_manager_config
 
@@ -118,8 +118,9 @@ def start_stable_replacement(
 
 def process_requested_restart(
     config: dict, instance_id: str, child: subprocess.Popen, child_started_at: str,
+    tick: dict | None = None,
 ) -> tuple[subprocess.Popen, str]:
-    active_request = get_active_request(config, instance_id)
+    active_request = (tick or {}).get("activeRequest")
     if not active_request:
         return child, child_started_at
     request_id = active_request["id"]
@@ -137,7 +138,8 @@ def process_requested_restart(
         if child.poll() is not None:
             recovered = recover_unexpected_exit(config, instance_id, child)
             return recovered if recovered is not None else (child, child_started_at)
-        current_request = get_active_request(config, instance_id)
+        current_tick = manager_tick(config, instance_id, child.pid, child_started_at)
+        current_request = current_tick.get("activeRequest")
         if not current_request or current_request["id"] != request_id:
             return child, child_started_at
         if current_request["status"] == "cancelled":
@@ -148,15 +150,15 @@ def process_requested_restart(
         if current_request["status"] == "restarting":
             break
 
-        blockers = get_drain_summary(config, instance_id)
+        blockers = current_tick.get("drainSummary") or {
+            "total": 0, "agentTasks": 0, "orchestrationBatches": 0,
+            "featureExecutions": 0, "communications": {},
+        }
         if blockers != last_blockers:
             update_blockers(config, instance_id, request_id, blockers)
             last_blockers = blockers
         if blockers["total"] == 0 and begin_restart(config, instance_id, request_id):
             break
-        last_heartbeat_at = heartbeat_if_due(
-            config, instance_id, child, child_started_at, last_heartbeat_at,
-        )
         time.sleep(config["supabasePollIntervalMs"] / 1000)
 
     if SHUTTING_DOWN:
@@ -216,12 +218,11 @@ def main() -> None:
                 child, child_started_at = recovered
                 continue
 
+            tick = manager_tick(config, instance_id, child.pid, child_started_at)
             child, child_started_at = process_requested_restart(
-                config, instance_id, child, child_started_at,
+                config, instance_id, child, child_started_at, tick,
             )
-            last_heartbeat_at = heartbeat_if_due(
-                config, instance_id, child, child_started_at, last_heartbeat_at,
-            )
+            last_heartbeat_at = time.monotonic()
             time.sleep(config["supabasePollIntervalMs"] / 1000)
     finally:
         publish_degraded(config, instance_id, "Manager is shutting down.")

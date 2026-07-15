@@ -1,6 +1,20 @@
 import json
+import time
 from urllib import request
 from urllib.error import HTTPError
+
+
+_RPC_METRICS = {"started_at": time.monotonic(), "requests": 0, "response_bytes": 0}
+
+
+def record_rpc_metrics(response_bytes: int) -> None:
+    _RPC_METRICS["requests"] += 1
+    _RPC_METRICS["response_bytes"] += response_bytes
+    if time.monotonic() - _RPC_METRICS["started_at"] < 300:
+        return
+    print("Supabase manager aggregate: "
+          f"requests={_RPC_METRICS['requests']} response_bytes={_RPC_METRICS['response_bytes']}")
+    _RPC_METRICS.update({"started_at": time.monotonic(), "requests": 0, "response_bytes": 0})
 
 
 def call_manager_rpc(config: dict, function_name: str, values: dict):
@@ -20,7 +34,9 @@ def call_manager_rpc(config: dict, function_name: str, values: dict):
             http_request,
             timeout=config["supabaseRequestTimeoutSeconds"],
         ) as response:
-            body = response.read().decode("utf-8")
+            raw_body = response.read()
+            record_rpc_metrics(len(raw_body))
+            body = raw_body.decode("utf-8")
             return json.loads(body) if body else None
     except HTTPError as error:
         detail = error.read().decode("utf-8")
@@ -53,6 +69,21 @@ def publish_heartbeat(
         "p_execution_started_at": started_at,
         "p_status_detail": status_detail,
     }))
+
+
+def manager_tick(
+    config: dict, instance_id: str, process_id: int | None,
+    started_at: str | None, status_detail: str | None = None,
+) -> dict:
+    result = call_manager_rpc(config, "daemon_manager_tick", {
+        **lease_values(config, instance_id),
+        "p_execution_process_id": process_id,
+        "p_execution_started_at": started_at,
+        "p_status_detail": status_detail,
+    })
+    return result if isinstance(result, dict) else {
+        "activeRequest": None, "drainSummary": None,
+    }
 
 
 def get_active_request(config: dict, instance_id: str) -> dict | None:

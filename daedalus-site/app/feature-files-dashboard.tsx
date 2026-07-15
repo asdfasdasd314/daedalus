@@ -233,8 +233,24 @@ type FeatureExecutionRunRow = {
   id: string; project_directory: string; feature_file_path: string;
   status: FeatureExecutionStatus; cancel_requested: boolean; command: string[]; parameter_file_path: string; entry_point_path: string;
   started_at: string | null; completed_at: string | null; exit_code: number | null;
-  stdout_tail: string; stderr_tail: string; error: string; message: string; updated_at: string;
+  stdout_tail: string; stderr_tail: string; error: string; message?: string; updated_at: string;
   detail_loaded?: boolean;
+};
+
+type ReviewReceipt = {
+  receiptId: string;
+  transport: "communications" | "daemonPayloads" | "agentTasks" | "featureExecutionRuns" | "daemonEvents" | "managerStatus";
+  key: string;
+  updatedAt?: string;
+};
+
+type ClientReviewInbox = {
+  communications: Array<{ purpose: string; content: string | null; updated_at: string }>;
+  daemonPayloads: DaemonPayloadRow<unknown>[];
+  agentTasks: AgentTaskRow[];
+  featureExecutionRuns: FeatureExecutionRunRow[];
+  daemonEvents: DaemonEventRow[];
+  managerStatus: DaemonManagerStatus | null;
 };
 
 export default function FeatureFilesDashboard({
@@ -366,6 +382,7 @@ export default function FeatureFilesDashboard({
   const [error, setError] = useState("");
   const [managerStatus, setManagerStatus] = useState<DaemonManagerStatus | null>(null);
   const [managerOnline, setManagerOnline] = useState(false);
+  const [managerClock, setManagerClock] = useState(() => Date.now());
   const latestLocalWriteStartedAt = useRef(0);
   const latestParameterUpdateWriteStartedAt = useRef(0);
   const initialDevEnvironmentUserIdRef = useRef("");
@@ -382,19 +399,20 @@ export default function FeatureFilesDashboard({
   const isAgentOutputViewerOpenRef = useRef(false);
   const latestChatRef = useRef<AgentChatExchange | null>(null);
   const observedExecutionGenerationRef = useRef<number | null>(null);
+  const refreshInboxRef = useRef<() => void>(() => undefined);
   const currentUser = session?.user ?? null;
   const currentUserId = currentUser?.id ?? "";
   const accessToken = session?.access_token ?? "";
   const daemonAcceptsWork = managerStatus === null
     ? true
     : managerOnline && managerStatus.accepts_work;
-  const handleManagerStatusChange = useCallback(
-    (nextStatus: DaemonManagerStatus | null, online: boolean) => {
-      setManagerStatus(nextStatus);
-      setManagerOnline(online);
-    },
-    [],
-  );
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setManagerOnline(managerStatus ? isManagerHeartbeatCurrent(managerStatus) : false);
+      setManagerClock(Date.now());
+    }, 1000);
+    return () => window.clearTimeout(timeout);
+  }, [managerClock, managerStatus]);
 
   useEffect(() => {
     if (!managerStatus || !daemonAcceptsWork) return;
@@ -632,32 +650,41 @@ export default function FeatureFilesDashboard({
   }, [graphZoomSettings, isMobileLayout]);
 
   useEffect(() => {
-    if (!currentUser || !accessToken) {
-      return;
+    if (!currentUser || !accessToken) return;
+    let mounted = true;
+    let timeout: number | undefined;
+    let inFlight = false;
+    let pollCount = 0;
+    let responseBytes = 0;
+    let measurementStartedAt = Date.now();
+
+    function schedule(delay = pollIntervalMs) {
+      window.clearTimeout(timeout);
+      timeout = window.setTimeout(() => void pollInbox(), delay);
     }
 
-    let isMounted = true;
-
-    async function pollMessage() {
-      const pollStartedAt = Date.now();
-
+    async function pollInbox() {
+      if (!mounted || inFlight) return;
+      if (document.hidden) {
+        schedule(Math.max(pollIntervalMs * 6, 30000));
+        return;
+      }
+      inFlight = true;
       try {
-        const reviews = await fetchCommunicationReviews(
-          supabaseUrl,
-          supabasePublishableKey,
-          accessToken,
-          currentUserId,
+        const inbox = await fetchClientReviewInbox(
+          supabaseUrl, supabasePublishableKey, accessToken,
         );
-
-        if (!isMounted) {
-          return;
+        if (!mounted) return;
+        pollCount += 1;
+        responseBytes += new TextEncoder().encode(JSON.stringify(inbox)).byteLength;
+        if (Date.now() - measurementStartedAt >= 300000) {
+          console.info("Supabase review inbox aggregate", { pollCount, responseBytes });
+          pollCount = 0;
+          responseBytes = 0;
+          measurementStartedAt = Date.now();
         }
-
-        if (pollStartedAt < latestLocalWriteStartedAt.current) {
-          return;
-        }
-
-        for (const review of reviews) {
+        const receipts: ReviewReceipt[] = [];
+        for (const review of inbox.communications) {
           const content = review.content ?? "";
           if (review.purpose === FEATURE_FILE_LOAD_PURPOSE) setMessage(content);
           if (review.purpose === PARAMETER_FILE_LOAD_PURPOSE) setParameterFileMessage(content);
@@ -668,37 +695,83 @@ export default function FeatureFilesDashboard({
             // eslint-disable-next-line react-hooks/immutability
             syncAgentPromptQueueFromRowMessage(content);
           }
+          receipts.push(reviewReceipt("communications", review.purpose, review.updated_at));
+        }
+        for (const review of inbox.daemonPayloads) {
+          if (review.kind === FEATURE_FILES_PAYLOAD_KIND) {
+            const nextProjects = (review.payload as { projects?: FeatureFileProjects }).projects ?? {};
+            setProjects(nextProjects);
+            if (Object.values(nextProjects).some((files) => files.some((file) => file.omitted))) {
+              setError("Some feature files exceeded the snapshot transfer limit. Reduce the file size or adjust the scanner limits before reloading.");
+            }
+            setIsLoadingFeatureFiles(false);
+          } else if (review.kind === PARAMETER_FILES_PAYLOAD_KIND) {
+            setParameterProjects((review.payload as { projects?: ParameterFileProjects }).projects ?? {});
+            setIsLoadingParameterFiles(false);
+          } else if (review.kind === GIT_SYNC_PAYLOAD_KIND) {
+            const result = review.payload as GitSyncResult;
+            if (!activeGitSyncRequestId.current || result.requestId === activeGitSyncRequestId.current) {
+              setGitSyncResult(result);
+              setGitSyncStatus(result.status === "success" ? `${result.operation} completed successfully.` : `${result.operation} failed. Review the command output below.`);
+              setIsGitSyncRequestInFlight(false);
+              activeGitSyncRequestId.current = "";
+            }
+          }
+          receipts.push(reviewReceipt("daemonPayloads", review.kind, review.updated_at));
+        }
+        if (inbox.agentTasks.length) {
+          const queue = inbox.agentTasks.map(mapAgentTaskRowToQueueEntry);
+          setDurableAgentTasks((current) => {
+            const merged = new Map(current.map((row) => [row.promptId, row]));
+            for (const row of queue) merged.set(row.promptId, row);
+            return [...merged.values()].sort((left, right) => left.enqueuedAt - right.enqueuedAt);
+          });
+          receipts.push(...inbox.agentTasks.map((row) => reviewReceipt("agentTasks", row.id, row.updated_at)));
+        }
+        const latestEvent = inbox.daemonEvents.at(-1);
+        if (latestEvent) setPromptStatus(`Daemon ${latestEvent.severity}: ${latestEvent.content}`);
+        receipts.push(...inbox.daemonEvents.map((row) => reviewReceipt("daemonEvents", String(row.id))));
+        if (inbox.featureExecutionRuns.length) {
+          setFeatureExecutionRuns((current) => {
+            const merged = new Map(current.map((row) => [row.id, row]));
+            for (const row of inbox.featureExecutionRuns) merged.set(row.id, { ...row, detail_loaded: true });
+            return [...merged.values()];
+          });
+          receipts.push(...inbox.featureExecutionRuns.map((row) => reviewReceipt("featureExecutionRuns", row.id, row.updated_at)));
+        }
+        if (inbox.managerStatus) {
+          setManagerStatus(inbox.managerStatus);
+          setManagerOnline(isManagerHeartbeatCurrent(inbox.managerStatus));
+          receipts.push(reviewReceipt("managerStatus", currentUserId, inbox.managerStatus.updated_at));
+        } else if (managerStatus) {
+          setManagerOnline(isManagerHeartbeatCurrent(managerStatus));
         }
         setError("");
-        await Promise.all(reviews.map((review) => completeCommunicationReview(
-          supabaseUrl, supabasePublishableKey, accessToken, currentUserId,
-          review.purpose, review.updated_at,
-        )));
-      } catch {
-        if (!isMounted) {
-          return;
+        if (receipts.length) {
+          await acknowledgeClientReviews(supabaseUrl, supabasePublishableKey, accessToken, receipts);
         }
-
-        setError("Unable to reach Supabase right now.");
+      } catch {
+        if (mounted) setError("Unable to reach Supabase right now.");
+      } finally {
+        inFlight = false;
+        if (mounted) schedule();
       }
     }
 
-    void pollMessage();
-    const intervalId = window.setInterval(pollMessage, pollIntervalMs);
-
+    function handleVisibility() {
+      if (!document.hidden) schedule(0);
+    }
+    refreshInboxRef.current = () => schedule(0);
+    document.addEventListener("visibilitychange", handleVisibility);
+    schedule(0);
     return () => {
-      isMounted = false;
-      window.clearInterval(intervalId);
+      mounted = false;
+      window.clearTimeout(timeout);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      refreshInboxRef.current = () => undefined;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    accessToken,
-    currentUser,
-    currentUserId,
-    pollIntervalMs,
-    supabasePublishableKey,
-    supabaseUrl,
-  ]);
+  }, [accessToken, currentUser, currentUserId, pollIntervalMs, supabasePublishableKey, supabaseUrl]);
 
   useEffect(() => {
     const result = parseParameterUpdateRowMessage(entryPointUpdateMessage) as { state?: string; error?: string } | null;
@@ -902,11 +975,9 @@ export default function FeatureFilesDashboard({
       }
     }
 
-    void pollDurableAgentTasks();
-    const intervalId = window.setInterval(pollDurableAgentTasks, pollIntervalMs);
+    void pollDurableAgentTasks;
     return () => {
       isMounted = false;
-      window.clearInterval(intervalId);
     };
   }, [
     accessToken,
@@ -987,9 +1058,8 @@ export default function FeatureFilesDashboard({
         if (mounted) setFeatureExecutionMessage("Unable to refresh feature execution status.");
       }
     }
-    void pollFeatureRuns();
-    const interval = window.setInterval(pollFeatureRuns, pollIntervalMs);
-    return () => { mounted = false; window.clearInterval(interval); };
+    void pollFeatureRuns;
+    return () => { mounted = false; };
   }, [accessToken, currentUser, currentUserId, pollIntervalMs, supabasePublishableKey, supabaseUrl]);
 
   useEffect(() => {
@@ -1081,11 +1151,9 @@ export default function FeatureFilesDashboard({
       }
     }
 
-    void pollProjectPayloads().catch(() => undefined);
-    const intervalId = window.setInterval(pollProjectPayloads, pollIntervalMs);
+    void pollProjectPayloads;
     return () => {
       isMounted = false;
-      window.clearInterval(intervalId);
     };
   }, [accessToken, currentUser, currentUserId, pollIntervalMs, supabasePublishableKey, supabaseUrl]);
 
@@ -1372,6 +1440,7 @@ export default function FeatureFilesDashboard({
       }),
     );
     setParameterUpdateMessage(nextMessage);
+    refreshInboxRef.current();
   }
 
   async function requestEntryPointUpdate(request: EntryPointUpdateRequest) {
@@ -1382,6 +1451,7 @@ export default function FeatureFilesDashboard({
     try {
       const nextMessage = await updateMessage(supabaseUrl, supabasePublishableKey, accessToken, currentUserId, ENTRY_POINT_UPDATE_PURPOSE, JSON.stringify({ command: ENTRY_POINT_UPDATE_COMMAND, ...request }));
       setEntryPointUpdateMessage(nextMessage);
+      refreshInboxRef.current();
     } catch (error) {
       setIsEntryPointUpdatePending(false);
       throw error;
@@ -1426,6 +1496,7 @@ export default function FeatureFilesDashboard({
         ]);
       setMessage(nextFeatureFileMessage);
       setParameterFileMessage(nextParameterFileMessage);
+      refreshInboxRef.current();
     } catch (error) {
       setIsLoadingFeatureFiles(false);
       setIsLoadingParameterFiles(false);
@@ -1772,6 +1843,7 @@ export default function FeatureFilesDashboard({
           prompt: queueEntry.prompt,
         }),
       );
+      refreshInboxRef.current();
       setPromptStatus("Prompt sent. Waiting for daemon pickup.");
     } catch (submissionError) {
       activePromptId.current = "";
@@ -2255,6 +2327,7 @@ export default function FeatureFilesDashboard({
           ...(operation === "commit" ? { message: message.trim() } : {}),
         }),
       );
+      refreshInboxRef.current();
       setGitSyncStatus("Git request sent. Waiting for daemon pickup.");
     } catch (submissionError) {
       activeGitSyncRequestId.current = "";
@@ -3868,10 +3941,10 @@ export default function FeatureFilesDashboard({
       {currentUser && accessToken ? (
         <DaemonManagerPanel
           accessToken={accessToken}
-          pollIntervalMs={pollIntervalMs}
           supabasePublishableKey={supabasePublishableKey}
           supabaseUrl={supabaseUrl}
-          onStatusChange={handleManagerStatusChange}
+          status={managerStatus}
+          onRequestRefresh={() => refreshInboxRef.current()}
         />
       ) : null}
 
@@ -3893,6 +3966,45 @@ export default function FeatureFilesDashboard({
       />
     </main>
   );
+}
+
+function reviewReceipt(
+  transport: ReviewReceipt["transport"], key: string, updatedAt?: string,
+): ReviewReceipt {
+  return { receiptId: `${transport}:${key}:${updatedAt ?? "immutable"}`, transport, key, updatedAt };
+}
+
+function isManagerHeartbeatCurrent(status: DaemonManagerStatus) {
+  const heartbeat = status.manager_heartbeat_at ? Date.parse(status.manager_heartbeat_at) : 0;
+  return Boolean(heartbeat && Date.now() - heartbeat <= 15000);
+}
+
+async function fetchClientReviewInbox(
+  supabaseUrl: string, supabasePublishableKey: string, accessToken: string,
+) {
+  const response = await fetch(new URL("/rest/v1/rpc/get_client_review_inbox", supabaseUrl), {
+    method: "POST",
+    headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
+    body: JSON.stringify({}),
+    cache: "no-store",
+  });
+  if (!response.ok) throw new Error("client review inbox fetch failed");
+  return await response.json() as ClientReviewInbox;
+}
+
+async function acknowledgeClientReviews(
+  supabaseUrl: string, supabasePublishableKey: string, accessToken: string,
+  receipts: ReviewReceipt[],
+) {
+  if (receipts.length === 0) return { acknowledged: [], rejected: [] };
+  const response = await fetch(new URL("/rest/v1/rpc/acknowledge_client_reviews", supabaseUrl), {
+    method: "POST",
+    headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
+    body: JSON.stringify({ receipts }),
+    cache: "no-store",
+  });
+  if (!response.ok) throw new Error("client review acknowledgement failed");
+  return await response.json() as { acknowledged: string[]; rejected: string[] };
 }
 
 async function fetchCommunicationReviews(

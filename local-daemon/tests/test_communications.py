@@ -18,6 +18,7 @@ from daedalus_daemon.communications import (
     PARAMETER_FILE_LOAD_PURPOSE,
     fetch_current_message,
     fetch_current_messages,
+    fetch_work_snapshot,
     upsert_agent_output_history,
     post_feature_files,
     post_git_sync_result,
@@ -156,6 +157,28 @@ class UpdateCurrentMessageTests(unittest.TestCase):
             FEATURE_FILE_LOAD_PURPOSE: "",
             AGENT_PROMPT_PURPOSE: "prompt payload",
         })
+
+    def test_normalizes_one_bounded_work_snapshot(self):
+        def fake_urlopen(http_request, timeout=None):
+            self.assertTrue(http_request.full_url.endswith("/rpc/daemon_poll_work"))
+            return FakeResponse({
+                "communications": [],
+                "agentTasks": [{"id": "task-1"}],
+                "orchestrationBatches": [{"id": "batch-1"}],
+                "featureRunControls": [{"id": "run-1", "status": "running"}],
+                "claimedFeatureRun": None,
+            })
+
+        with patch("daedalus_daemon.communications.request.urlopen", side_effect=fake_urlopen):
+            snapshot = fetch_work_snapshot({
+                "supabaseUrl": "https://example.supabase.co",
+                "supabasePublishableKey": "publishable-key",
+                "daemonUserId": "user-1",
+            })
+
+        self.assertEqual(snapshot["agentTasks"], [{"id": "task-1"}])
+        self.assertEqual(snapshot["orchestrationBatches"][0]["verification_output"], "")
+        self.assertIsNone(snapshot["claimedFeatureRun"])
 
     def test_terminal_batch_overrides_stale_daemon_review_state(self):
         request_bodies: list[dict] = []

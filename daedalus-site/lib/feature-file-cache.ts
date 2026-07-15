@@ -1,6 +1,9 @@
 export type FeatureFileRecord = {
   path: string;
   markdown: string;
+  display_heading?: string;
+  byte_size?: number;
+  omitted?: boolean;
 };
 
 export type FeatureFileProjects = Record<string, FeatureFileRecord[]>;

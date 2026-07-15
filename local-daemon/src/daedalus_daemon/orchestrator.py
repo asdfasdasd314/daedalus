@@ -9,6 +9,7 @@ import tomllib
 import uuid
 
 from .communications import (
+    get_agent_task_control,
     list_agent_tasks,
     list_orchestration_batches,
     record_daemon_event,
@@ -48,20 +49,16 @@ class GitWorktreeOrchestrator:
         self.cancelled_batch_ids: set[str] = set()
         self.recovered_persisted_work = False
 
-    def run_cycle(self, _config: dict | None = None) -> None:
-        tasks = list_agent_tasks(self.config)
-        batches = list_orchestration_batches(self.config)
+    def run_cycle(self, snapshot: dict | None = None) -> None:
+        tasks = snapshot.get("agentTasks", []) if snapshot is not None else list_agent_tasks(self.config)
+        batches = snapshot.get("orchestrationBatches", []) if snapshot is not None else list_orchestration_batches(self.config)
         if not self.recovered_persisted_work:
             self._recover_interrupted_work(tasks, batches)
             self.recovered_persisted_work = True
-            tasks = list_agent_tasks(self.config)
-            batches = list_orchestration_batches(self.config)
         self._handle_cancel_requests(tasks, batches)
         self._finish_tasks(tasks)
-        self._finish_batches(batches)
+        self._finish_batches(tasks, batches)
 
-        tasks = list_agent_tasks(self.config)
-        batches = list_orchestration_batches(self.config)
         self._cleanup_reclaimable_worktrees(tasks, batches)
         repositories = sorted({str(task["repository"]) for task in tasks})
 
@@ -287,12 +284,11 @@ class GitWorktreeOrchestrator:
         return True
 
     def _refresh_cancel_requested(self, task: dict) -> bool:
-        task_id = str(task["id"])
-        for current in list_agent_tasks(self.config):
-            if str(current["id"]) == task_id:
-                requested = bool(current.get("cancel_requested"))
-                task["cancel_requested"] = requested
-                return requested
+        current = get_agent_task_control(self.config, str(task["id"]))
+        if current is not None:
+            requested = bool(current.get("cancel_requested"))
+            task["cancel_requested"] = requested
+            return requested
         return bool(task.get("cancel_requested"))
 
     def _admit_tasks(self, repository: str, tasks: list[dict]) -> None:
@@ -844,7 +840,7 @@ class GitWorktreeOrchestrator:
             failure = "" if verification["ok"] else verification["output"]
         return failure, attempts
 
-    def _finish_batches(self, batches: list[dict]) -> None:
+    def _finish_batches(self, tasks: list[dict], batches: list[dict]) -> None:
         batches_by_id = {str(batch["id"]): batch for batch in batches}
         for batch_id, future in list(self.batch_futures.items()):
             if not future.done():
@@ -902,7 +898,6 @@ class GitWorktreeOrchestrator:
                 f"Batch {batch_id} integrated successfully into the repository.",
                 batch_id=batch_id,
             )
-            tasks = list_agent_tasks(self.config)
             for task in tasks:
                 if str(task["id"]) not in task_ids:
                     continue

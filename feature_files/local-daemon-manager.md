@@ -9,6 +9,7 @@ The local daemon manager is a small Python supervisor and Supabase-backed contro
 - **Crash Recovery**: Unexpected child exits close admission and retry replacement without creating a user restart request.
 - **Invocation Root**: The manager keeps loading its own code and configuration from the Daedalus checkout, while the manager and its execution child use the directory where the manager command began as their working root.
 - **Compatibility**: Users without a manager state row continue accepting work until the manager is first registered or a restart is requested.
+- **Five-Second Tick**: Idle heartbeat publication and control retrieval share one lease-checked database tick aligned to the five-second stale-health cadence; drain details are returned only during draining.
 
 ## Relevant Files
 - `local-daemon-manager/src/daedalus_daemon_manager/`: Manager configuration, Supabase communication, and supervision loop.
@@ -26,3 +27,4 @@ HACKING
 - 2026-07-14: Made the execution manager retractable behind a status-bearing robot launcher and lowered its layer beneath agent prompt overlays.
 - 2026-07-14: Separated the manager's fixed Daedalus code root from its invocation root so the execution daemon scans projects from the directory where the manager was started.
 - 2026-07-14: Fixed `daemon_manager_begin_restart` failing with ambiguous `blockers` by renaming the PL/pgSQL variable to `v_blockers`.
+- 2026-07-14: Consolidated idle heartbeat and restart-control reads into one five-second manager tick while retaining local child checks and generation-safe transitions.
