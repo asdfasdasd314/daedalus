@@ -56,3 +56,4 @@ TESTING
 - 2026-07-14: Completed the recurrent-read audit by filtering manager drain summaries, making cancellation a generation-guarded daemon handoff, and documenting the mandatory protocol in the root agent instructions.
 - 2026-07-14: Documented a remediation plan covering idle poll cadence, bounded recurrent RPC projections, one-time large-payload delivery, explicit historical pagination, and egress regression verification.
 - 2026-07-14: Implemented the consolidated browser inbox, daemon work snapshot, five-second manager tick, generation-safe batch acknowledgements, bounded archive and scanner transfers, aggregate egress instrumentation, and static regression assertions.
+- 2026-07-14: Repaired the cancellation-check regression test to mock the new task-scoped control lookup instead of the retired full task-list refresh.
