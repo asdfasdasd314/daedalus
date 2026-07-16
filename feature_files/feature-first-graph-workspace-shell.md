@@ -49,3 +49,5 @@ HACKING
 - 2026-07-12: Documented the canonical project payload behavior that removes duplicate graph clusters created by linked Git worktrees.
 - 2026-07-13: Added the upper-left History control and responsive drawer routing, moved mobile Ventures below it, and renamed the feature-detail Chat tab to prompt-only Edit.
 - 2026-07-13: Mounted the workspace-level daemon manager health, restart, cancellation, and drain-blocker panel independently from execution-specific overlays.
+- 2026-07-16: Generated a repository-wide Graphify map to document the graph workspace shell's relationships with feature rendering, agent prompts, output history, and search.
+- 2026-07-16: Refreshed the repository Graphify map after semantic and structural extraction, preserving the workspace shell's graph relationships for future navigation.
