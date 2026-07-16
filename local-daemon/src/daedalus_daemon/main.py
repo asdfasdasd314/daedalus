@@ -95,6 +95,7 @@ if __package__ in {None, ""}:
     )
     from daedalus_daemon.orchestrator import GitWorktreeOrchestrator
     from daedalus_daemon.execution import FeatureExecutionSupervisor
+    from daedalus_daemon.architecture import ArchitectureViewSupervisor
 else:
     from .communications import (
         AGENT_PROMPT_PURPOSE,
@@ -120,6 +121,7 @@ else:
     from .scanner import scan_feature_file_projects, scan_parameter_file_projects
     from .orchestrator import GitWorktreeOrchestrator
     from .execution import FeatureExecutionSupervisor
+    from .architecture import ArchitectureViewSupervisor
 
 
 ACTIVE_AGENT_PROCESSES: dict[str, subprocess.Popen] = {}
@@ -1245,6 +1247,7 @@ def main() -> None:
         config, run_codex_exec, run_cursor_exec, kill_agent_process
     )
     execution_supervisor = FeatureExecutionSupervisor(config)
+    architecture_supervisor = ArchitectureViewSupervisor(config, run_codex_exec)
     direct_prompt_supervisor = DirectPromptSupervisor(config)
 
     while True:
@@ -1271,6 +1274,14 @@ def main() -> None:
         if not run_cycle_safely(
             "feature_execution",
             lambda _current: execution_supervisor.run_cycle(work_snapshot),
+            config,
+        ):
+            time.sleep(config["pollIntervalMs"] / 1000)
+            continue
+
+        if not run_cycle_safely(
+            "architecture_view",
+            lambda _current: architecture_supervisor.run_cycle(work_snapshot),
             config,
         ):
             time.sleep(config["pollIntervalMs"] / 1000)

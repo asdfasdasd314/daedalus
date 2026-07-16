@@ -1,0 +1,4 @@
+provider = "codex"
+model = "gpt-5.6-terra"
+reasoning = "high"
+max_concurrent_generations = 1

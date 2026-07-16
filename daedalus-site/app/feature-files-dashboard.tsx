@@ -25,6 +25,7 @@ import type {
 } from "@/lib/agent-chat-cache";
 import type { AgentModelsConfig } from "@/lib/agent-models";
 import type { AgentOutputExchange as HistoryExchange } from "@/lib/agent-output-history";
+import type { ArchitectureView } from "@/lib/architecture-view";
 import {
   buildImplementationPrompt,
   parsePlanningReply,
@@ -239,15 +240,17 @@ type FeatureExecutionRunRow = {
 
 type ReviewReceipt = {
   receiptId: string;
-  transport: "communications" | "daemonPayloads" | "agentTasks" | "featureExecutionRuns" | "daemonEvents" | "managerStatus";
+  transport: "communications" | "daemonPayloads" | "agentTasks" | "architectureViews" | "featureExecutionRuns" | "daemonEvents" | "managerStatus";
   key: string;
   updatedAt?: string;
+  generation?: number;
 };
 
 type ClientReviewInbox = {
   communications: Array<{ purpose: string; content: string | null; updated_at: string }>;
   daemonPayloads: DaemonPayloadRow<unknown>[];
   agentTasks: AgentTaskRow[];
+  architectureViews: ArchitectureView[];
   featureExecutionRuns: FeatureExecutionRunRow[];
   daemonEvents: DaemonEventRow[];
   managerStatus: DaemonManagerStatus | null;
@@ -296,6 +299,9 @@ export default function FeatureFilesDashboard({
   const [durableAgentTasks, setDurableAgentTasks] = useState<
     AgentPromptQueueEntry[]
   >([]);
+  const [architectureViews, setArchitectureViews] = useState<
+    Record<string, ArchitectureView>
+  >({});
   const [isAgentPromptQueueHydrated, setIsAgentPromptQueueHydrated] =
     useState(false);
   const [finalizedDurableTaskCount, setFinalizedDurableTaskCount] =
@@ -728,6 +734,18 @@ export default function FeatureFilesDashboard({
           });
           receipts.push(...inbox.agentTasks.map((row) => reviewReceipt("agentTasks", row.id, row.updated_at)));
         }
+        if ((inbox.architectureViews ?? []).length) {
+          setArchitectureViews((current) => {
+            let next = current;
+            for (const view of inbox.architectureViews ?? []) {
+              next = mergeArchitectureView(next, view);
+            }
+            return next;
+          });
+          receipts.push(...(inbox.architectureViews ?? []).map((view) => reviewReceipt(
+            "architectureViews", view.id, view.updated_at, view.generation,
+          )));
+        }
         const latestEvent = inbox.daemonEvents.at(-1);
         if (latestEvent) setPromptStatus(`Daemon ${latestEvent.severity}: ${latestEvent.content}`);
         receipts.push(...inbox.daemonEvents.map((row) => reviewReceipt("daemonEvents", String(row.id))));
@@ -821,6 +839,7 @@ export default function FeatureFilesDashboard({
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setDurableAgentTasks([]);
+    setArchitectureViews({});
     setFinalizedDurableTaskCount(0);
     setLastIntegratedBatchStatus("");
     setAgentTaskNotifications([]);
@@ -1940,6 +1959,12 @@ export default function FeatureFilesDashboard({
   }
 
   function handleDeletedHistoryExchange(exchange: HistoryExchange) {
+    setArchitectureViews((current) => {
+      if (!current[exchange.promptId]) return current;
+      const next = { ...current };
+      delete next[exchange.promptId];
+      return next;
+    });
     setAgentPromptQueue((currentQueue) =>
       currentQueue.filter((item) => item.promptId !== exchange.promptId),
     );
@@ -2923,6 +2948,7 @@ export default function FeatureFilesDashboard({
         key={currentUserId}
         accessToken={accessToken}
         activitySummary={lastIntegratedBatchStatus}
+        architectureViews={architectureViews}
         isOpen={isAgentOutputViewerOpen}
         liveExchanges={liveHistoryExchanges}
         onAbandonDirectPrompt={abandonQueuedAgentPrompt}
@@ -2933,6 +2959,9 @@ export default function FeatureFilesDashboard({
         onDeletedExchange={handleDeletedHistoryExchange}
         onImplementPlan={() => void implementPlanningSession()}
         onPlanningReply={handleHistoryPlanningReply}
+        onArchitectureViewChange={(view) => setArchitectureViews((current) => (
+          mergeArchitectureView(current, view)
+        ))}
         onRefreshLiveTasks={rehydrateDurableAgentTasks}
         onRetryDirectPrompt={retryHistoryDirectPrompt}
         onSelectedPromptIdChange={setSelectedHistoryPromptId}
@@ -3970,8 +3999,26 @@ export default function FeatureFilesDashboard({
 
 function reviewReceipt(
   transport: ReviewReceipt["transport"], key: string, updatedAt?: string,
+  generation?: number,
 ): ReviewReceipt {
-  return { receiptId: `${transport}:${key}:${updatedAt ?? "immutable"}`, transport, key, updatedAt };
+  return {
+    receiptId: `${transport}:${key}:${updatedAt ?? "immutable"}`,
+    transport,
+    key,
+    updatedAt,
+    generation,
+  };
+}
+
+function mergeArchitectureView(
+  current: Record<string, ArchitectureView>, incoming: ArchitectureView,
+) {
+  const existing = current[incoming.prompt_id];
+  if (existing && (
+    existing.generation > incoming.generation
+    || (existing.generation === incoming.generation && existing.updated_at > incoming.updated_at)
+  )) return current;
+  return { ...current, [incoming.prompt_id]: incoming };
 }
 
 function isManagerHeartbeatCurrent(status: DaemonManagerStatus) {

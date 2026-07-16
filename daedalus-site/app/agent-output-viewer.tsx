@@ -5,6 +5,11 @@ import type { FeatureFileProjects } from "@/lib/feature-file-cache";
 import type { PlanningSession } from "@/lib/planning-questionnaire";
 import { parsePlanningReply, type PlanningQuestion } from "@/lib/planning-questionnaire";
 import {
+  fetchArchitectureView,
+  requestArchitectureView,
+  type ArchitectureView,
+} from "@/lib/architecture-view";
+import {
   AGENT_OUTPUT_MODE_LABELS,
   AGENT_OUTPUT_SOURCE_LABELS,
   AGENT_OUTPUT_STATUS_LABELS,
@@ -30,10 +35,12 @@ import { getProjectLabel } from "./feature-workspace-utils";
 type AgentOutputViewerProps = {
   accessToken: string;
   activitySummary: string;
+  architectureViews: Record<string, ArchitectureView>;
   isOpen: boolean;
   liveExchanges: AgentOutputExchange[];
   onAbandonDirectPrompt: (promptId: string) => void;
   onAnswerPlanningQuestion: (answer: string) => void;
+  onArchitectureViewChange: (view: ArchitectureView) => void;
   onCancelDurableTask: (exchange: AgentOutputExchange) => void;
   onClearFinalizedTasks: () => void;
   onClose: () => void;
@@ -52,8 +59,8 @@ type AgentOutputViewerProps = {
 };
 
 export default function AgentOutputViewer({
-  accessToken, activitySummary, isOpen, liveExchanges, onAbandonDirectPrompt,
-  onAnswerPlanningQuestion, onCancelDurableTask, onClearFinalizedTasks,
+  accessToken, activitySummary, architectureViews, isOpen, liveExchanges, onAbandonDirectPrompt,
+  onAnswerPlanningQuestion, onArchitectureViewChange, onCancelDurableTask, onClearFinalizedTasks,
   onClose, onDeletedExchange, onImplementPlan, onPlanningReply, onRefreshLiveTasks,
   onRetryDirectPrompt, onSelectedPromptIdChange, planningSession, projects,
   selectedPromptId, supabasePublishableKey, supabaseUrl,
@@ -72,6 +79,10 @@ export default function AgentOutputViewer({
   const [selectedGroupKey, setSelectedGroupKey] = useState("all");
   const [mobileDetail, setMobileDetail] = useState(false);
   const [otherAnswer, setOtherAnswer] = useState("");
+  const [architecturePromptId, setArchitecturePromptId] = useState("");
+  const [architectureLoadingPromptId, setArchitectureLoadingPromptId] = useState("");
+  const [architectureError, setArchitectureError] = useState("");
+  const [checkedArchitecturePromptIds, setCheckedArchitecturePromptIds] = useState<string[]>([]);
   const publishedPlanningPromptRef = useRef("");
   const historyOpenLoadKeyRef = useRef("");
 
@@ -163,6 +174,63 @@ export default function AgentOutputViewer({
       && (exchange.status === "failed" || exchange.status === "blocked"),
   ));
   const projectDirectories = Object.keys(projects);
+  const selectedArchitectureView = selected ? architectureViews[selected.promptId] ?? null : null;
+  const selectedCanHaveArchitectureView = Boolean(
+    selected?.source === "durable_task" && selected.status === "completed",
+  );
+  const selectedArchitectureChecked = Boolean(
+    selected && checkedArchitecturePromptIds.includes(selected.promptId),
+  );
+
+  useEffect(() => {
+    if (!isOpen || !accessToken || !selectedCanHaveArchitectureView || !selected) return;
+    if (architectureViews[selected.promptId] || checkedArchitecturePromptIds.includes(selected.promptId)) return;
+    let active = true;
+    setArchitectureLoadingPromptId(selected.promptId);
+    void fetchArchitectureView(
+      supabaseUrl, supabasePublishableKey, accessToken, selected.promptId,
+    ).then((view) => {
+      if (!active) return;
+      if (view) onArchitectureViewChange(view);
+    }).catch((error) => {
+      if (active) setArchitectureError(error instanceof Error ? error.message : "Unable to load Architecture View.");
+    }).finally(() => {
+      if (active) {
+        setCheckedArchitecturePromptIds((current) => [...current, selected.promptId]);
+        setArchitectureLoadingPromptId("");
+      }
+    });
+    return () => { active = false; };
+  }, [
+    accessToken, architectureViews, checkedArchitecturePromptIds, isOpen,
+    onArchitectureViewChange, selected, selectedCanHaveArchitectureView,
+    supabasePublishableKey, supabaseUrl,
+  ]);
+
+  async function generateArchitectureView(promptId: string) {
+    setArchitectureError("");
+    setArchitectureLoadingPromptId(promptId);
+    try {
+      const view = await requestArchitectureView(
+        supabaseUrl, supabasePublishableKey, accessToken, promptId,
+      );
+      if (!view) throw new Error("Architecture View is not available for this task.");
+      onArchitectureViewChange(view);
+    } catch (error) {
+      setArchitectureError(error instanceof Error ? error.message : "Unable to request Architecture View.");
+    } finally {
+      setArchitectureLoadingPromptId("");
+    }
+  }
+
+  function openArchitectureView() {
+    if (!selected || !selectedArchitectureView) return;
+    setArchitectureError("");
+    setArchitecturePromptId(selected.promptId);
+    if (selectedArchitectureView.status === "available") {
+      void generateArchitectureView(selected.promptId);
+    }
+  }
 
   useEffect(() => {
     if (!isOpen || !accessToken || !selected?.conversationId) return;
@@ -305,7 +373,7 @@ export default function AgentOutputViewer({
                   ) : null}
                   <button
                     type="button"
-                    onClick={() => { onSelectedPromptIdChange(exchange.promptId); setMobileDetail(true); }}
+                    onClick={() => { setArchitectureError(""); setArchitecturePromptId(""); onSelectedPromptIdChange(exchange.promptId); setMobileDetail(true); }}
                     className={`w-full min-w-0 p-3 text-left ${canDelete ? "pr-10" : ""}`}
                   >
                     <div className="flex items-center justify-between gap-2"><span className="rounded-full bg-white/8 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-100">{AGENT_OUTPUT_STATUS_LABELS[exchange.status]}</span><time className={`text-[10px] text-slate-500 ${canDelete ? "mr-6" : ""}`}>{formatTime(exchange.completedAt ?? exchange.updatedAt)}</time></div>
@@ -321,13 +389,33 @@ export default function AgentOutputViewer({
 
       <div className={`${mobileDetail ? "flex" : "hidden md:flex"} min-w-0 flex-1 flex-col`}>
         <div className="flex items-start justify-between gap-4 border-b border-white/10 p-4">
-          <button type="button" onClick={() => setMobileDetail(false)} className="rounded-full border border-white/10 px-3 py-2 text-xs font-semibold text-slate-200 md:hidden">Back</button>
-          <div className="min-w-0 flex-1"><p className="text-[11px] uppercase tracking-[0.24em] text-slate-400">Selected conversation</p><h2 className="mt-1 truncate text-lg font-semibold text-white">{conversationTurns[0]?.prompt || selected?.prompt || "Select a prompt"}</h2></div>
+          {architecturePromptId ? <button type="button" onClick={() => setArchitecturePromptId("")} className="rounded-full border border-white/10 px-3 py-2 text-xs font-semibold text-slate-200">Back</button> : <button type="button" onClick={() => setMobileDetail(false)} className="rounded-full border border-white/10 px-3 py-2 text-xs font-semibold text-slate-200 md:hidden">Back</button>}
+          <div className="min-w-0 flex-1"><p className="text-[11px] uppercase tracking-[0.24em] text-slate-400">{architecturePromptId ? "Final system snapshot" : "Selected conversation"}</p><h2 className="mt-1 truncate text-lg font-semibold text-white">{architecturePromptId ? "Architecture View" : conversationTurns[0]?.prompt || selected?.prompt || "Select a prompt"}</h2></div>
           <button type="button" onClick={onClose} className="hidden rounded-full border border-white/10 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10 md:block">Close</button>
         </div>
         <div className="agent-chat-scrollbar min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
           {fetchError ? <p className="mb-4 rounded-xl border border-rose-400/20 bg-rose-500/10 p-3 text-sm text-rose-100">{fetchError} Loaded results remain available.</p> : null}
-          {selected ? (
+          {architecturePromptId && selected ? (
+            <div className="grid min-w-0 gap-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                <div className="flex flex-wrap gap-2 text-xs">
+                  <span className="rounded-full bg-cyan-300/12 px-3 py-1.5 text-cyan-100">{selectedArchitectureView?.status === "completed" ? "Generated" : selectedArchitectureView?.status === "failed" ? "Generation failed" : "Generating"}</span>
+                  {selectedArchitectureView?.model ? <span className="rounded-full bg-white/7 px-3 py-1.5 text-slate-300">{selectedArchitectureView.model} · {selectedArchitectureView.reasoning}</span> : null}
+                </div>
+                <button
+                  type="button"
+                  disabled={!selectedArchitectureView || ["queued", "running", "available"].includes(selectedArchitectureView.status) || architectureLoadingPromptId === selected.promptId}
+                  onClick={() => void generateArchitectureView(selected.promptId)}
+                  className="rounded-full border border-cyan-300/25 px-4 py-2 text-xs font-semibold text-cyan-100 disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  {architectureLoadingPromptId === selected.promptId ? "Requesting..." : "Regenerate"}
+                </button>
+              </div>
+              {architectureError ? <p className="rounded-xl border border-rose-400/25 bg-rose-500/10 p-3 text-sm text-rose-100">{architectureError}</p> : null}
+              {selectedArchitectureView?.error ? <p className="rounded-xl border border-rose-400/25 bg-rose-500/10 p-3 text-sm text-rose-100">{selectedArchitectureView.error}</p> : null}
+              {selectedArchitectureView?.report_markdown ? <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.02] p-4"><AgentOutputDetail label="Final system architecture" value={selectedArchitectureView.report_markdown} markdown /></div> : <p className="rounded-xl border border-dashed border-white/10 p-5 text-sm text-slate-400">{selectedArchitectureView?.status === "failed" ? "No Architecture View has been generated yet." : "The daemon is preparing the final-state architecture report."}</p>}
+            </div>
+          ) : selected ? (
             <div className="grid min-w-0 gap-4">
               <div className="flex flex-wrap gap-2 text-xs text-slate-300">
                 <span className="rounded-full bg-cyan-300/12 px-3 py-1.5 text-cyan-100">{AGENT_OUTPUT_STATUS_LABELS[selected.status]}</span>
@@ -367,6 +455,15 @@ export default function AgentOutputViewer({
                 {canCancel ? <button type="button" onClick={() => onCancelDurableTask(selected)} className="rounded-full border border-rose-400/25 bg-rose-500/10 px-4 py-2 text-xs font-semibold text-rose-100">Cancel task</button> : null}
                 {canRetry ? <button type="button" onClick={() => onRetryDirectPrompt(selected)} className="rounded-full border border-cyan-300/25 px-4 py-2 text-xs font-semibold text-cyan-100">Retry prompt</button> : null}
                 {canAbandon ? <button type="button" onClick={() => onAbandonDirectPrompt(selected.promptId)} className="rounded-full border border-white/10 px-4 py-2 text-xs font-semibold text-slate-200">Abandon local prompt</button> : null}
+                {selectedCanHaveArchitectureView ? <button
+                  type="button"
+                  disabled={!selectedArchitectureView || architectureLoadingPromptId === selected.promptId}
+                  onClick={openArchitectureView}
+                  className="rounded-full border border-emerald-300/25 bg-emerald-300/[0.06] px-4 py-2 text-xs font-semibold text-emerald-100 disabled:cursor-not-allowed disabled:opacity-45"
+                  title={selectedArchitectureChecked && !selectedArchitectureView ? "This task predates immutable Architecture View commit capture." : "Open the final-state system architecture report."}
+                >
+                  {architectureLoadingPromptId === selected.promptId || (!selectedArchitectureChecked && !selectedArchitectureView) ? "Checking Architecture View..." : selectedArchitectureView ? "Architecture View" : "Architecture View unavailable"}
+                </button> : null}
                 <button type="button" onClick={onClearFinalizedTasks} className="rounded-full border border-white/10 px-4 py-2 text-xs font-semibold text-slate-200" title="Deletes finalized task queue rows only; archived History remains.">Clear finalized task rows (keeps History)</button>
               </div>
             </div>

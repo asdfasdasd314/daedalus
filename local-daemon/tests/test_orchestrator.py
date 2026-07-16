@@ -129,6 +129,38 @@ class VerificationTests(unittest.TestCase):
         self.assertEqual(mock_process.call_count, 2)
         self.assertIn("failed", result["output"])
 
+    def test_captures_final_verified_head_for_architecture_view(self):
+        orchestrator = GitWorktreeOrchestrator({}, lambda *a: "ok", lambda *a: "ok")
+        task = {
+            "id": "task-architecture",
+            "repository": "/repo",
+            "provider": "codex",
+            "model": "gpt-5.6-terra",
+            "reasoning": "high",
+            "prompt": "Build it",
+            "base_commit": "base123",
+            "worktree_path": "/tmp/worktree",
+            "cancel_requested": False,
+            "verification_attempts": 0,
+        }
+        with (
+            patch.object(orchestrator, "_run_task_agent", return_value="agent ok"),
+            patch.object(orchestrator, "_refresh_cancel_requested", return_value=False),
+            patch("daedalus_daemon.orchestrator.update_agent_task"),
+            patch("daedalus_daemon.orchestrator.commit_worktree_changes", return_value=True),
+            patch("daedalus_daemon.orchestrator.record_daemon_event"),
+            patch("daedalus_daemon.orchestrator.verification_commands_for_worktree", return_value=[]),
+            patch("daedalus_daemon.orchestrator.git_output", side_effect=["", "first456", "final789"]),
+            patch("daedalus_daemon.orchestrator.run_verification", return_value={"ok": True, "output": "passed"}),
+        ):
+            outcome = orchestrator._run_task(task, {
+                "verificationCommands": [],
+                "taskVerificationAttemptLimit": 3,
+            })
+
+        self.assertTrue(outcome["ok"])
+        self.assertEqual(outcome["completed_commit"], "final789")
+
 
 class PromptTests(unittest.TestCase):
     def test_task_prompt_requires_commits_and_preserves_scope(self):

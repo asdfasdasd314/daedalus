@@ -165,6 +165,7 @@ class UpdateCurrentMessageTests(unittest.TestCase):
                 "communications": [],
                 "agentTasks": [{"id": "task-1"}],
                 "orchestrationBatches": [{"id": "batch-1"}],
+                "architectureViews": [{"id": "architecture-1"}],
                 "featureRunControls": [{"id": "run-1", "status": "running"}],
                 "claimedFeatureRun": None,
             })
@@ -178,6 +179,7 @@ class UpdateCurrentMessageTests(unittest.TestCase):
 
         self.assertEqual(snapshot["agentTasks"], [{"id": "task-1"}])
         self.assertEqual(snapshot["orchestrationBatches"][0]["verification_output"], "")
+        self.assertEqual(snapshot["architectureViews"], [{"id": "architecture-1"}])
         self.assertIsNone(snapshot["claimedFeatureRun"])
 
     def test_terminal_batch_overrides_stale_daemon_review_state(self):

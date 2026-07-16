@@ -81,6 +81,7 @@ def fetch_work_snapshot(config: dict) -> dict:
         "communications": source.get("communications") if isinstance(source.get("communications"), list) else [],
         "agentTasks": source.get("agentTasks") if isinstance(source.get("agentTasks"), list) else [],
         "orchestrationBatches": normalized_batches,
+        "architectureViews": source.get("architectureViews") if isinstance(source.get("architectureViews"), list) else [],
         "featureRunControls": source.get("featureRunControls") if isinstance(source.get("featureRunControls"), list) else [],
         "claimedFeatureRun": source.get("claimedFeatureRun") if isinstance(source.get("claimedFeatureRun"), dict) else None,
     }
@@ -222,6 +223,45 @@ def update_agent_task(
         "p_task_id": task_id,
         "p_expected_status": expected_status,
         "p_updates": updates,
+    })
+    return bool(result)
+
+
+def claim_architecture_view(config: dict, view: dict) -> dict | None:
+    result = call_daemon_rpc(config, "daemon_claim_architecture_view", {
+        "p_user_id": config["daemonUserId"],
+        "p_view_id": view["id"],
+        "p_generation": view["generation"],
+        "p_expected_updated_at": view["updated_at"],
+    })
+    return result if isinstance(result, dict) else None
+
+
+def complete_architecture_view(
+    config: dict,
+    view_id: str,
+    generation: int,
+    expected_updated_at: str,
+    status: str,
+    changed_files: list[dict],
+    report_markdown: str,
+    error: str,
+    provider: str,
+    model: str,
+    reasoning: str,
+) -> bool:
+    result = call_daemon_rpc(config, "daemon_complete_architecture_view", {
+        "p_user_id": config["daemonUserId"],
+        "p_view_id": view_id,
+        "p_generation": generation,
+        "p_expected_updated_at": expected_updated_at,
+        "p_status": status,
+        "p_changed_files": changed_files,
+        "p_report_markdown": report_markdown,
+        "p_error": error,
+        "p_provider": provider,
+        "p_model": model,
+        "p_reasoning": reasoning,
     })
     return bool(result)
 

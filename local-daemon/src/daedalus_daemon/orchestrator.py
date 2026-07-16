@@ -524,6 +524,7 @@ class GitWorktreeOrchestrator:
             "ok": True,
             "reply": reply,
             "verification": verification["output"],
+            "completed_commit": git_output(worktree_path, ["rev-parse", "HEAD"]),
             "expected_status": "verifying",
         }
 
@@ -604,6 +605,11 @@ class GitWorktreeOrchestrator:
                 "status": next_status,
                 "result": outcome.get("reply", ""),
                 "error": outcome.get("error", ""),
+                **(
+                    {"completed_commit": outcome["completed_commit"]}
+                    if outcome.get("completed_commit")
+                    else {}
+                ),
                 **({"completed_at": utc_now()} if not outcome["ok"] else {}),
             })
             if not outcome["ok"]:

@@ -1,0 +1,154 @@
+import json
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
+from daedalus_daemon.architecture import (
+    build_architecture_prompt,
+    collect_changed_files,
+    collect_graph_community_evidence,
+    collect_relevant_feature_files,
+    generate_architecture_view,
+    load_architecture_settings,
+)
+
+
+class ArchitectureEvidenceTests(unittest.TestCase):
+    def test_dedicated_codex_settings_and_read_only_generation(self):
+        settings = load_architecture_settings()
+        calls = []
+
+        def run_codex(*arguments, **keywords):
+            calls.append((arguments, keywords))
+            return "# Architecture View\n\n## Owned System"
+
+        with (
+            patch("daedalus_daemon.architecture.collect_changed_files", return_value=[]),
+            patch("daedalus_daemon.architecture.add_snapshot_worktree"),
+            patch("daedalus_daemon.architecture.remove_snapshot_worktree"),
+            patch("daedalus_daemon.architecture.collect_relevant_feature_files", return_value=[]),
+            patch("daedalus_daemon.architecture.collect_graph_community_evidence", return_value=[]),
+        ):
+            result = generate_architecture_view({
+                "id": "view-1",
+                "repository": "/repo",
+                "base_commit": "base",
+                "final_commit": "final",
+                "generation": 1,
+                "targeted_feature_paths": [],
+            }, settings, run_codex)
+
+        self.assertEqual(settings, {
+            "provider": "codex",
+            "model": "gpt-5.6-terra",
+            "reasoning": "high",
+            "maxConcurrentGenerations": 1,
+        })
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(calls[0][0][2:4], ("gpt-5.6-terra", "high"))
+        self.assertTrue(calls[0][1]["ask_mode"])
+
+    def test_collects_file_only_diff_and_excludes_graphify_outputs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Path(directory)
+            self.git(repository, "init")
+            self.git(repository, "config", "user.email", "test@example.com")
+            self.git(repository, "config", "user.name", "Test User")
+            (repository / "modified.py").write_text("before\n", encoding="utf-8")
+            (repository / "renamed.py").write_text("rename\n", encoding="utf-8")
+            (repository / "deleted.py").write_text("delete\n", encoding="utf-8")
+            (repository / "graphify-out").mkdir()
+            (repository / "graphify-out" / "graph.json").write_text("{}\n", encoding="utf-8")
+            self.git(repository, "add", ".")
+            self.git(repository, "commit", "-m", "base")
+            base = self.git(repository, "rev-parse", "HEAD")
+
+            (repository / "modified.py").write_text("after\n", encoding="utf-8")
+            (repository / "added.py").write_text("added\n", encoding="utf-8")
+            (repository / "renamed.py").rename(repository / "new-name.py")
+            (repository / "deleted.py").unlink()
+            (repository / "graphify-out" / "graph.json").write_text('{"updated": true}\n', encoding="utf-8")
+            self.git(repository, "add", "-A")
+            self.git(repository, "commit", "-m", "final")
+            final = self.git(repository, "rev-parse", "HEAD")
+
+            changed = collect_changed_files(repository, base, final)
+
+        paths = {item["path"] for item in changed}
+        self.assertIn("modified.py", paths)
+        self.assertIn("added.py", paths)
+        self.assertIn("new-name.py", paths)
+        self.assertIn("deleted.py", paths)
+        self.assertNotIn("graphify-out/graph.json", paths)
+
+    def test_combines_feature_ownership_and_changed_graph_communities(self):
+        with tempfile.TemporaryDirectory() as directory:
+            snapshot = Path(directory)
+            feature_root = snapshot / "feature_files"
+            graph_root = snapshot / "graphify-out"
+            feature_root.mkdir()
+            graph_root.mkdir()
+            (feature_root / "owned.md").write_text(
+                "# Owned\n\n## Relevant Files\n- `src/owned.py`\n",
+                encoding="utf-8",
+            )
+            graph = {
+                "nodes": [
+                    {"id": "file", "label": "owned.py", "file_type": "code", "source_file": "src/owned.py", "community": 4},
+                    {"id": "symbol", "label": "Owned", "file_type": "code", "source_file": "src/owned.py", "community": 4},
+                    {"id": "other", "label": "Other", "file_type": "code", "source_file": "src/other.py", "community": 9},
+                ],
+                "links": [
+                    {"source": "file", "target": "symbol", "relation": "contains", "confidence": "EXTRACTED"},
+                    {"source": "other", "target": "symbol", "relation": "calls", "confidence": "EXTRACTED"},
+                ],
+            }
+            (graph_root / "graph.json").write_text(json.dumps(graph), encoding="utf-8")
+            changed = [{"status": "M", "path": "src/owned.py"}]
+
+            feature_paths = collect_relevant_feature_files(snapshot, changed, [])
+            evidence = collect_graph_community_evidence(snapshot, changed)
+
+        self.assertEqual(feature_paths, ["feature_files/owned.md"])
+        self.assertEqual([item["community"] for item in evidence], [4])
+        self.assertEqual(len(evidence[0]["members"]), 2)
+        self.assertEqual(len(evidence[0]["touchingRelationships"]), 2)
+
+    def test_prompt_requires_final_state_structure_without_change_narration(self):
+        prompt = build_architecture_prompt(
+            [{"status": "M", "path": "src/owned.py"}],
+            ["feature_files/owned.md"],
+            [{"community": 4, "members": []}],
+        )
+
+        for heading in (
+            "# Architecture View",
+            "## <System Name>",
+            "### Purpose",
+            "### Ownership Boundary",
+            "### Components",
+            "### Interactions and Data Flow",
+            "### Invariants",
+            "### Relevant Files",
+        ):
+            self.assertIn(heading, prompt)
+        self.assertIn("never describe the changes", prompt)
+        self.assertIn("Output only Markdown", prompt)
+
+    @staticmethod
+    def git(repository: Path, *arguments: str) -> str:
+        process = subprocess.run(
+            ["git", *arguments], cwd=repository,
+            capture_output=True, text=True, check=True,
+        )
+        return process.stdout.strip()
+
+
+if __name__ == "__main__":
+    unittest.main()

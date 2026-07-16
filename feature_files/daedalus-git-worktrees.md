@@ -8,6 +8,7 @@ Daedalus Git Worktrees isolates agent-mode prompts on task branches and uses a d
 - **Central Configuration**: Scheduler, resolver, branch, and verification settings are loaded once from Daedalus's feature-owned parameter file rather than requiring configuration files in managed repositories.
 - **Durable Progress**: Every task insert and lifecycle update atomically projects status, result, error, metadata, and timestamps into Agent Output Viewer history.
 - **Daemon-Owned Commits**: When an agent sandbox cannot reach Git's shared worktree metadata, the daemon stages and commits the completed isolated changes before verification.
+- **Verified Commit Provenance**: Successful tasks persist the final verified task-branch commit after all repair attempts so dependent systems can reconstruct the exact task state after worktree cleanup.
 - **Reclaimable Workspaces**: Completed, cancelled, and clean failed worktrees are removed on later daemon cycles; dirty failures and blocked integrations remain available for recovery.
 - **Task Repair Loop**: Individual verification suites receive up to three total attempts in the same isolated worktree, with later agent repairs informed by the captured failure before a durable terminal error is reported.
 - **Base-State Cohorts**: Tasks admitted from the same `main` commit are verified independently and integrated in submission order after the cohort fills or its quiet window expires.
@@ -30,6 +31,7 @@ Daedalus Git Worktrees isolates agent-mode prompts on task branches and uses a d
 - `daedalus-site/app/feature-files-dashboard.tsx`: Durable agent task submission, cancel requests, and status polling.
 - `daedalus-site/app/agent-session-panel.tsx`: Cancel control on in-flight durable tasks.
 - `parameter_files/daedalus-git-worktrees.toml`: Daedalus-owned scheduler, resolver, branch, cancel grace, and verification configuration shared by managed repositories.
+- `feature_files/system-architecture-communication-engine.md`: Consumer of the immutable base and final verified task commit boundary.
 
 ## Dev Mode
 HACKING
@@ -53,3 +55,4 @@ HACKING
 - 2026-07-14: Made resolver dispatch provider-aware and added a parameterized Codex/Cursor resolver selection so Cursor tasks never pass empty reasoning into Codex.
 - 2026-07-14: Added migration 024 to repair live databases that never received `agent_tasks.cancel_requested` from 015.
 - 2026-07-14: Added deterministic migration-number reconcile on integration so duplicate `NNN_*.sql` prefixes are renumbered before combined verification and promotion.
+- 2026-07-16: Persisted each successful task's final verified branch commit after repair completion for forward-only Architecture View reconstruction.

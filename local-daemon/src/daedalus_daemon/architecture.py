@@ -1,0 +1,332 @@
+import json
+from concurrent.futures import Future, ThreadPoolExecutor
+from pathlib import Path
+import subprocess
+import tomllib
+
+from .communications import claim_architecture_view, complete_architecture_view
+
+
+DAEDALUS_ROOT = Path(__file__).resolve().parents[3]
+ARCHITECTURE_PARAMETER_FILE = (
+    DAEDALUS_ROOT
+    / "parameter_files"
+    / "system-architecture-communication-engine.toml"
+)
+
+
+class ArchitectureViewSupervisor:
+    def __init__(self, config: dict, run_codex):
+        self.config = config
+        self.run_codex = run_codex
+        self.settings = load_architecture_settings()
+        self.executor = ThreadPoolExecutor(
+            max_workers=self.settings["maxConcurrentGenerations"]
+        )
+        self.active: dict[str, tuple[dict, Future]] = {}
+
+    def run_cycle(self, snapshot: dict) -> None:
+        self._publish_finished()
+        for queued in snapshot.get("architectureViews", []):
+            if len(self.active) >= self.settings["maxConcurrentGenerations"]:
+                break
+            view_id = str(queued.get("id") or "")
+            if not view_id or view_id in self.active:
+                continue
+            claimed = claim_architecture_view(self.config, queued)
+            if not claimed:
+                continue
+            future = self.executor.submit(
+                generate_architecture_view,
+                claimed,
+                self.settings,
+                self.run_codex,
+            )
+            self.active[view_id] = (claimed, future)
+
+    def _publish_finished(self) -> None:
+        for view_id, (view, future) in list(self.active.items()):
+            if not future.done():
+                continue
+            try:
+                result = future.result()
+            except Exception as error:
+                result = {
+                    "status": "failed",
+                    "changed_files": [],
+                    "report_markdown": "",
+                    "error": str(error),
+                }
+            complete_architecture_view(
+                self.config,
+                view_id,
+                int(view["generation"]),
+                str(view["updated_at"]),
+                result["status"],
+                result["changed_files"],
+                result["report_markdown"],
+                result["error"],
+                self.settings["provider"],
+                self.settings["model"],
+                self.settings["reasoning"],
+            )
+            self.active.pop(view_id, None)
+
+
+def load_architecture_settings() -> dict:
+    with ARCHITECTURE_PARAMETER_FILE.open("rb") as parameter_file:
+        values = tomllib.load(parameter_file)
+    return {
+        "provider": str(values.get("provider", "codex")),
+        "model": str(values.get("model", "gpt-5.6-terra")),
+        "reasoning": str(values.get("reasoning", "high")),
+        "maxConcurrentGenerations": int(values.get("max_concurrent_generations", 1)),
+    }
+
+
+def generate_architecture_view(view: dict, settings: dict, run_codex) -> dict:
+    repository = Path(str(view["repository"])).resolve()
+    snapshot_path = architecture_snapshot_path(
+        repository, str(view["id"]), int(view["generation"])
+    )
+    changed_files = collect_changed_files(
+        repository,
+        str(view["base_commit"]),
+        str(view["final_commit"]),
+    )
+    add_snapshot_worktree(repository, snapshot_path, str(view["final_commit"]))
+    try:
+        targeted_paths = [
+            str(path)
+            for path in view.get("targeted_feature_paths", [])
+            if isinstance(path, str)
+        ]
+        feature_paths = collect_relevant_feature_files(
+            snapshot_path, changed_files, targeted_paths
+        )
+        graph_evidence = collect_graph_community_evidence(
+            snapshot_path, changed_files
+        )
+        prompt = build_architecture_prompt(
+            changed_files, feature_paths, graph_evidence
+        )
+        report = run_codex(
+            str(snapshot_path),
+            prompt,
+            settings["model"],
+            settings["reasoning"],
+            ask_mode=True,
+        )
+        if not report.strip().startswith("# Architecture View"):
+            raise RuntimeError(report.strip() or "Codex returned an empty Architecture View.")
+        return {
+            "status": "completed",
+            "changed_files": changed_files,
+            "report_markdown": report,
+            "error": "",
+        }
+    except Exception as error:
+        return {
+            "status": "failed",
+            "changed_files": changed_files,
+            "report_markdown": "",
+            "error": str(error),
+        }
+    finally:
+        remove_snapshot_worktree(repository, snapshot_path)
+
+
+def architecture_snapshot_path(repository: Path, view_id: str, generation: int) -> Path:
+    root = repository.parent / ".daedalus-worktrees" / repository.name
+    return root / f"architecture-{view_id}-{generation}"
+
+
+def add_snapshot_worktree(repository: Path, snapshot_path: Path, final_commit: str) -> None:
+    snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+    run_git(
+        repository,
+        ["worktree", "add", "--detach", str(snapshot_path), final_commit],
+    )
+
+
+def remove_snapshot_worktree(repository: Path, snapshot_path: Path) -> None:
+    if snapshot_path.exists():
+        subprocess.run(
+            ["git", "worktree", "remove", "--force", str(snapshot_path)],
+            cwd=repository,
+            capture_output=True,
+            text=True,
+        )
+
+
+def collect_changed_files(
+    repository: Path, base_commit: str, final_commit: str
+) -> list[dict]:
+    output = run_git(
+        repository,
+        [
+            "diff",
+            "--name-status",
+            "--find-renames",
+            base_commit,
+            final_commit,
+            "--",
+            ".",
+            ":(exclude)graphify-out/**",
+        ],
+    )
+    changed_files: list[dict] = []
+    for line in output.splitlines():
+        columns = line.split("\t")
+        if len(columns) < 2:
+            continue
+        status = columns[0]
+        if status.startswith("R") and len(columns) >= 3:
+            changed_files.append({
+                "status": status,
+                "previousPath": columns[1],
+                "path": columns[2],
+            })
+        else:
+            changed_files.append({"status": status, "path": columns[1]})
+    return changed_files
+
+
+def collect_relevant_feature_files(
+    snapshot_path: Path,
+    changed_files: list[dict],
+    targeted_paths: list[str],
+) -> list[str]:
+    paths = {
+        str(item["path"])
+        for item in changed_files
+        if str(item.get("path") or "").startswith("feature_files/")
+        and str(item.get("path") or "").endswith(".md")
+        and not str(item.get("status") or "").startswith("D")
+    }
+    paths.update(targeted_paths)
+    changed_paths = [
+        path
+        for item in changed_files
+        for path in (
+            str(item.get("path") or ""),
+            str(item.get("previousPath") or ""),
+        )
+        if path
+    ]
+    feature_root = snapshot_path / "feature_files"
+    if feature_root.is_dir():
+        for feature_file in feature_root.rglob("*.md"):
+            content = feature_file.read_text(encoding="utf-8")
+            if any(path and path in content for path in changed_paths):
+                paths.add(feature_file.relative_to(snapshot_path).as_posix())
+    return sorted(
+        path for path in paths if (snapshot_path / path).is_file()
+    )
+
+
+def collect_graph_community_evidence(
+    snapshot_path: Path, changed_files: list[dict]
+) -> list[dict]:
+    graph_path = snapshot_path / "graphify-out" / "graph.json"
+    if not graph_path.is_file():
+        return []
+    graph = json.loads(graph_path.read_text(encoding="utf-8"))
+    nodes = graph.get("nodes", []) if isinstance(graph, dict) else []
+    links = graph.get("links", []) if isinstance(graph, dict) else []
+    final_paths = {
+        str(item.get("path") or "").replace("\\", "/")
+        for item in changed_files
+        if not str(item.get("status") or "").startswith("D")
+    }
+    changed_nodes = [
+        node for node in nodes
+        if (
+            node.get("file_type") == "code"
+            and str(node.get("source_file") or "").replace("\\", "/")
+            in final_paths
+        )
+    ]
+    community_ids = {
+        node.get("community") for node in changed_nodes
+        if node.get("community") is not None
+    }
+    evidence: list[dict] = []
+    for community_id in sorted(community_ids, key=lambda value: str(value)):
+        member_ids = {
+            str(node.get("id"))
+            for node in nodes
+            if node.get("community") == community_id
+        }
+        members = [
+            {
+                "id": node.get("id"),
+                "label": node.get("label"),
+                "sourceFile": node.get("source_file"),
+                "sourceLocation": node.get("source_location"),
+            }
+            for node in nodes if node.get("community") == community_id
+        ]
+        touching_links = [
+            {
+                "source": link.get("source"),
+                "target": link.get("target"),
+                "relation": link.get("relation"),
+                "confidence": link.get("confidence"),
+            }
+            for link in links
+            if str(link.get("source")) in member_ids
+            or str(link.get("target")) in member_ids
+        ]
+        evidence.append({
+            "community": community_id,
+            "members": members,
+            "touchingRelationships": touching_links,
+        })
+    return evidence
+
+
+def build_architecture_prompt(
+    changed_files: list[dict],
+    feature_paths: list[str],
+    graph_evidence: list[dict],
+) -> str:
+    return f"""Create a Markdown Architecture View for the affected systems in this repository snapshot.
+
+The snapshot is already checked out at the task's final verified commit. Inspect the repository as needed, especially the listed feature files and the relevant Graphify communities. Changed paths are attention hints only: never describe the changes, the diff, commits, before/after states, implementation chronology, or work performed. Describe each affected surviving system only as it exists in this snapshot. Feature files are the primary candidates for system ownership boundaries. Graphify communities are secondary structural evidence. Merge or split candidates when the repository evidence supports it, and do not claim that an inferred system name is an official registered name.
+
+Changed path hints:
+{json.dumps(changed_files, indent=2)}
+
+Relevant feature files:
+{json.dumps(feature_paths, indent=2)}
+
+Relevant Graphify community evidence:
+{json.dumps(graph_evidence, indent=2)}
+
+Output only Markdown using this exact structure, repeating the H2 section once per affected system:
+
+# Architecture View
+
+## <System Name>
+
+### Purpose
+### Ownership Boundary
+### Components
+### Interactions and Data Flow
+### Invariants
+### Relevant Files
+
+Do not add a change summary, diff section, commit metadata, diagram, Q&A, or implementation notes."""
+
+
+def run_git(repository: Path, arguments: list[str]) -> str:
+    process = subprocess.run(
+        ["git", *arguments],
+        cwd=repository,
+        capture_output=True,
+        text=True,
+    )
+    if process.returncode != 0:
+        raise RuntimeError(process.stderr.strip() or process.stdout.strip())
+    return process.stdout.strip()

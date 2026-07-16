@@ -15,6 +15,7 @@ The local daemon manager is a small Python supervisor and Supabase-backed contro
 - `local-daemon-manager/src/daedalus_daemon_manager/`: Manager configuration, Supabase communication, and supervision loop.
 - `shared/database/migrations/020_local_daemon_manager.sql`: Manager control plane, lifecycle RPCs, drain summary, and admission policies.
 - `shared/database/migrations/023_fix_daemon_manager_begin_restart_blockers_ambiguity.sql`: Disambiguates `blockers` in `daemon_manager_begin_restart`.
+- `shared/database/migrations/028_system_architecture_communication_engine.sql`: Includes Architecture View generations in restart drain accounting.
 - `daedalus-site/app/daemon-manager-panel.tsx`: Workspace manager status and restart controls.
 - `parameter_files/local-daemon-manager.toml`: Manager-owned polling, heartbeat, stability, and process timing values.
 
@@ -28,3 +29,4 @@ HACKING
 - 2026-07-14: Separated the manager's fixed Daedalus code root from its invocation root so the execution daemon scans projects from the directory where the manager was started.
 - 2026-07-14: Fixed `daemon_manager_begin_restart` failing with ambiguous `blockers` by renaming the PL/pgSQL variable to `v_blockers`.
 - 2026-07-14: Consolidated idle heartbeat and restart-control reads into one five-second manager tick while retaining local child checks and generation-safe transitions.
+- 2026-07-16: Extended daemon restart draining and fallback blocker metadata to wait for active Architecture View generations.

@@ -152,7 +152,8 @@ def process_requested_restart(
 
         blockers = current_tick.get("drainSummary") or {
             "total": 0, "agentTasks": 0, "orchestrationBatches": 0,
-            "featureExecutions": 0, "communications": {},
+            "featureExecutions": 0, "architectureViews": 0,
+            "communications": {},
         }
         if blockers != last_blockers:
             update_blockers(config, instance_id, request_id, blockers)
