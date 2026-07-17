@@ -5,6 +5,7 @@ The Agent Output Viewer is the durable, authenticated history and live-status su
 
 ## Key Points
 - **Separate Integration Lifecycle**: Blocked integration batches are rendered independently from completed task implementation output, so a merge failure never overwrites the task's verified outcome.
+- **In-Place Recovery**: Retried tasks and integrations retain their original worktree and durable record whenever that worktree remains available; a blocked batch reserves its member tasks so recovery never creates a competing integration batch or duplicate workspace.
 - **Durable Projection**: One `agent_output_history` row is stored per user and prompt ID, preserving prompt metadata, raw output, terminal error, concise outcome, and lifecycle timestamps after transient task rows are cleared.
 - **Unified Read Model**: Active direct prompts and durable tasks supply current lifecycle state while history supplies archived content; records merge by prompt ID.
 - **Feature Discovery**: A multi-feature prompt remains one database record and is presented beneath every repository-qualified targeted feature, with separate All activity and Unscoped groups.
@@ -24,6 +25,7 @@ The Agent Output Viewer is the durable, authenticated history and live-status su
 - `shared/database/migrations/024_repair_agent_tasks_cancel_requested.sql`: Idempotent repair when live `agent_tasks` is missing `cancel_requested` (breaks History hydration selects).
 - `shared/database/schema.sql`: Current database schema snapshot.
 - `shared/database/migrations/030_task_and_batch_failure_recovery.sql`: Guarded task/batch retry and daemon-synchronized deletion requests.
+- `shared/database/migrations/034_blocked_batch_task_reservation.sql`: Keeps a blocked batch's member tasks out of fresh collection until the original batch is retried or deleted.
 - `parameter_files/agent-output-viewer.toml`: Viewer-owned tunable settings.
 - `local-daemon/src/daedalus_daemon/communications.py`: Narrow direct-prompt history upsert transport.
 - `local-daemon/src/daedalus_daemon/main.py`: Direct planning and ask execution publication.
@@ -65,3 +67,4 @@ HACKING
 - 2026-07-16: Diagnosed blocked-integration history loss: member tasks remain `ready` without `completed_at`, the archive correctly excludes them, and the dashboard's intended durable-task poll is referenced but never invoked, so its live fallback does not receive those task rows after initial hydration.
 - 2026-07-16: Started the configured durable-task client-review poll so terminal task updates continue to hydrate the History live model after its initial load.
 - 2026-07-17: Added daemon-synchronized deletion for blocked integration batches, preserving verified task output while cleaning worktrees and preventing dismissed work from being rebatched.
+- 2026-07-17: Reserved blocked integration members from fresh daemon collection so retries remain in-place on the original batch and retained worktree instead of creating duplicate integration cards or workspaces.
