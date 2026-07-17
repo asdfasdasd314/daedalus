@@ -751,7 +751,7 @@ export default function FeatureFilesDashboard({
           setOrchestrationBatches((current) => {
             const merged = new Map(current.map((batch) => [batch.id, batch]));
             for (const batch of inbox.orchestrationBatches) merged.set(batch.id, batch);
-            return [...merged.values()].filter((batch) => batch.status !== "completed");
+            return [...merged.values()];
           });
           receipts.push(...inbox.orchestrationBatches.map((batch) => reviewReceipt(
             "orchestrationBatches", batch.id, batch.updated_at,

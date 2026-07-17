@@ -61,3 +61,4 @@ HACKING
 - 2026-07-16: Resolved the follow-up integration conflict by retaining architecture actions, full-prompt retry, and planning-detail preservation together in the viewer contract.
 - 2026-07-16: Corrected hydrated-detail selection to recognize truncated prompts without blocking a newer full planning response from replacing the preserved output.
 - 2026-07-16: Added separate integration-batch visibility plus guarded task/batch recovery and daemon-synchronized finalized-task deletion requests, while collapsing planning prompts and plans behind an explicit Show full control.
+- 2026-07-16: Removed an unreachable completed-batch filter from dashboard inbox reconciliation so its declared active/blocked batch contract type-checks correctly.
