@@ -52,3 +52,5 @@ HACKING
 - 2026-07-14: Restored full original prompts and agent output in the selected conversation pane through a one-time bounded detail fetch, while preserving summary-only archive and search egress.
 - 2026-07-16: Added the completed-task Architecture View entry point, nested cached report presentation, regeneration state, and forward-only unavailable treatment.
 - 2026-07-16: Refactored History into drawer and persistent architecture-rail presentations, removed nested Markdown rendering, and routed View/Regenerate actions to the dashboard-owned canvas target.
+- 2026-07-16: Hardened failed and cancelled direct-prompt retry by loading the full original prompt before resubmission, with a visible preparation state and fallback behavior when detail retrieval fails.
+- 2026-07-16: Resolved the integration conflict by retaining both the architecture-rail handoff and full-prompt retry behavior in the merged viewer contract.

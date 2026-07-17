@@ -21,6 +21,7 @@ import {
   fetchAgentOutputHistoryPage,
   fetchAgentOutputFeatureSummaries,
   fetchAgentOutputConversation,
+  fetchAgentOutputByPromptId,
   fetchRecentAgentOutputHistory,
   groupAgentOutputsByFeature,
   mergeAgentOutputRecords,
@@ -85,6 +86,7 @@ export default function AgentOutputViewer({
   const [otherAnswer, setOtherAnswer] = useState("");
   const [architectureLoadingPromptId, setArchitectureLoadingPromptId] = useState("");
   const [architectureError, setArchitectureError] = useState("");
+  const [retryingPromptId, setRetryingPromptId] = useState("");
   const [checkedArchitecturePromptIds, setCheckedArchitecturePromptIds] = useState<string[]>([]);
   const publishedPlanningPromptRef = useRef("");
   const historyOpenLoadKeyRef = useRef("");
@@ -333,6 +335,22 @@ export default function AgentOutputViewer({
     }
   }
 
+  async function retryDirectPrompt(exchange: AgentOutputExchange) {
+    if (retryingPromptId) return;
+    setRetryingPromptId(exchange.promptId);
+    try {
+      const detailedExchange = await fetchAgentOutputByPromptId(
+        supabaseUrl, supabasePublishableKey, accessToken, exchange.promptId,
+      );
+      onRetryDirectPrompt(detailedExchange ?? exchange);
+    } catch (error) {
+      setFetchError(error instanceof Error ? error.message : "Unable to load the original prompt for retry.");
+      onRetryDirectPrompt(exchange);
+    } finally {
+      setRetryingPromptId("");
+    }
+  }
+
   if (!isOpen) return null;
 
   return (
@@ -455,7 +473,14 @@ export default function AgentOutputViewer({
               {selected.mode === "planning" && parsedPlanning && !planningQuestion ? <section className="grid gap-3 rounded-xl border border-cyan-300/20 bg-cyan-300/[0.05] p-4"><h3 className="font-semibold text-white">Planning workflow</h3>{canImplement ? <button type="button" onClick={onImplementPlan} className="w-fit rounded-full bg-cyan-300 px-4 py-2 text-sm font-semibold text-slate-950">Implement Plan</button> : <p className="text-sm text-slate-400">The selected plan is ready for review.</p>}</section> : null}
               <div className="flex flex-wrap gap-2 border-t border-white/10 pt-4">
                 {canCancel ? <button type="button" onClick={() => onCancelDurableTask(selected)} className="rounded-full border border-rose-400/25 bg-rose-500/10 px-4 py-2 text-xs font-semibold text-rose-100">Cancel task</button> : null}
-                {canRetry ? <button type="button" onClick={() => onRetryDirectPrompt(selected)} className="rounded-full border border-cyan-300/25 px-4 py-2 text-xs font-semibold text-cyan-100">Retry prompt</button> : null}
+                {canRetry ? <button
+                  type="button"
+                  disabled={retryingPromptId === selected.promptId}
+                  onClick={() => void retryDirectPrompt(selected)}
+                  className="rounded-full border border-cyan-300/25 px-4 py-2 text-xs font-semibold text-cyan-100 disabled:cursor-wait disabled:opacity-50"
+                >
+                  {retryingPromptId === selected.promptId ? "Preparing retry..." : "Retry prompt"}
+                </button> : null}
                 {canAbandon ? <button type="button" onClick={() => onAbandonDirectPrompt(selected.promptId)} className="rounded-full border border-white/10 px-4 py-2 text-xs font-semibold text-slate-200">Abandon local prompt</button> : null}
                 {selectedCanHaveArchitectureView ? <button
                   type="button"
