@@ -1043,9 +1043,13 @@ export default function FeatureFilesDashboard({
       }
     }
 
-    void pollDurableAgentTasks;
+    void pollDurableAgentTasks();
+    const pollTimer = window.setInterval(() => {
+      void pollDurableAgentTasks();
+    }, pollIntervalMs);
     return () => {
       isMounted = false;
+      window.clearInterval(pollTimer);
     };
   }, [
     accessToken,

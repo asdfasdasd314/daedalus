@@ -62,3 +62,5 @@ HACKING
 - 2026-07-16: Corrected hydrated-detail selection to recognize truncated prompts without blocking a newer full planning response from replacing the preserved output.
 - 2026-07-16: Added separate integration-batch visibility plus guarded task/batch recovery and daemon-synchronized finalized-task deletion requests, while collapsing planning prompts and plans behind an explicit Show full control.
 - 2026-07-16: Removed an unreachable completed-batch filter from dashboard inbox reconciliation so its declared active/blocked batch contract type-checks correctly.
+- 2026-07-16: Diagnosed blocked-integration history loss: member tasks remain `ready` without `completed_at`, the archive correctly excludes them, and the dashboard's intended durable-task poll is referenced but never invoked, so its live fallback does not receive those task rows after initial hydration.
+- 2026-07-16: Started the configured durable-task client-review poll so terminal task updates continue to hydrate the History live model after its initial load.
