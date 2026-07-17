@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient, type Session } from "@supabase/supabase-js";
 import AgentSessionPanel from "./agent-session-panel";
 import AgentOutputViewer from "./agent-output-viewer";
+import ArchitectureVisualization from "./architecture-visualization";
 import AgentTaskNotifications, {
   type AgentTaskNotification,
 } from "./agent-task-notifications";
@@ -97,6 +98,7 @@ type AuthMode = "sign-in" | "sign-up";
 type DevEnvironmentState = "idle" | "loading" | "ready" | "error";
 type PrimaryOverlay = "feature-detail" | "new-feature" | "git-sync" | null;
 type FeatureDetailTab = "edit" | "info" | "params";
+type WorkspaceView = "feature" | "architecture";
 type VentureProgressState = (typeof VENTURE_PROGRESS_STATES)[number];
 
 type VentureRow = {
@@ -302,6 +304,8 @@ export default function FeatureFilesDashboard({
   const [architectureViews, setArchitectureViews] = useState<
     Record<string, ArchitectureView>
   >({});
+  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("feature");
+  const [architectureCanvasPromptId, setArchitectureCanvasPromptId] = useState("");
   const [isAgentPromptQueueHydrated, setIsAgentPromptQueueHydrated] =
     useState(false);
   const [finalizedDurableTaskCount, setFinalizedDurableTaskCount] =
@@ -403,6 +407,7 @@ export default function FeatureFilesDashboard({
   >(new Map());
   const hasSeededDurableTaskStatusesRef = useRef(false);
   const isAgentOutputViewerOpenRef = useRef(false);
+  const featureHistoryDrawerOpenRef = useRef(false);
   const latestChatRef = useRef<AgentChatExchange | null>(null);
   const observedExecutionGenerationRef = useRef<number | null>(null);
   const refreshInboxRef = useRef<() => void>(() => undefined);
@@ -610,6 +615,7 @@ export default function FeatureFilesDashboard({
     }
 
     function handleFeatureSearchShortcut(event: KeyboardEvent) {
+      if (workspaceView !== "feature") return;
       if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "k") {
         return;
       }
@@ -624,7 +630,7 @@ export default function FeatureFilesDashboard({
     return () => {
       document.removeEventListener("keydown", handleFeatureSearchShortcut);
     };
-  }, [currentUser]);
+  }, [currentUser, workspaceView]);
 
   const graphZoomSettings = useMemo(
     () => getGraphZoomSettings(parameterProjects, isMobileLayout),
@@ -840,6 +846,11 @@ export default function FeatureFilesDashboard({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setDurableAgentTasks([]);
     setArchitectureViews({});
+    setArchitectureCanvasPromptId("");
+    setSelectedHistoryPromptId("");
+    setWorkspaceView("feature");
+    setIsAgentOutputViewerOpen(false);
+    featureHistoryDrawerOpenRef.current = false;
     setFinalizedDurableTaskCount(0);
     setLastIntegratedBatchStatus("");
     setAgentTaskNotifications([]);
@@ -2217,6 +2228,36 @@ export default function FeatureFilesDashboard({
     setIsAgentOutputViewerOpen(false);
   }
 
+  function selectWorkspaceView(nextView: WorkspaceView) {
+    if (nextView === workspaceView) return;
+    if (nextView === "architecture") {
+      featureHistoryDrawerOpenRef.current = isAgentOutputViewerOpen;
+      setIsAgentOutputViewerOpen(true);
+      setIsWorkspaceMenuOpen(false);
+      setIsAgentTaskNotificationsOpen(false);
+      setFeatureSearchMode(null);
+    } else {
+      setIsAgentOutputViewerOpen(featureHistoryDrawerOpenRef.current);
+    }
+    setWorkspaceView(nextView);
+  }
+
+  function selectHistoryPrompt(promptId: string) {
+    setSelectedHistoryPromptId(promptId);
+    setArchitectureCanvasPromptId("");
+  }
+
+  function selectArchitectureCanvasPrompt(promptId: string) {
+    setArchitectureCanvasPromptId(promptId);
+    if (!promptId || workspaceView === "architecture") return;
+    featureHistoryDrawerOpenRef.current = isAgentOutputViewerOpen;
+    setIsAgentOutputViewerOpen(true);
+    setIsWorkspaceMenuOpen(false);
+    setIsAgentTaskNotificationsOpen(false);
+    setFeatureSearchMode(null);
+    setWorkspaceView("architecture");
+  }
+
   function closeWorkspaceMenu() {
     setIsWorkspaceMenuOpen(false);
   }
@@ -2928,6 +2969,7 @@ export default function FeatureFilesDashboard({
 
   return (
     <main className="relative h-screen w-screen overflow-hidden bg-black text-slate-100">
+      <div className={`absolute inset-0 ${workspaceView === "architecture" ? "pointer-events-none" : ""}`} aria-hidden={workspaceView === "architecture"} inert={workspaceView === "architecture"}>
       <FeatureFileGraph
         maxZoom={graphZoomSettings.maxZoom}
         minZoom={graphZoomSettings.minZoom}
@@ -2943,13 +2985,22 @@ export default function FeatureFilesDashboard({
         showZoomSlider={isGraphZoomSliderVisible}
         zoom={graphZoom}
       />
+      </div>
+
+      {workspaceView === "architecture" ? <div className="fixed inset-y-0 left-[clamp(15rem,36vw,20rem)] right-0 z-30 overflow-hidden bg-slate-950">
+        <ArchitectureVisualization
+          selectedPromptId={selectedHistoryPromptId}
+          targetPromptId={architectureCanvasPromptId}
+          view={architectureCanvasPromptId ? architectureViews[architectureCanvasPromptId] ?? null : null}
+        />
+      </div> : null}
 
       <AgentOutputViewer
         key={currentUserId}
         accessToken={accessToken}
         activitySummary={lastIntegratedBatchStatus}
         architectureViews={architectureViews}
-        isOpen={isAgentOutputViewerOpen}
+        isOpen={workspaceView === "architecture" || isAgentOutputViewerOpen}
         liveExchanges={liveHistoryExchanges}
         onAbandonDirectPrompt={abandonQueuedAgentPrompt}
         onAnswerPlanningQuestion={answerPlanningQuestion}
@@ -2962,18 +3013,30 @@ export default function FeatureFilesDashboard({
         onArchitectureViewChange={(view) => setArchitectureViews((current) => (
           mergeArchitectureView(current, view)
         ))}
+        onArchitectureCanvasPromptChange={selectArchitectureCanvasPrompt}
         onRefreshLiveTasks={rehydrateDurableAgentTasks}
         onRetryDirectPrompt={retryHistoryDirectPrompt}
-        onSelectedPromptIdChange={setSelectedHistoryPromptId}
+        onSelectedPromptIdChange={selectHistoryPrompt}
         planningSession={planningSession}
         pollIntervalMs={pollIntervalMs}
+        presentation={workspaceView === "architecture" ? "architecture-rail" : "drawer"}
         projects={projects ?? {}}
         selectedPromptId={selectedHistoryPromptId}
         supabasePublishableKey={supabasePublishableKey}
         supabaseUrl={supabaseUrl}
       />
 
-      <div className="pointer-events-none absolute inset-0">
+      <div className="fixed left-1/2 top-3 z-50 -translate-x-1/2 rounded-full border border-white/10 bg-slate-950/95 p-1 shadow-[0_18px_60px_rgba(2,6,23,0.55)] backdrop-blur" role="group" aria-label="Workspace view">
+        {(["feature", "architecture"] as const).map((view) => <button
+          key={view}
+          type="button"
+          aria-pressed={workspaceView === view}
+          onClick={() => selectWorkspaceView(view)}
+          className={`rounded-full px-4 py-2 text-xs font-semibold transition ${workspaceView === view ? "bg-cyan-300 text-slate-950" : "text-slate-300 hover:bg-white/10"}`}
+        >{view === "feature" ? "Feature View" : "Architecture View"}</button>)}
+      </div>
+
+      {workspaceView === "feature" ? <div className="pointer-events-none absolute inset-0">
         <button
           type="button"
           onClick={() => isAgentOutputViewerOpen ? closeAgentOutputViewer() : openAgentOutputViewer()}
@@ -3965,9 +4028,9 @@ export default function FeatureFilesDashboard({
             </div>
           </div>
         ) : null}
-      </div>
+      </div> : null}
 
-      {currentUser && accessToken ? (
+      {workspaceView === "feature" && currentUser && accessToken ? (
         <DaemonManagerPanel
           accessToken={accessToken}
           supabasePublishableKey={supabasePublishableKey}
@@ -3977,7 +4040,7 @@ export default function FeatureFilesDashboard({
         />
       ) : null}
 
-      <FeatureSearchDialog
+      {workspaceView === "feature" ? <FeatureSearchDialog
         excludedFilePaths={
           featureSearchMode === "tag"
             ? targetedFeatures.map((feature) => feature.filePath)
@@ -3992,7 +4055,7 @@ export default function FeatureFilesDashboard({
         onClose={closeFeatureSearch}
         onSelect={handleFeatureSearchSelect}
         projects={projects ?? {}}
-      />
+      /> : null}
     </main>
   );
 }

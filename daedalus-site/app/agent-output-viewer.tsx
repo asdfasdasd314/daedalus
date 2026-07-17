@@ -41,6 +41,7 @@ type AgentOutputViewerProps = {
   onAbandonDirectPrompt: (promptId: string) => void;
   onAnswerPlanningQuestion: (answer: string) => void;
   onArchitectureViewChange: (view: ArchitectureView) => void;
+  onArchitectureCanvasPromptChange: (promptId: string) => void;
   onCancelDurableTask: (exchange: AgentOutputExchange) => void;
   onClearFinalizedTasks: () => void;
   onClose: () => void;
@@ -52,17 +53,20 @@ type AgentOutputViewerProps = {
   onSelectedPromptIdChange: (promptId: string) => void;
   planningSession: PlanningSession | null;
   pollIntervalMs: number;
+  presentation: AgentOutputViewerPresentation;
   projects: FeatureFileProjects;
   selectedPromptId: string;
   supabasePublishableKey: string;
   supabaseUrl: string;
 };
 
+export type AgentOutputViewerPresentation = "drawer" | "architecture-rail";
+
 export default function AgentOutputViewer({
   accessToken, activitySummary, architectureViews, isOpen, liveExchanges, onAbandonDirectPrompt,
-  onAnswerPlanningQuestion, onArchitectureViewChange, onCancelDurableTask, onClearFinalizedTasks,
+  onAnswerPlanningQuestion, onArchitectureCanvasPromptChange, onArchitectureViewChange, onCancelDurableTask, onClearFinalizedTasks,
   onClose, onDeletedExchange, onImplementPlan, onPlanningReply, onRefreshLiveTasks,
-  onRetryDirectPrompt, onSelectedPromptIdChange, planningSession, projects,
+  onRetryDirectPrompt, onSelectedPromptIdChange, planningSession, presentation, projects,
   selectedPromptId, supabasePublishableKey, supabaseUrl,
 }: AgentOutputViewerProps) {
   const [archive, setArchive] = useState<AgentOutputExchange[]>([]);
@@ -79,7 +83,6 @@ export default function AgentOutputViewer({
   const [selectedGroupKey, setSelectedGroupKey] = useState("all");
   const [mobileDetail, setMobileDetail] = useState(false);
   const [otherAnswer, setOtherAnswer] = useState("");
-  const [architecturePromptId, setArchitecturePromptId] = useState("");
   const [architectureLoadingPromptId, setArchitectureLoadingPromptId] = useState("");
   const [architectureError, setArchitectureError] = useState("");
   const [checkedArchitecturePromptIds, setCheckedArchitecturePromptIds] = useState<string[]>([]);
@@ -181,6 +184,7 @@ export default function AgentOutputViewer({
   const selectedArchitectureChecked = Boolean(
     selected && checkedArchitecturePromptIds.includes(selected.promptId),
   );
+  const isArchitectureRail = presentation === "architecture-rail";
 
   useEffect(() => {
     if (!isOpen || !accessToken || !selectedCanHaveArchitectureView || !selected) return;
@@ -226,8 +230,12 @@ export default function AgentOutputViewer({
   function openArchitectureView() {
     if (!selected || !selectedArchitectureView) return;
     setArchitectureError("");
-    setArchitecturePromptId(selected.promptId);
-    if (selectedArchitectureView.status === "available") {
+    onArchitectureCanvasPromptChange(selected.promptId);
+    if (
+      selectedArchitectureView.status === "available"
+      || selectedArchitectureView.status === "failed"
+      || (selectedArchitectureView.status === "completed" && !selectedArchitectureView.architecture_document)
+    ) {
       void generateArchitectureView(selected.promptId);
     }
   }
@@ -328,14 +336,16 @@ export default function AgentOutputViewer({
   if (!isOpen) return null;
 
   return (
-    <aside className="fixed inset-3 z-40 flex min-w-0 overflow-hidden rounded-[1.5rem] border border-white/10 bg-slate-950/96 shadow-[0_30px_100px_rgba(2,6,23,0.7)] backdrop-blur md:inset-y-4 md:left-4 md:right-auto md:w-[min(72rem,calc(100vw-2rem))]">
-      <div className={`${mobileDetail ? "hidden md:flex" : "flex"} w-full min-w-0 flex-col border-r border-white/10 md:w-80`}>
+    <aside className={isArchitectureRail
+      ? "fixed inset-y-0 left-0 z-40 flex w-[clamp(15rem,36vw,20rem)] min-w-0 overflow-hidden border-r border-white/10 bg-slate-950 shadow-[0_30px_100px_rgba(2,6,23,0.7)]"
+      : "fixed inset-3 z-40 flex min-w-0 overflow-hidden rounded-[1.5rem] border border-white/10 bg-slate-950/96 shadow-[0_30px_100px_rgba(2,6,23,0.7)] backdrop-blur md:inset-y-4 md:left-4 md:right-auto md:w-[min(72rem,calc(100vw-2rem))]"}>
+      <div className={`${isArchitectureRail || !mobileDetail ? "flex" : "hidden md:flex"} w-full min-w-0 flex-col border-r border-white/10 ${isArchitectureRail ? "" : "md:w-80"}`}>
         <div className="border-b border-white/10 p-4">
           <div className="flex items-center justify-between gap-3">
             <div><p className="text-[11px] uppercase tracking-[0.28em] text-cyan-200">History</p><h2 className="mt-1 text-xl font-semibold text-white">Agent output</h2>{activitySummary ? <p className="mt-1 line-clamp-2 text-xs text-slate-400">{activitySummary}</p> : null}</div>
             <div className="flex gap-2">
               <button type="button" onClick={() => void refreshHistory()} disabled={loading} className="rounded-full border border-white/10 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10 disabled:opacity-50">Refresh</button>
-              <button type="button" onClick={onClose} className="rounded-full border border-white/10 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10">Close</button>
+              {!isArchitectureRail ? <button type="button" onClick={onClose} className="rounded-full border border-white/10 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10">Close</button> : null}
             </div>
           </div>
           <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search complete archive..." className="mt-4 w-full rounded-full border border-white/10 bg-black/35 px-4 py-2.5 text-sm text-white outline-none placeholder:text-slate-500" />
@@ -373,7 +383,7 @@ export default function AgentOutputViewer({
                   ) : null}
                   <button
                     type="button"
-                    onClick={() => { setArchitectureError(""); setArchitecturePromptId(""); onSelectedPromptIdChange(exchange.promptId); setMobileDetail(true); }}
+                    onClick={() => { setArchitectureError(""); onArchitectureCanvasPromptChange(""); onSelectedPromptIdChange(exchange.promptId); setMobileDetail(true); }}
                     className={`w-full min-w-0 p-3 text-left ${canDelete ? "pr-10" : ""}`}
                   >
                     <div className="flex items-center justify-between gap-2"><span className="rounded-full bg-white/8 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-100">{AGENT_OUTPUT_STATUS_LABELS[exchange.status]}</span><time className={`text-[10px] text-slate-500 ${canDelete ? "mr-6" : ""}`}>{formatTime(exchange.completedAt ?? exchange.updatedAt)}</time></div>
@@ -385,37 +395,29 @@ export default function AgentOutputViewer({
             {hasMore && !activeSearchResults ? <div className="grid gap-2"><p className="text-center text-[11px] text-slate-500">Showing the newest archived exchanges.</p><button type="button" onClick={() => void loadMore()} disabled={loadingMore} className="rounded-full border border-white/10 px-4 py-2 text-xs font-semibold text-slate-200 disabled:opacity-50">{loadingMore ? "Loading..." : "Load more"}</button></div> : null}
           </div>
         </div>
+        {isArchitectureRail && selected ? <div className="grid gap-2 border-t border-white/10 p-3">
+          <p className="line-clamp-2 text-xs font-semibold text-slate-200">{selected.prompt}</p>
+          {architectureError ? <p className="rounded-lg border border-rose-400/20 bg-rose-500/10 p-2 text-xs text-rose-100">{architectureError}</p> : null}
+          {selectedCanHaveArchitectureView ? <button
+            type="button"
+            disabled={!selectedArchitectureView || architectureLoadingPromptId === selected.promptId}
+            onClick={openArchitectureView}
+            className="rounded-full border border-emerald-300/25 bg-emerald-300/[0.08] px-4 py-2 text-xs font-semibold text-emerald-100 disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            {architectureActionLabel(selectedArchitectureView, selectedArchitectureChecked, architectureLoadingPromptId === selected.promptId)}
+          </button> : <p className="text-xs text-slate-500">Architecture actions are available only for completed durable exchanges.</p>}
+        </div> : null}
       </div>
 
-      <div className={`${mobileDetail ? "flex" : "hidden md:flex"} min-w-0 flex-1 flex-col`}>
+      {!isArchitectureRail ? <div className={`${mobileDetail ? "flex" : "hidden md:flex"} min-w-0 flex-1 flex-col`}>
         <div className="flex items-start justify-between gap-4 border-b border-white/10 p-4">
-          {architecturePromptId ? <button type="button" onClick={() => setArchitecturePromptId("")} className="rounded-full border border-white/10 px-3 py-2 text-xs font-semibold text-slate-200">Back</button> : <button type="button" onClick={() => setMobileDetail(false)} className="rounded-full border border-white/10 px-3 py-2 text-xs font-semibold text-slate-200 md:hidden">Back</button>}
-          <div className="min-w-0 flex-1"><p className="text-[11px] uppercase tracking-[0.24em] text-slate-400">{architecturePromptId ? "Final system snapshot" : "Selected conversation"}</p><h2 className="mt-1 truncate text-lg font-semibold text-white">{architecturePromptId ? "Architecture View" : conversationTurns[0]?.prompt || selected?.prompt || "Select a prompt"}</h2></div>
+          <button type="button" onClick={() => setMobileDetail(false)} className="rounded-full border border-white/10 px-3 py-2 text-xs font-semibold text-slate-200 md:hidden">Back</button>
+          <div className="min-w-0 flex-1"><p className="text-[11px] uppercase tracking-[0.24em] text-slate-400">Selected conversation</p><h2 className="mt-1 truncate text-lg font-semibold text-white">{conversationTurns[0]?.prompt || selected?.prompt || "Select a prompt"}</h2></div>
           <button type="button" onClick={onClose} className="hidden rounded-full border border-white/10 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10 md:block">Close</button>
         </div>
         <div className="agent-chat-scrollbar min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
           {fetchError ? <p className="mb-4 rounded-xl border border-rose-400/20 bg-rose-500/10 p-3 text-sm text-rose-100">{fetchError} Loaded results remain available.</p> : null}
-          {architecturePromptId && selected ? (
-            <div className="grid min-w-0 gap-4">
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                <div className="flex flex-wrap gap-2 text-xs">
-                  <span className="rounded-full bg-cyan-300/12 px-3 py-1.5 text-cyan-100">{selectedArchitectureView?.status === "completed" ? "Generated" : selectedArchitectureView?.status === "failed" ? "Generation failed" : "Generating"}</span>
-                  {selectedArchitectureView?.model ? <span className="rounded-full bg-white/7 px-3 py-1.5 text-slate-300">{selectedArchitectureView.model} · {selectedArchitectureView.reasoning}</span> : null}
-                </div>
-                <button
-                  type="button"
-                  disabled={!selectedArchitectureView || ["queued", "running", "available"].includes(selectedArchitectureView.status) || architectureLoadingPromptId === selected.promptId}
-                  onClick={() => void generateArchitectureView(selected.promptId)}
-                  className="rounded-full border border-cyan-300/25 px-4 py-2 text-xs font-semibold text-cyan-100 disabled:cursor-not-allowed disabled:opacity-45"
-                >
-                  {architectureLoadingPromptId === selected.promptId ? "Requesting..." : "Regenerate"}
-                </button>
-              </div>
-              {architectureError ? <p className="rounded-xl border border-rose-400/25 bg-rose-500/10 p-3 text-sm text-rose-100">{architectureError}</p> : null}
-              {selectedArchitectureView?.error ? <p className="rounded-xl border border-rose-400/25 bg-rose-500/10 p-3 text-sm text-rose-100">{selectedArchitectureView.error}</p> : null}
-              {selectedArchitectureView?.report_markdown ? <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.02] p-4"><AgentOutputDetail label="Final system architecture" value={selectedArchitectureView.report_markdown} markdown /></div> : <p className="rounded-xl border border-dashed border-white/10 p-5 text-sm text-slate-400">{selectedArchitectureView?.status === "failed" ? "No Architecture View has been generated yet." : "The daemon is preparing the final-state architecture report."}</p>}
-            </div>
-          ) : selected ? (
+          {selected ? (
             <div className="grid min-w-0 gap-4">
               <div className="flex flex-wrap gap-2 text-xs text-slate-300">
                 <span className="rounded-full bg-cyan-300/12 px-3 py-1.5 text-cyan-100">{AGENT_OUTPUT_STATUS_LABELS[selected.status]}</span>
@@ -460,18 +462,27 @@ export default function AgentOutputViewer({
                   disabled={!selectedArchitectureView || architectureLoadingPromptId === selected.promptId}
                   onClick={openArchitectureView}
                   className="rounded-full border border-emerald-300/25 bg-emerald-300/[0.06] px-4 py-2 text-xs font-semibold text-emerald-100 disabled:cursor-not-allowed disabled:opacity-45"
-                  title={selectedArchitectureChecked && !selectedArchitectureView ? "This task predates immutable Architecture View commit capture." : "Open the final-state system architecture report."}
+                  title={selectedArchitectureChecked && !selectedArchitectureView ? "This task predates immutable Architecture View commit capture." : "Open the final-state system architecture diagram."}
                 >
-                  {architectureLoadingPromptId === selected.promptId || (!selectedArchitectureChecked && !selectedArchitectureView) ? "Checking Architecture View..." : selectedArchitectureView ? "Architecture View" : "Architecture View unavailable"}
+                  {architectureActionLabel(selectedArchitectureView, selectedArchitectureChecked, architectureLoadingPromptId === selected.promptId)}
                 </button> : null}
                 <button type="button" onClick={onClearFinalizedTasks} className="rounded-full border border-white/10 px-4 py-2 text-xs font-semibold text-slate-200" title="Deletes finalized task queue rows only; archived History remains.">Clear finalized task rows (keeps History)</button>
               </div>
             </div>
           ) : <p className="text-sm text-slate-400">Choose an exchange from the history list.</p>}
         </div>
-      </div>
+      </div> : null}
     </aside>
   );
+}
+
+function architectureActionLabel(view: ArchitectureView | null, checked: boolean, loading: boolean) {
+  if (loading || (!checked && !view)) return "Checking Architecture View...";
+  if (!view) return "Architecture unavailable";
+  if (view.status === "queued") return "Generation queued";
+  if (view.status === "running") return "Generation running";
+  if (view.status === "failed" || (view.status === "completed" && !view.architecture_document)) return "Regenerate Architecture";
+  return "View Architecture";
 }
 
 function PlanningResponse({

@@ -22,6 +22,14 @@ const migrationSource = readFileSync(
   new URL("../../shared/database/migrations/028_system_architecture_communication_engine.sql", import.meta.url),
   "utf8",
 );
+const visualizationMigrationSource = readFileSync(
+  new URL("../../shared/database/migrations/029_system_architecture_visualization_engine.sql", import.meta.url),
+  "utf8",
+);
+const architectureViewSource = readFileSync(
+  new URL("../lib/architecture-view.ts", import.meta.url),
+  "utf8",
+);
 
 function functionSource(name: string) {
   const start = dashboardSource.indexOf(`async function ${name}`);
@@ -68,13 +76,48 @@ test("agent output history is refreshed only on demand", () => {
   assert.match(historySource, /onRefreshLiveTasks/);
 });
 
-test("completed durable outputs expose a persistent nested Architecture View", () => {
+test("completed durable outputs expose a persistent architecture rail action", () => {
   assert.match(historySource, /selected\?\.source === "durable_task" && selected\.status === "completed"/);
   assert.match(historySource, /fetchArchitectureView/);
   assert.match(historySource, /requestArchitectureView/);
-  assert.match(historySource, /Architecture View unavailable/);
-  assert.match(historySource, /"Regenerate"/);
-  assert.match(historySource, /setArchitecturePromptId\(""\)/);
+  assert.match(historySource, /Architecture unavailable/);
+  assert.match(historySource, /Regenerate Architecture/);
+  assert.match(historySource, /architecture-rail/);
+  assert.doesNotMatch(historySource, /report_markdown/);
+  assert.doesNotMatch(architectureViewSource, /report_markdown/);
+});
+
+test("structured migration replaces Markdown and preserves generation guards", () => {
+  assert.match(visualizationMigrationSource, /add column architecture_document jsonb/);
+  assert.match(visualizationMigrationSource, /drop column report_markdown/);
+  assert.match(visualizationMigrationSource, /drop function if exists daemon_complete_architecture_view/);
+  assert.match(visualizationMigrationSource, /p_architecture_document jsonb/);
+  assert.match(visualizationMigrationSource, /status = 'running' and message = 'daemon_review'/);
+  assert.match(visualizationMigrationSource, /generation = p_generation/);
+  assert.match(visualizationMigrationSource, /updated_at = p_expected_updated_at/);
+  assert.match(visualizationMigrationSource, /else architecture_document/);
+  assert.match(visualizationMigrationSource, /architecture_document, error, provider/);
+  assert.match(visualizationMigrationSource, /generation = \(receipt->>'generation'\)::integer/);
+  assert.match(visualizationMigrationSource, /updated_at = \(receipt->>'updatedAt'\)::timestamptz/);
+  const clientInbox = visualizationMigrationSource.slice(
+    visualizationMigrationSource.indexOf("get_client_review_inbox"),
+    visualizationMigrationSource.indexOf("daemon_poll_work"),
+  );
+  assert.match(clientInbox, /message = 'client_review'/);
+  assert.match(clientInbox, /order by updated_at, id limit 10/);
+  assert.doesNotMatch(clientInbox, /select \*/i);
+  const daemonPoll = visualizationMigrationSource.slice(visualizationMigrationSource.indexOf("daemon_poll_work"));
+  assert.doesNotMatch(daemonPoll, /architecture_document/);
+  assert.doesNotMatch(daemonPoll, /select \*/i);
+});
+
+test("workspace exposes two modes and clears stale canvas selection", () => {
+  assert.match(dashboardSource, /type WorkspaceView = "feature" \| "architecture"/);
+  assert.match(dashboardSource, /Feature View/);
+  assert.match(dashboardSource, /Architecture View/);
+  assert.match(dashboardSource, /presentation=\{workspaceView === "architecture" \? "architecture-rail" : "drawer"\}/);
+  assert.match(dashboardSource, /function selectHistoryPrompt[\s\S]*setArchitectureCanvasPromptId\(""\)/);
+  assert.match(dashboardSource, /mergeArchitectureView/);
 });
 
 test("live durable task rehydrate stays non-recurrent and column-scoped", () => {

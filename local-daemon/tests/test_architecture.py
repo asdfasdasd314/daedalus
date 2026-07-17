@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from daedalus_daemon.architecture import (
     build_architecture_prompt,
+    classify_architecture_result,
     collect_changed_files,
     collect_graph_community_evidence,
     collect_relevant_feature_files,
@@ -19,14 +20,39 @@ from daedalus_daemon.architecture import (
 )
 
 
+def valid_architecture_response():
+    return json.dumps({
+        "schema_version": "1.0",
+        "summary": "The tested system.",
+        "systems": [{
+            "id": "owned_system",
+            "name": "Owned System",
+            "summary": "Owns the tested behavior.",
+            "files": ["src/owned.py"],
+        }],
+        "channels": [],
+    })
+
+
 class ArchitectureEvidenceTests(unittest.TestCase):
+    def test_classifies_structured_validation_and_operational_results(self):
+        self.assertEqual(classify_architecture_result({
+            "status": "completed", "architecture_document": {},
+        }), "structured_completion")
+        self.assertEqual(classify_architecture_result({
+            "status": "failed", "failure_kind": "validation_exhausted",
+        }), "validation_attempts_exhausted")
+        self.assertEqual(classify_architecture_result({
+            "status": "failed", "failure_kind": "operational",
+        }), "other_generation_failure")
+
     def test_dedicated_codex_settings_and_read_only_generation(self):
         settings = load_architecture_settings()
         calls = []
 
         def run_codex(*arguments, **keywords):
             calls.append((arguments, keywords))
-            return "# Architecture View\n\n## Owned System"
+            return valid_architecture_response()
 
         with (
             patch("daedalus_daemon.architecture.collect_changed_files", return_value=[]),
@@ -49,6 +75,7 @@ class ArchitectureEvidenceTests(unittest.TestCase):
             "model": "gpt-5.6-terra",
             "reasoning": "high",
             "maxConcurrentGenerations": 1,
+            "maxValidationAttempts": 3,
         })
         self.assertEqual(result["status"], "completed")
         self.assertEqual(calls[0][0][2:4], ("gpt-5.6-terra", "high"))
@@ -120,26 +147,123 @@ class ArchitectureEvidenceTests(unittest.TestCase):
         self.assertEqual(len(evidence[0]["members"]), 2)
         self.assertEqual(len(evidence[0]["touchingRelationships"]), 2)
 
-    def test_prompt_requires_final_state_structure_without_change_narration(self):
+    def test_prompt_requires_final_state_json_without_change_narration(self):
         prompt = build_architecture_prompt(
             [{"status": "M", "path": "src/owned.py"}],
             ["feature_files/owned.md"],
             [{"community": 4, "members": []}],
         )
 
-        for heading in (
-            "# Architecture View",
-            "## <System Name>",
-            "### Purpose",
-            "### Ownership Boundary",
-            "### Components",
-            "### Interactions and Data Flow",
-            "### Invariants",
-            "### Relevant Files",
-        ):
-            self.assertIn(heading, prompt)
+        self.assertIn('"$schema": "https://json-schema.org/draft/2020-12/schema"', prompt)
+        self.assertIn('"source_system_id"', prompt)
         self.assertIn("never describe the changes", prompt)
-        self.assertIn("Output only Markdown", prompt)
+        self.assertIn("one complete raw JSON object", prompt)
+        self.assertIn("Do not use Markdown fences", prompt)
+
+    def test_validation_retries_succeed_on_third_attempt_with_corrective_details(self):
+        calls = []
+        responses = iter([
+            "not json",
+            json.dumps({"schema_version": "1.0"}),
+            valid_architecture_response(),
+        ])
+
+        def run_codex(*arguments, **keywords):
+            calls.append(arguments[1])
+            return next(responses)
+
+        with (
+            patch("daedalus_daemon.architecture.collect_changed_files", return_value=[{"status": "M", "path": "src/owned.py"}]),
+            patch("daedalus_daemon.architecture.add_snapshot_worktree"),
+            patch("daedalus_daemon.architecture.remove_snapshot_worktree"),
+            patch("daedalus_daemon.architecture.collect_relevant_feature_files", return_value=["feature_files/owned.md"]),
+            patch("daedalus_daemon.architecture.collect_graph_community_evidence", return_value=[]),
+        ):
+            result = generate_architecture_view({
+                "id": "view-1", "repository": "/repo", "base_commit": "base",
+                "final_commit": "final", "generation": 1, "targeted_feature_paths": [],
+            }, load_architecture_settings(), run_codex)
+
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(len(calls), 3)
+        self.assertIn("line 1, column 1", calls[1])
+        self.assertIn("schema_version", calls[2])
+        self.assertIn("feature_files/owned.md", calls[2])
+        self.assertIn("Published JSON Schema", calls[2])
+        self.assertIn("complete corrected document, not a patch", calls[2])
+
+    def test_validation_can_succeed_on_attempts_one_two_and_three(self):
+        for success_attempt in (1, 2, 3):
+            responses = iter(["not json"] * (success_attempt - 1) + [valid_architecture_response()])
+            calls = []
+
+            def run_codex(*arguments, **keywords):
+                calls.append(arguments)
+                return next(responses)
+
+            with (
+                patch("daedalus_daemon.architecture.collect_changed_files", return_value=[]),
+                patch("daedalus_daemon.architecture.add_snapshot_worktree"),
+                patch("daedalus_daemon.architecture.remove_snapshot_worktree"),
+                patch("daedalus_daemon.architecture.collect_relevant_feature_files", return_value=[]),
+                patch("daedalus_daemon.architecture.collect_graph_community_evidence", return_value=[]),
+            ):
+                result = generate_architecture_view({
+                    "id": "view-1", "repository": "/repo", "base_commit": "base",
+                    "final_commit": "final", "generation": 1, "targeted_feature_paths": [],
+                }, load_architecture_settings(), run_codex)
+
+            with self.subTest(success_attempt=success_attempt):
+                self.assertEqual(result["status"], "completed")
+                self.assertEqual(len(calls), success_attempt)
+
+    def test_three_invalid_outputs_exhaust_validation_without_returning_output(self):
+        calls = []
+
+        def run_codex(*arguments, **keywords):
+            calls.append(arguments)
+            return "```json\n{}\n```"
+
+        with (
+            patch("daedalus_daemon.architecture.collect_changed_files", return_value=[]),
+            patch("daedalus_daemon.architecture.add_snapshot_worktree"),
+            patch("daedalus_daemon.architecture.remove_snapshot_worktree"),
+            patch("daedalus_daemon.architecture.collect_relevant_feature_files", return_value=[]),
+            patch("daedalus_daemon.architecture.collect_graph_community_evidence", return_value=[]),
+        ):
+            result = generate_architecture_view({
+                "id": "view-1", "repository": "/repo", "base_commit": "base",
+                "final_commit": "final", "generation": 1, "targeted_feature_paths": [],
+            }, load_architecture_settings(), run_codex)
+
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["failure_kind"], "validation_exhausted")
+        self.assertIsNone(result["architecture_document"])
+        self.assertIn("validation exhausted after 3 attempts", result["error"])
+
+    def test_provider_failure_is_not_retried(self):
+        calls = []
+
+        def run_codex(*arguments, **keywords):
+            calls.append(arguments)
+            raise RuntimeError("provider unavailable")
+
+        with (
+            patch("daedalus_daemon.architecture.collect_changed_files", return_value=[]),
+            patch("daedalus_daemon.architecture.add_snapshot_worktree"),
+            patch("daedalus_daemon.architecture.remove_snapshot_worktree"),
+            patch("daedalus_daemon.architecture.collect_relevant_feature_files", return_value=[]),
+            patch("daedalus_daemon.architecture.collect_graph_community_evidence", return_value=[]),
+        ):
+            result = generate_architecture_view({
+                "id": "view-1", "repository": "/repo", "base_commit": "base",
+                "final_commit": "final", "generation": 1, "targeted_feature_paths": [],
+            }, load_architecture_settings(), run_codex)
+
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(result["failure_kind"], "operational")
+        self.assertIn("provider unavailable", result["error"])
 
     @staticmethod
     def git(repository: Path, *arguments: str) -> str:

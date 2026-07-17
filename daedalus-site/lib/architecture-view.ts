@@ -5,6 +5,57 @@ export type ArchitectureViewStatus =
   | "completed"
   | "failed";
 
+export type PrimitiveFieldDefinition = {
+  name: string;
+  summary: string;
+  type: "string" | "number" | "integer" | "boolean" | "null";
+  required: boolean;
+};
+
+export type ArrayFieldDefinition = {
+  name: string;
+  summary: string;
+  type: "array";
+  required: boolean;
+  items: FieldDefinition;
+};
+
+export type ObjectFieldDefinition = {
+  name: string;
+  summary: string;
+  type: "object";
+  required: boolean;
+  fields: FieldDefinition[];
+};
+
+export type FieldDefinition =
+  | PrimitiveFieldDefinition
+  | ArrayFieldDefinition
+  | ObjectFieldDefinition;
+
+export type SystemDefinition = {
+  id: string;
+  name: string;
+  summary: string;
+  files: string[];
+};
+
+export type ChannelDefinition = {
+  id: string;
+  name: string;
+  summary: string;
+  source_system_id: string;
+  target_system_id: string;
+  fields: FieldDefinition[];
+};
+
+export type SoftwareArchitecture = {
+  schema_version: "1.0";
+  summary: string;
+  systems: SystemDefinition[];
+  channels: ChannelDefinition[];
+};
+
 export type ArchitectureView = {
   id: string;
   prompt_id: string;
@@ -15,7 +66,7 @@ export type ArchitectureView = {
   generation: number;
   status: ArchitectureViewStatus;
   changed_files: Array<{ status: string; path: string; previousPath?: string }>;
-  report_markdown: string;
+  architecture_document: SoftwareArchitecture | null;
   error: string;
   provider: string;
   model: string;

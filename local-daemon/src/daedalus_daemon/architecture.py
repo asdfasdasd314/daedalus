@@ -4,6 +4,13 @@ from pathlib import Path
 import subprocess
 import tomllib
 
+from pydantic import ValidationError
+
+from .architecture_document import (
+    SOFTWARE_ARCHITECTURE_SCHEMA_PATH,
+    format_architecture_validation_errors,
+    parse_and_validate_architecture_response,
+)
 from .communications import claim_architecture_view, complete_architecture_view
 
 
@@ -12,6 +19,11 @@ ARCHITECTURE_PARAMETER_FILE = (
     DAEDALUS_ROOT
     / "parameter_files"
     / "system-architecture-communication-engine.toml"
+)
+VISUALIZATION_PARAMETER_FILE = (
+    DAEDALUS_ROOT
+    / "parameter_files"
+    / "system-architecture-visualization-engine.toml"
 )
 
 
@@ -54,18 +66,31 @@ class ArchitectureViewSupervisor:
                 result = {
                     "status": "failed",
                     "changed_files": [],
-                    "report_markdown": "",
+                    "architecture_document": None,
                     "error": str(error),
+                    "failure_kind": "operational",
                 }
+            result_kind = classify_architecture_result(result)
+            architecture_document = (
+                result["architecture_document"]
+                if result_kind == "structured_completion"
+                else None
+            )
+            completion_status = (
+                "completed" if result_kind == "structured_completion" else "failed"
+            )
+            completion_error = result.get("error", "")
+            if result_kind == "other_generation_failure" and not completion_error:
+                completion_error = "Architecture generation failed."
             complete_architecture_view(
                 self.config,
                 view_id,
                 int(view["generation"]),
                 str(view["updated_at"]),
-                result["status"],
+                completion_status,
                 result["changed_files"],
-                result["report_markdown"],
-                result["error"],
+                architecture_document,
+                completion_error,
                 self.settings["provider"],
                 self.settings["model"],
                 self.settings["reasoning"],
@@ -73,14 +98,29 @@ class ArchitectureViewSupervisor:
             self.active.pop(view_id, None)
 
 
+def classify_architecture_result(result: dict) -> str:
+    if result.get("status") == "completed" and isinstance(
+        result.get("architecture_document"), dict
+    ):
+        return "structured_completion"
+    if result.get("failure_kind") == "validation_exhausted":
+        return "validation_attempts_exhausted"
+    return "other_generation_failure"
+
+
 def load_architecture_settings() -> dict:
     with ARCHITECTURE_PARAMETER_FILE.open("rb") as parameter_file:
         values = tomllib.load(parameter_file)
+    with VISUALIZATION_PARAMETER_FILE.open("rb") as parameter_file:
+        visualization_values = tomllib.load(parameter_file)
     return {
         "provider": str(values.get("provider", "codex")),
         "model": str(values.get("model", "gpt-5.6-terra")),
         "reasoning": str(values.get("reasoning", "high")),
         "maxConcurrentGenerations": int(values.get("max_concurrent_generations", 1)),
+        "maxValidationAttempts": int(
+            visualization_values.get("max_validation_attempts", 3)
+        ),
     }
 
 
@@ -110,27 +150,55 @@ def generate_architecture_view(view: dict, settings: dict, run_codex) -> dict:
         prompt = build_architecture_prompt(
             changed_files, feature_paths, graph_evidence
         )
-        report = run_codex(
-            str(snapshot_path),
-            prompt,
-            settings["model"],
-            settings["reasoning"],
-            ask_mode=True,
-        )
-        if not report.strip().startswith("# Architecture View"):
-            raise RuntimeError(report.strip() or "Codex returned an empty Architecture View.")
+        raw_response = ""
+        final_problems = ""
+        for attempt in range(settings["maxValidationAttempts"]):
+            raw_response = run_codex(
+                str(snapshot_path),
+                prompt,
+                settings["model"],
+                settings["reasoning"],
+                ask_mode=True,
+            )
+            try:
+                architecture_document = parse_and_validate_architecture_response(
+                    raw_response
+                )
+                return {
+                    "status": "completed",
+                    "changed_files": changed_files,
+                    "architecture_document": architecture_document,
+                    "error": "",
+                    "failure_kind": "",
+                }
+            except (json.JSONDecodeError, ValidationError, ValueError) as error:
+                final_problems = format_architecture_validation_errors(error)
+                if attempt + 1 >= settings["maxValidationAttempts"]:
+                    break
+                prompt = build_architecture_correction_prompt(
+                    changed_files,
+                    feature_paths,
+                    graph_evidence,
+                    raw_response,
+                    final_problems,
+                )
         return {
-            "status": "completed",
+            "status": "failed",
             "changed_files": changed_files,
-            "report_markdown": report,
-            "error": "",
+            "architecture_document": None,
+            "error": (
+                "Architecture document validation exhausted after "
+                f"{settings['maxValidationAttempts']} attempts. {final_problems}"
+            ),
+            "failure_kind": "validation_exhausted",
         }
     except Exception as error:
         return {
             "status": "failed",
             "changed_files": changed_files,
-            "report_markdown": "",
+            "architecture_document": None,
             "error": str(error),
+            "failure_kind": "operational",
         }
     finally:
         remove_snapshot_worktree(repository, snapshot_path)
@@ -291,7 +359,8 @@ def build_architecture_prompt(
     feature_paths: list[str],
     graph_evidence: list[dict],
 ) -> str:
-    return f"""Create a Markdown Architecture View for the affected systems in this repository snapshot.
+    schema = SOFTWARE_ARCHITECTURE_SCHEMA_PATH.read_text(encoding="utf-8")
+    return f"""Create a structured Architecture View for the affected systems in this repository snapshot.
 
 The snapshot is already checked out at the task's final verified commit. Inspect the repository as needed, especially the listed feature files and the relevant Graphify communities. Changed paths are attention hints only: never describe the changes, the diff, commits, before/after states, implementation chronology, or work performed. Describe each affected surviving system only as it exists in this snapshot. Feature files are the primary candidates for system ownership boundaries. Graphify communities are secondary structural evidence. Merge or split candidates when the repository evidence supports it, and do not claim that an inferred system name is an official registered name.
 
@@ -304,20 +373,33 @@ Relevant feature files:
 Relevant Graphify community evidence:
 {json.dumps(graph_evidence, indent=2)}
 
-Output only Markdown using this exact structure, repeating the H2 section once per affected system:
+Published JSON Schema:
+{schema}
 
-# Architecture View
+Return one complete raw JSON object that validates against the published schema. Output JSON only. Do not use Markdown fences or add commentary, diff narration, implementation history, a change summary, commit metadata, Q&A, or implementation notes."""
 
-## <System Name>
 
-### Purpose
-### Ownership Boundary
-### Components
-### Interactions and Data Flow
-### Invariants
-### Relevant Files
+def build_architecture_correction_prompt(
+    changed_files: list[dict],
+    feature_paths: list[str],
+    graph_evidence: list[dict],
+    invalid_response: str,
+    validation_problems: str,
+) -> str:
+    original_prompt = build_architecture_prompt(
+        changed_files, feature_paths, graph_evidence
+    )
+    return f"""{original_prompt}
 
-Do not add a change summary, diff section, commit metadata, diagram, Q&A, or implementation notes."""
+The previous response was invalid.
+
+Validation problems:
+{validation_problems}
+
+Full invalid response:
+{invalid_response}
+
+Return a complete corrected document, not a patch. The corrected response must again be one raw JSON object with no Markdown fences or commentary."""
 
 
 def run_git(repository: Path, arguments: list[str]) -> str:
