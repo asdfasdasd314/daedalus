@@ -6,6 +6,8 @@ import {
   canDeleteAgentOutput,
   groupAgentOutputsByFeature,
   mergeAgentOutputRecords,
+  reconcileRecentAgentOutputHistory,
+  removeCompletedOrchestrationBatches,
   rerankAgentOutputSearch,
   type AgentOutputExchange,
 } from "./agent-output-history";
@@ -101,6 +103,17 @@ test("terminal history blocked beats stale live queued", () => {
   assert.equal(merged[0].error, "Needs attention");
 });
 
+test("every terminal archive outcome survives a stale active snapshot", () => {
+  for (const status of ["completed", "failed", "blocked", "cancelled"] as const) {
+    const merged = mergeAgentOutputRecords(
+      [exchange({ status, completedAt: "2026-01-01T00:06:00Z", updatedAt: "2026-01-01T00:06:00Z" })],
+      [exchange({ id: "live", status: "queued", completedAt: null, updatedAt: "2026-01-01T00:01:00Z" })],
+    );
+    assert.equal(merged[0].status, status);
+    assert.equal(merged[0].completedAt, "2026-01-01T00:06:00Z");
+  }
+});
+
 test("newer live durable status still outranks older history", () => {
   const merged = mergeAgentOutputRecords(
     [exchange({ status: "queued", updatedAt: "2026-01-01T00:01:00Z", completedAt: null })],
@@ -189,4 +202,35 @@ test("permits deleting every terminal output while retaining active outputs", ()
   for (const status of ["queued", "running", "verifying", "ready", "integrating", "resolving"] as const) {
     assert.equal(canDeleteAgentOutput(exchange({ status })), false);
   }
+});
+
+test("recent archive refresh retains hydrated older history and replaces matching lifecycle", () => {
+  const olderHydrated = exchange({
+    id: "older", promptId: "older", output: "Full older output",
+    completedAt: "2025-12-31T23:00:00Z", updatedAt: "2025-12-31T23:00:00Z",
+  });
+  const refreshed = exchange({
+    prompt: "Build viewer…", output: "", status: "failed", error: "",
+    updatedAt: "2026-01-01T00:02:00Z",
+  });
+  const result = reconcileRecentAgentOutputHistory([olderHydrated, exchange()], [refreshed]);
+  assert.equal(result.find((item) => item.promptId === "older")?.output, "Full older output");
+  assert.equal(result.find((item) => item.promptId === "prompt-1")?.status, "failed");
+  assert.equal(result.find((item) => item.promptId === "prompt-1")?.output, "Done");
+});
+
+test("successful batch events remove only the completed retry generation", () => {
+  const batch = {
+    id: "batch-1", repository: "/projects/one", base_commit: "abc", task_ids: ["task-1"],
+    integration_branch: "integration", integration_worktree_path: "/tmp/integration",
+    status: "integrating" as const, resolver_attempts: 0, verification_output: "",
+    retry_generation: 2, created_at: "2026-01-01T00:00:00Z", completed_at: null,
+    updated_at: "2026-01-01T00:02:00Z",
+  };
+  assert.equal(removeCompletedOrchestrationBatches(
+    [batch], [{ batch_id: batch.id, batch_generation: 1 }],
+  ).length, 1);
+  assert.equal(removeCompletedOrchestrationBatches(
+    [batch], [{ batch_id: batch.id, batch_generation: 2 }],
+  ).length, 0);
 });

@@ -376,6 +376,7 @@ def record_daemon_event(
     message: str,
     task_id: str | None = None,
     batch_id: str | None = None,
+    event_type: str = "status",
 ) -> None:
     call_daemon_rpc(config, "daemon_record_event", {
         "p_user_id": config["daemonUserId"],
@@ -384,6 +385,7 @@ def record_daemon_event(
         "p_batch_id": batch_id,
         "p_severity": severity,
         "p_message": message,
+        "p_event_type": event_type,
     })
 
 
@@ -425,17 +427,19 @@ def open_supabase_request(config: dict, http_request: request.Request):
         except (ConnectionResetError, TimeoutError, socket.timeout, URLError) as error:
             last_error = error
             error_detail = str(error)
+            retryable = not isinstance(error, HTTPError)
 
             if isinstance(error, HTTPError):
                 response_body = error.read().decode("utf-8", errors="replace").strip()
                 if response_body:
                     error_detail = f"{error}: {response_body}"
+                retryable = error.code == 408 or error.code == 429 or error.code >= 500
             print(
                 "Supabase request failed "
                 f"(attempt {attempt}/{retry_limit}): {error_detail}",
             )
 
-            if attempt == retry_limit:
+            if not retryable or attempt == retry_limit:
                 break
 
             time.sleep(retry_delay_ms / 1000)

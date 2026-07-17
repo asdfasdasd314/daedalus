@@ -25,6 +25,7 @@ import {
   fetchRecentAgentOutputHistory,
   groupAgentOutputsByFeature,
   mergeAgentOutputRecords,
+  reconcileRecentAgentOutputHistory,
   rerankAgentOutputSearch,
   searchAgentOutputArchive,
   type AgentOutputCursor,
@@ -81,11 +82,19 @@ export default function AgentOutputViewer({
   const [cursor, setCursor] = useState<AgentOutputCursor | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [deletingPromptId, setDeletingPromptId] = useState("");
   const [deletedPromptIds, setDeletedPromptIds] = useState<string[]>([]);
   const [pendingDurableDeletionPromptIds, setPendingDurableDeletionPromptIds] = useState<string[]>([]);
   const [fetchError, setFetchError] = useState("");
+  const [archiveError, setArchiveError] = useState("");
+  const [liveStateError, setLiveStateError] = useState("");
+  const [detailError, setDetailError] = useState("");
+  const [detailLoadingConversationId, setDetailLoadingConversationId] = useState("");
+  const [detailRetryGeneration, setDetailRetryGeneration] = useState(0);
+  const [archiveSynchronizedAt, setArchiveSynchronizedAt] = useState("");
+  const [liveStateSynchronizedAt, setLiveStateSynchronizedAt] = useState("");
   const [search, setSearch] = useState("");
   const [searchResults, setSearchResults] = useState<AgentOutputExchange[] | null>(null);
   const [featureSummaryCounts, setFeatureSummaryCounts] = useState<Record<string, number>>({});
@@ -99,56 +108,110 @@ export default function AgentOutputViewer({
   const [checkedArchitecturePromptIds, setCheckedArchitecturePromptIds] = useState<string[]>([]);
   const publishedPlanningPromptRef = useRef("");
   const historyOpenLoadKeyRef = useRef("");
+  const historyRequestGenerationRef = useRef(0);
+  const detailRequestGenerationRef = useRef(0);
+  const searchRequestGenerationRef = useRef(0);
+  const refreshPromiseRef = useRef<Promise<void> | null>(null);
+  const conversationCacheRef = useRef(new Map<string, AgentOutputExchange[]>());
+  const refreshLiveTasksRef = useRef(onRefreshLiveTasks);
+  const selectedPromptIdRef = useRef(selectedPromptId);
+  const selectedPromptChangeRef = useRef(onSelectedPromptIdChange);
+
+  useEffect(() => {
+    refreshLiveTasksRef.current = onRefreshLiveTasks;
+    selectedPromptIdRef.current = selectedPromptId;
+    selectedPromptChangeRef.current = onSelectedPromptIdChange;
+  }, [onRefreshLiveTasks, onSelectedPromptIdChange, selectedPromptId]);
 
   useEffect(() => {
     if (!isOpen) {
       historyOpenLoadKeyRef.current = "";
+      historyRequestGenerationRef.current += 1;
+      detailRequestGenerationRef.current += 1;
+      refreshPromiseRef.current = null;
+      setLoading(false);
+      setRefreshing(false);
       return;
     }
-    if (!accessToken || historyOpenLoadKeyRef.current === accessToken) return;
-    historyOpenLoadKeyRef.current = accessToken;
-    let active = true;
+    const sessionKey = `${accessToken}\u0000${supabaseUrl}`;
+    if (!accessToken || historyOpenLoadKeyRef.current === sessionKey) return;
+    historyOpenLoadKeyRef.current = sessionKey;
+    const generation = ++historyRequestGenerationRef.current;
+    logViewerRequest("open-load-started", { generation });
+    setRefreshing(false);
     setLoading(true);
-    setFetchError("");
-    void fetchAgentOutputHistoryPage(supabaseUrl, supabasePublishableKey, accessToken)
-      .then((page) => {
-        if (!active) return;
+    setArchiveError("");
+    setLiveStateError("");
+    void Promise.allSettled([
+      fetchAgentOutputHistoryPage(supabaseUrl, supabasePublishableKey, accessToken),
+      refreshLiveTasksRef.current?.() ?? Promise.resolve(),
+      fetchAgentOutputFeatureSummaries(supabaseUrl, supabasePublishableKey, accessToken),
+    ]).then(([archiveResult, liveResult, summaryResult]) => {
+      if (generation !== historyRequestGenerationRef.current) {
+        logViewerRequest("open-load-discarded", { generation });
+        return;
+      }
+      const synchronizedAt = new Date().toISOString();
+      if (archiveResult.status === "fulfilled") {
+        const page = archiveResult.value;
         setArchive(dedupeAgentOutputs(page.exchanges));
         setCursor(page.cursor);
         setHasMore(page.hasMore);
-        if (!selectedPromptId && page.exchanges[0]) {
-          onSelectedPromptIdChange(page.exchanges[0].promptId);
+        setArchiveSynchronizedAt(synchronizedAt);
+        if (!selectedPromptIdRef.current && page.exchanges[0]) {
+          selectedPromptChangeRef.current(page.exchanges[0].promptId);
         }
-      })
-      .catch((error) => {
-        if (active) setFetchError(error instanceof Error ? error.message : "Unable to load history.");
-      })
-      .finally(() => { if (active) setLoading(false); });
-    void (onRefreshLiveTasks?.() ?? Promise.resolve()).catch((error) => {
-      if (active) {
-        setFetchError(error instanceof Error ? error.message : "Unable to refresh active agent tasks.");
+      } else {
+        setArchiveError(archiveResult.reason instanceof Error ? archiveResult.reason.message : "Unable to load history.");
       }
-    });
-    void fetchAgentOutputFeatureSummaries(supabaseUrl, supabasePublishableKey, accessToken)
-      .then((summaries) => {
-        if (!active) return;
+      if (liveResult.status === "fulfilled") {
+        setLiveStateSynchronizedAt(synchronizedAt);
+      } else {
+        setLiveStateError(liveResult.reason instanceof Error ? liveResult.reason.message : "Unable to refresh active tasks and batches.");
+      }
+      if (summaryResult.status === "fulfilled") {
         setFeatureSummaryCounts(Object.fromEntries(
-          summaries.map((summary) => [`${summary.repository}\u0000${summary.feature_path}`, Number(summary.result_count)]),
+          summaryResult.value.map((summary) => [`${summary.repository}\u0000${summary.feature_path}`, Number(summary.result_count)]),
         ));
-      })
-      .catch(() => undefined);
-    return () => { active = false; };
-  }, [accessToken, isOpen, onRefreshLiveTasks, onSelectedPromptIdChange, selectedPromptId, supabasePublishableKey, supabaseUrl]);
+      }
+      setLoading(false);
+      logViewerRequest("open-load-accepted", {
+        generation, archive: archiveResult.status, live: liveResult.status, summaries: summaryResult.status,
+      });
+    });
+  }, [accessToken, isOpen, supabasePublishableKey, supabaseUrl]);
 
   useEffect(() => {
-    if (!isOpen || !search.trim()) return;
+    conversationCacheRef.current.clear();
+    setArchive([]);
+    setSearchResults(null);
+  }, [accessToken]);
+
+  useEffect(() => {
+    if (!isOpen || !search.trim()) {
+      searchRequestGenerationRef.current += 1;
+      setSearchResults(null);
+      return;
+    }
+    const generation = ++searchRequestGenerationRef.current;
     const timer = window.setTimeout(() => {
       const featurePaths = findMatchingAgentOutputFeaturePaths(search, projects);
       void searchAgentOutputArchive(supabaseUrl, supabasePublishableKey, accessToken, search, featurePaths)
-        .then((results) => setSearchResults(rerankAgentOutputSearch(search, results, projects)))
-        .catch((error) => setFetchError(error instanceof Error ? error.message : "Search failed."));
+        .then((results) => {
+          if (generation === searchRequestGenerationRef.current) {
+            setSearchResults(rerankAgentOutputSearch(search, results, projects));
+          }
+        })
+        .catch((error) => {
+          if (generation === searchRequestGenerationRef.current) {
+            setFetchError(error instanceof Error ? error.message : "Search failed.");
+          }
+        });
     }, 250);
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(timer);
+      searchRequestGenerationRef.current += 1;
+    };
   }, [accessToken, isOpen, projects, search, supabasePublishableKey, supabaseUrl]);
 
   const deletedPromptIdSet = useMemo(
@@ -260,16 +323,34 @@ export default function AgentOutputViewer({
 
   useEffect(() => {
     if (!isOpen || !accessToken || !selected?.conversationId) return;
-    let active = true;
+    const conversationId = selected.conversationId;
+    const cached = conversationCacheRef.current.get(conversationId);
+    if (cached) {
+      setArchive((current) => dedupeAgentOutputs([...current, ...cached]));
+      setDetailError("");
+      setDetailLoadingConversationId("");
+      return;
+    }
+    const generation = ++detailRequestGenerationRef.current;
+    logViewerRequest("detail-load-started", { generation, conversationId });
+    setDetailError("");
+    setDetailLoadingConversationId(conversationId);
     void fetchAgentOutputConversation(
-      supabaseUrl, supabasePublishableKey, accessToken, selected.conversationId,
+      supabaseUrl, supabasePublishableKey, accessToken, conversationId,
     ).then((turns) => {
-      if (active) setArchive((current) => dedupeAgentOutputs([...current, ...turns]));
+      if (generation !== detailRequestGenerationRef.current) return;
+      conversationCacheRef.current.set(conversationId, turns);
+      setArchive((current) => dedupeAgentOutputs([...current, ...turns]));
+      logViewerRequest("detail-load-accepted", { generation, conversationId });
     }).catch((error) => {
-      if (active) setFetchError(error instanceof Error ? error.message : "Unable to load this conversation.");
+      if (generation === detailRequestGenerationRef.current) {
+        setDetailError(error instanceof Error ? error.message : "Unable to load this conversation.");
+      }
+    }).finally(() => {
+      if (generation === detailRequestGenerationRef.current) setDetailLoadingConversationId("");
     });
-    return () => { active = false; };
-  }, [accessToken, isOpen, selected?.conversationId, supabasePublishableKey, supabaseUrl]);
+    return () => { detailRequestGenerationRef.current += 1; };
+  }, [accessToken, detailRetryGeneration, isOpen, selected?.conversationId, supabasePublishableKey, supabaseUrl]);
 
   useEffect(() => {
     if (selected?.mode === "planning" && selected.status === "completed" && selected.output &&
@@ -282,9 +363,11 @@ export default function AgentOutputViewer({
 
   async function loadMore() {
     if (!cursor || loadingMore) return;
+    const generation = historyRequestGenerationRef.current;
     setLoadingMore(true);
     try {
       const page = await fetchAgentOutputHistoryPage(supabaseUrl, supabasePublishableKey, accessToken, cursor);
+      if (generation !== historyRequestGenerationRef.current) return;
       setArchive((current) => dedupeAgentOutputs([...current, ...page.exchanges]));
       setCursor(page.cursor);
       setHasMore(page.hasMore);
@@ -296,27 +379,50 @@ export default function AgentOutputViewer({
   }
 
   async function refreshHistory() {
-    if (loading) return;
-    setLoading(true);
-    setFetchError("");
-    try {
-      const recent = await fetchRecentAgentOutputHistory(supabaseUrl, supabasePublishableKey, accessToken);
-      setArchive((current) => {
-        const recentPromptIds = new Set(recent.map((exchange) => exchange.promptId));
-        const olderCompleted = current.filter(
-          (exchange) => exchange.completedAt && !recentPromptIds.has(exchange.promptId),
-        );
-        return dedupeAgentOutputs([...recent, ...olderCompleted]);
+    if (refreshPromiseRef.current) return refreshPromiseRef.current;
+    const generation = ++historyRequestGenerationRef.current;
+    logViewerRequest("refresh-started", { generation });
+    setLoading(false);
+    const refreshPromise = (async () => {
+      setRefreshing(true);
+      setArchiveError("");
+      setLiveStateError("");
+      const [archiveResult, liveResult, summaryResult] = await Promise.allSettled([
+        fetchRecentAgentOutputHistory(supabaseUrl, supabasePublishableKey, accessToken),
+        refreshLiveTasksRef.current?.() ?? Promise.resolve(),
+        fetchAgentOutputFeatureSummaries(supabaseUrl, supabasePublishableKey, accessToken),
+      ]);
+      if (generation !== historyRequestGenerationRef.current) {
+        logViewerRequest("refresh-discarded", { generation });
+        return;
+      }
+      const synchronizedAt = new Date().toISOString();
+      if (archiveResult.status === "fulfilled") {
+        setArchive((current) => reconcileRecentAgentOutputHistory(current, archiveResult.value));
+        setArchiveSynchronizedAt(synchronizedAt);
+      } else {
+        setArchiveError(archiveResult.reason instanceof Error ? archiveResult.reason.message : "Unable to refresh history.");
+      }
+      if (liveResult.status === "fulfilled") {
+        setLiveStateSynchronizedAt(synchronizedAt);
+      } else {
+        setLiveStateError(liveResult.reason instanceof Error ? liveResult.reason.message : "Unable to refresh active tasks and batches.");
+      }
+      if (summaryResult.status === "fulfilled") {
+        setFeatureSummaryCounts(Object.fromEntries(
+          summaryResult.value.map((summary) => [`${summary.repository}\u0000${summary.feature_path}`, Number(summary.result_count)]),
+        ));
+      }
+      logViewerRequest("refresh-accepted", {
+        generation, archive: archiveResult.status, live: liveResult.status, summaries: summaryResult.status,
       });
-    } catch (error) {
-      setFetchError(error instanceof Error ? error.message : "Unable to refresh history.");
-    }
+    })();
+    refreshPromiseRef.current = refreshPromise;
     try {
-      await (onRefreshLiveTasks?.() ?? Promise.resolve());
-    } catch (error) {
-      setFetchError(error instanceof Error ? error.message : "Unable to refresh active agent tasks.");
+      await refreshPromise;
     } finally {
-      setLoading(false);
+      if (generation === historyRequestGenerationRef.current) setRefreshing(false);
+      if (refreshPromiseRef.current === refreshPromise) refreshPromiseRef.current = null;
     }
   }
 
@@ -388,9 +494,16 @@ export default function AgentOutputViewer({
           <div className="flex items-center justify-between gap-3">
             <div><p className="text-[11px] uppercase tracking-[0.28em] text-cyan-200">History</p><h2 className="mt-1 text-xl font-semibold text-white">Agent output</h2>{activitySummary ? <p className="mt-1 line-clamp-2 text-xs text-slate-400">{activitySummary}</p> : null}</div>
             <div className="flex gap-2">
-              <button type="button" onClick={() => void refreshHistory()} disabled={loading} className="rounded-full border border-white/10 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10 disabled:opacity-50">Refresh</button>
+              <button type="button" onClick={() => void refreshHistory()} aria-busy={refreshing} className="rounded-full border border-white/10 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10">{refreshing ? "Refreshing…" : "Refresh"}</button>
               {!isArchitectureRail ? <button type="button" onClick={onClose} className="rounded-full border border-white/10 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10">Close</button> : null}
             </div>
+          </div>
+          <div className="mt-2 text-[10px] text-slate-500" aria-live="polite">
+            {refreshing ? "Refreshing archive and live state." : archiveError || liveStateError
+              ? "Refresh completed with retryable errors; loaded results remain available."
+              : archiveSynchronizedAt || liveStateSynchronizedAt
+                ? `Archive synced ${archiveSynchronizedAt ? formatTime(archiveSynchronizedAt) : "not yet"} · Live state synced ${liveStateSynchronizedAt ? formatTime(liveStateSynchronizedAt) : "not yet"}`
+                : "History has not synchronized yet."}
           </div>
           <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search complete archive..." className="mt-4 w-full rounded-full border border-white/10 bg-black/35 px-4 py-2.5 text-sm text-white outline-none placeholder:text-slate-500" />
         </div>
@@ -405,14 +518,14 @@ export default function AgentOutputViewer({
           {batches.length ? <section className="mb-3 grid gap-2 border-t border-white/10 pt-3" aria-label="Integration batches">
             <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-violet-200">Integration batches</p>
             {batches.map((batch) => <article key={batch.id} className={`rounded-xl border p-3 text-xs ${batch.status === "blocked" ? "border-amber-300/35 bg-amber-300/[0.08]" : "border-violet-300/20 bg-violet-300/[0.05]"}`}>
-              <p className="font-semibold text-slate-100">{batch.status === "blocked" ? "Integration blocked — task implementation remains complete" : `Integration ${batch.status}`}</p>
+              <p className="font-semibold text-slate-100">{integrationBatchStatusLabel(batch)}</p>
               <p className="mt-1 break-all text-slate-400">{batch.task_ids.length} task branch{batch.task_ids.length === 1 ? "" : "es"} · {batch.integration_branch}</p>
               {batch.verification_output ? <p className="mt-2 line-clamp-3 whitespace-pre-wrap text-amber-100">{batch.verification_output}</p> : null}
               {batch.status === "blocked" ? <div className="mt-2 flex flex-wrap gap-2"><button type="button" onClick={() => void onRetryBatch(batch)} className="rounded-full border border-amber-300/30 px-3 py-1.5 font-semibold text-amber-100">Retry this integration</button><button type="button" disabled={deletingBatchId === batch.id} onClick={() => void (async () => { setDeletingBatchId(batch.id); try { await onDeleteBatch(batch); } catch (error) { setFetchError(error instanceof Error ? error.message : "Unable to delete integration batch."); } finally { setDeletingBatchId(""); } })()} className="rounded-full border border-rose-400/30 px-3 py-1.5 font-semibold text-rose-100 disabled:cursor-wait disabled:opacity-50">{deletingBatchId === batch.id ? "Deleting…" : "Delete integration"}</button></div> : null}
             </article>)}
           </section> : null}
           <div className="grid gap-2 border-t border-white/10 pt-3">
-            {loading ? <p className="p-3 text-sm text-slate-400">Loading history...</p> : null}
+            {loading && archive.length === 0 ? <p className="p-3 text-sm text-slate-400">Loading history...</p> : null}
             {!loading && visibleExchanges.length === 0 ? <p className="p-3 text-sm text-slate-400">{search.trim() ? "No archived prompts match this search." : "No agent output has been archived yet."}</p> : null}
             {visibleExchanges.map((exchange) => {
               const canDelete = canDeleteAgentOutput(exchange);
@@ -469,7 +582,11 @@ export default function AgentOutputViewer({
           <button type="button" onClick={onClose} className="hidden rounded-full border border-white/10 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10 md:block">Close</button>
         </div>
         <div className="agent-chat-scrollbar min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
+          {archiveError ? <p className="mb-4 rounded-xl border border-rose-400/20 bg-rose-500/10 p-3 text-sm text-rose-100">Archive: {archiveError} Loaded results remain available.</p> : null}
+          {liveStateError ? <p className="mb-4 rounded-xl border border-amber-400/20 bg-amber-500/10 p-3 text-sm text-amber-100">Live state: {liveStateError} Archive results remain available.</p> : null}
           {fetchError ? <p className="mb-4 rounded-xl border border-rose-400/20 bg-rose-500/10 p-3 text-sm text-rose-100">{fetchError} Loaded results remain available.</p> : null}
+          {detailLoadingConversationId ? <p className="mb-4 rounded-xl border border-white/10 p-3 text-sm text-slate-400">Loading selected conversation…</p> : null}
+          {detailError ? <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-rose-400/20 bg-rose-500/10 p-3 text-sm text-rose-100"><span>{detailError}</span><button type="button" onClick={() => { conversationCacheRef.current.delete(selected?.conversationId ?? ""); setDetailError(""); setDetailRetryGeneration((current) => current + 1); }} className="rounded-full border border-rose-200/30 px-3 py-1 text-xs font-semibold">Retry detail</button></div> : null}
           {selected ? (
             <div className="grid min-w-0 gap-4">
               <div className="flex flex-wrap gap-2 text-xs text-slate-300">
@@ -546,6 +663,13 @@ function architectureActionLabel(view: ArchitectureView | null, checked: boolean
   return "View Architecture";
 }
 
+function integrationBatchStatusLabel(batch: OrchestrationBatchSummary) {
+  if (batch.status === "collecting") return "Collecting task branches";
+  if (batch.status === "integrating") return "Integrating";
+  if (batch.status === "resolving") return "Resolving integration";
+  return "Integration blocked — task implementation remains complete";
+}
+
 function architectureProgressLabel(view: ArchitectureView) {
   const progress = view.progress_events?.at(-1);
   if (!progress) return "Generation running";
@@ -607,4 +731,10 @@ function TrashIcon() {
 function formatTime(value: string) {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
+
+function logViewerRequest(event: string, detail: Record<string, unknown>) {
+  if (process.env.NODE_ENV !== "production") {
+    console.debug(`[AgentOutputViewer] ${event}`, detail);
+  }
 }

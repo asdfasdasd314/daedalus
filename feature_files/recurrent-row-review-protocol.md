@@ -13,7 +13,8 @@ The recurrent row review protocol prevents the client, daemon, and manager from 
 - **Selected Archive Detail**: Archive lists and searches remain summary-only, while selecting an agent-output conversation makes one bounded, on-demand request for its full prompt, output, and error bodies.
 - **Control-Plane Coverage**: Manager heartbeat and restart-control rows use the same protocol and generation-aware client acknowledgement.
 - **Measured Budget**: The pre-remediation baseline was approximately 4,320 browser, 5,040 daemon, and 3,600 manager recurrent requests per hour; acceptance is at most 720 per component and 2,160 combined for one visible idle browser, daemon, and manager.
-- **Consolidated Browser Inbox**: `get_client_review_inbox()` returns seven explicitly projected, deterministically ordered, fixed-bound client-review collections, and `acknowledge_client_reviews()` guards mutable receipts by review state and generation.
+- **Consolidated Browser Inbox**: `get_client_review_inbox()` returns explicitly projected, deterministically ordered, fixed-bound client-review collections, and `acknowledge_client_reviews()` guards every mutable receipt by review state and `updated_at` (plus monotonic generation where applicable).
+- **Durable Batch Tombstones**: Successful integration events retain `batch_id`, retry generation, and their own review timestamp after the transient batch row is deleted, allowing the browser to remove only the completed generation.
 - **Consolidated Daemon Snapshot**: `daemon_poll_work()` returns communications, scheduling-only task and batch records, bounded Architecture View requests, active run controls, and one atomic feature-run claim without unreviewed large result fields.
 - **Architecture Document Delivery**: Architecture generation metadata enters the daemon snapshot without document bodies; validated `architecture_document` JSON transfers only from an explicit bounded `client_review` row and acknowledgements match both `updated_at` and the monotonic generation.
 - **Empty-Poll Contract**: Empty inboxes return arrays or `null`, produce no acknowledgement request, and are measured with aggregate request-count and response-byte logging rather than per-poll messages.
@@ -34,6 +35,8 @@ The recurrent row review protocol prevents the client, daemon, and manager from 
 - `shared/database/migrations/023_complete_recurrent_supabase_read_hardening.sql`: Remaining control-plane protocol migration and review indexes.
 - `shared/database/migrations/027_recurrent_supabase_egress_remediation.sql`: Consolidated browser, daemon, and manager RPCs, bounded projections, and batched acknowledgements.
 - `shared/database/migrations/029_system_architecture_visualization_engine.sql`: Generation-guarded structured Architecture View completion and reviewed JSON delivery.
+- `shared/database/migrations/035_agent_output_viewer_reliability.sql`: Completes daemon-event generation projection and timestamp-guarded client acknowledgement.
+- `shared/database/migrations/036_preserve_batch_retry_worktree.sql`: Adds bounded retry-generation projection to the existing daemon work snapshot.
 
 ## Dev Mode
 TESTING
@@ -57,3 +60,5 @@ TESTING
 - 2026-07-16: Replaced reviewed Markdown delivery with an explicit bounded `architecture_document` projection while keeping the daemon projection payload-free and acknowledgement generation-plus-timestamp guarded.
 - 2026-07-16: Confirmed summary-only agent-output archive refreshes retain already-hydrated viewer detail locally while the bounded refresh updates lifecycle metadata.
 - 2026-07-16: Resolved the follow-up integration conflict by preserving both structured Architecture View delivery and hydrated History detail across bounded refreshes.
+- 2026-07-17: Consolidated terminal task and daemon-event delivery under the single browser inbox and added durable, generation-scoped batch completion acknowledgements.
+- 2026-07-17: Projected batch retry generations through the bounded daemon snapshot so retained manual retries are distinguishable from new integrations without adding a recurrent transport.

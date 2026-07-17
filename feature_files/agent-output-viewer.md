@@ -8,6 +8,10 @@ The Agent Output Viewer is the durable, authenticated history and live-status su
 - **In-Place Recovery**: Retried tasks and integrations retain their original worktree and durable record whenever that worktree remains available; a blocked batch reserves its member tasks so recovery never creates a competing integration batch or duplicate workspace.
 - **Durable Projection**: One `agent_output_history` row is stored per user and prompt ID, preserving prompt metadata, raw output, terminal error, concise outcome, and lifecycle timestamps after transient task rows are cleared.
 - **Unified Read Model**: Active direct prompts and durable tasks supply current lifecycle state while history supplies archived content; records merge by prompt ID.
+- **Deterministic Request Generations**: Initial load, manual refresh, search, active snapshots, and selected-conversation detail each reject late generations; refresh keeps visible history and reports archive, live-state, and detail failures independently.
+- **Snapshot and Event Reconciliation**: User-triggered active task/batch hydration uses replacement semantics, while generation-scoped `batch_completed` daemon events remove successful integrations without allowing an old event to remove a retried batch.
+- **Single Browser Review Owner**: The completion-scheduled client-review inbox is the only recurrent owner of terminal task and daemon-event rows; it applies transitions before conditionally acknowledging the exact `updated_at` generation.
+- **Terminal Invariant**: Completed, failed, blocked, and cancelled durable tasks receive `completed_at` and archive projection before transient cleanup, while blocked integration batches remain separate from implementation output.
 - **Feature Discovery**: A multi-feature prompt remains one database record and is presented beneath every repository-qualified targeted feature, with separate All activity and Unscoped groups.
 - **Planning Conversation**: A planning conversation ID links the initial request, every refinement, and the implementation task so the viewer presents one chronological transcript: initial prompt, planning questions and plan, then the implementation response or terminal error.
 - **Compact Plan Review**: Planning conversations initially limit their original prompt and agent plan to a small preview, with a per-card control to reveal the complete content before implementation.
@@ -26,6 +30,8 @@ The Agent Output Viewer is the durable, authenticated history and live-status su
 - `shared/database/schema.sql`: Current database schema snapshot.
 - `shared/database/migrations/030_task_and_batch_failure_recovery.sql`: Guarded task/batch retry and daemon-synchronized deletion requests.
 - `shared/database/migrations/034_blocked_batch_task_reservation.sql`: Keeps a blocked batch's member tasks out of fresh collection until the original batch is retried or deleted.
+- `shared/database/migrations/035_agent_output_viewer_reliability.sql`: Generation-scoped batch tombstones, terminal timestamp repair, bounded inbox projection, and guarded acknowledgement.
+- `shared/database/migrations/036_preserve_batch_retry_worktree.sql`: Preserves a manually retried integration's retained worktree and projects its retry generation to the daemon.
 - `parameter_files/agent-output-viewer.toml`: Viewer-owned tunable settings.
 - `local-daemon/src/daedalus_daemon/communications.py`: Narrow direct-prompt history upsert transport.
 - `local-daemon/src/daedalus_daemon/main.py`: Direct planning and ask execution publication.
@@ -37,7 +43,7 @@ The Agent Output Viewer is the durable, authenticated history and live-status su
 - `feature_files/system-architecture-communication-engine.md`: Dependency boundary for commit-scoped Architecture View generation and persistence.
 
 ## Dev Mode
-HACKING
+TESTING
 
 ## State Log
 - 2026-07-13: Initialized the Agent Output Viewer ownership boundary, durable-history architecture, workspace placement, and prompt-only Edit relationship.
@@ -70,3 +76,7 @@ HACKING
 - 2026-07-17: Reserved blocked integration members from fresh daemon collection so retries remain in-place on the original batch and retained worktree instead of creating duplicate integration cards or workspaces.
 - 2026-07-17: Preserved exact durable-task update timestamps for finalized deletion requests and immediately removed accepted deletion requests from the viewer.
 - 2026-07-17: Resolved the integration merge by preserving both in-place batch recovery and immediate guarded finalized-task deletion feedback.
+- 2026-07-17: Upgraded the Agent Output Viewer feature to TESTING for the reliability repair, authorizing structured behavioral and lifecycle regression coverage without changing its ownership boundary.
+- 2026-07-17: Implemented deterministic viewer request generations, snapshot/event reconciliation, single-owner terminal review consumption, durable batch-completion tombstones, terminal timestamp repair, and focused regression coverage.
+- 2026-07-17: Made blocked-batch deletion notifications independent of deleted batch rows and stopped retrying deterministic Supabase conflicts, preventing misleading three-attempt 409 reports after successful cleanup.
+- 2026-07-17: Preserved manual integration retries on their existing batch worktree, rejected missing retained worktrees instead of creating replacements, and reset the new retry's three-attempt resolver budget.

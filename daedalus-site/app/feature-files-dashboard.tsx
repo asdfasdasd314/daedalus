@@ -25,7 +25,11 @@ import type {
   TargetedFeature,
 } from "@/lib/agent-chat-cache";
 import type { AgentModelsConfig } from "@/lib/agent-models";
-import type { AgentOutputExchange as HistoryExchange, OrchestrationBatchSummary } from "@/lib/agent-output-history";
+import {
+  removeCompletedOrchestrationBatches,
+  type AgentOutputExchange as HistoryExchange,
+  type OrchestrationBatchSummary,
+} from "@/lib/agent-output-history";
 import type { ArchitectureProgressEvent, ArchitectureView } from "@/lib/architecture-view";
 import {
   buildImplementationPrompt,
@@ -203,12 +207,17 @@ type AgentTaskRow = {
 };
 
 type TaskDeletionRequestRow = { id: string; task_id: string; prompt_id: string; status: "completed" | "rejected" | "requested"; error: string; updated_at: string };
+type BatchDeletionRequestRow = { id: string; batch_id: string; status: "completed" | "rejected" | "requested"; error: string; updated_at: string };
 
 type DaemonEventRow = {
   id: number;
+  event_type: "status" | "batch_completed";
+  batch_id: string | null;
+  batch_generation: number | null;
   severity: "info" | "warning" | "error";
   content: string;
   created_at: string;
+  updated_at: string;
 };
 
 type ParsedAgentPromptRow = {
@@ -247,7 +256,7 @@ type FeatureExecutionRunRow = {
 
 type ReviewReceipt = {
   receiptId: string;
-  transport: "communications" | "daemonPayloads" | "agentTasks" | "orchestrationBatches" | "taskDeletionRequests" | "architectureViews" | "architectureProgressEvents" | "featureExecutionRuns" | "daemonEvents" | "managerStatus";
+  transport: "communications" | "daemonPayloads" | "agentTasks" | "orchestrationBatches" | "taskDeletionRequests" | "batchDeletionRequests" | "architectureViews" | "architectureProgressEvents" | "featureExecutionRuns" | "daemonEvents" | "managerStatus";
   key: string;
   updatedAt?: string;
   generation?: number;
@@ -259,6 +268,7 @@ type ClientReviewInbox = {
   agentTasks: AgentTaskRow[];
   orchestrationBatches: OrchestrationBatchSummary[];
   taskDeletionRequests: TaskDeletionRequestRow[];
+  batchDeletionRequests: BatchDeletionRequestRow[];
   architectureViews: ArchitectureView[];
   architectureProgressEvents: ArchitectureProgressEvent[];
   featureExecutionRuns: FeatureExecutionRunRow[];
@@ -409,18 +419,18 @@ export default function FeatureFilesDashboard({
   const activePromptId = useRef("");
   const activeGitSyncRequestId = useRef("");
   const agentPromptQueueRef = useRef<AgentPromptQueueEntry[]>([]);
-  const durableTaskPollUserIdRef = useRef("");
   const graphZoomProfileRef = useRef("");
   const workspaceMenuRef = useRef<HTMLDivElement | null>(null);
   const previousDurableTaskStatusesRef = useRef<
     Map<string, AgentPromptQueueStatus>
   >(new Map());
   const hasSeededDurableTaskStatusesRef = useRef(false);
-  const isAgentOutputViewerOpenRef = useRef(false);
   const featureHistoryDrawerOpenRef = useRef(false);
   const latestChatRef = useRef<AgentChatExchange | null>(null);
   const observedExecutionGenerationRef = useRef<number | null>(null);
   const refreshInboxRef = useRef<() => void>(() => undefined);
+  const taskHydrationGenerationRef = useRef(0);
+  const batchHydrationGenerationRef = useRef(0);
   const currentUser = session?.user ?? null;
   const currentUserId = currentUser?.id ?? "";
   const accessToken = session?.access_token ?? "";
@@ -444,10 +454,6 @@ export default function FeatureFilesDashboard({
     // Refresh execution-owned payloads only after a successful generation change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [daemonAcceptsWork, managerStatus?.execution_generation]);
-
-  useEffect(() => {
-    durableTaskPollUserIdRef.current = currentUserId;
-  }, [currentUserId]);
 
   useEffect(() => {
     let isMounted = true;
@@ -743,6 +749,33 @@ export default function FeatureFilesDashboard({
         }
         if (inbox.agentTasks.length) {
           const queue = inbox.agentTasks.map(mapAgentTaskRowToQueueEntry);
+          const nextNotifications: AgentTaskNotification[] = [];
+          for (const entry of queue) {
+            const previousStatus = previousDurableTaskStatusesRef.current.get(entry.promptId);
+            if (hasSeededDurableTaskStatusesRef.current && isFinalizedAgentTaskStatus(entry.status)
+              && previousStatus !== entry.status
+              && (previousStatus === undefined || !isFinalizedAgentTaskStatus(previousStatus))) {
+              nextNotifications.push({
+                id: crypto.randomUUID(), taskId: entry.promptId,
+                status: entry.status as AgentTaskNotification["status"], prompt: entry.prompt,
+                repository: entry.directory, error: entry.error, createdAt: Date.now(), read: false,
+              });
+            }
+            previousDurableTaskStatusesRef.current.set(entry.promptId, entry.status);
+          }
+          hasSeededDurableTaskStatusesRef.current = true;
+          if (nextNotifications.length) {
+            if (process.env.NODE_ENV !== "production") {
+              console.debug("Agent task terminal transitions accepted", {
+                count: nextNotifications.length,
+                statuses: nextNotifications.map((notification) => notification.status),
+              });
+            }
+            setFinalizedDurableTaskCount((current) => current + nextNotifications.length);
+            setAgentTaskNotifications((current) => (
+              [...nextNotifications.reverse(), ...current].slice(0, MAX_AGENT_TASK_NOTIFICATIONS)
+            ));
+          }
           setDurableAgentTasks((current) => {
             const merged = new Map(current.map((row) => [row.promptId, row]));
             for (const row of queue) merged.set(row.promptId, row);
@@ -773,6 +806,17 @@ export default function FeatureFilesDashboard({
             "taskDeletionRequests", request.id, request.updated_at,
           )));
         }
+        if ((inbox.batchDeletionRequests ?? []).length) {
+          for (const request of inbox.batchDeletionRequests) {
+            if (request.status === "completed") {
+              setOrchestrationBatches((current) => current.filter((batch) => batch.id !== request.batch_id));
+            }
+            if (request.status === "rejected") setPromptStatus(request.error || "Integration deletion was rejected.");
+          }
+          receipts.push(...inbox.batchDeletionRequests.map((request) => reviewReceipt(
+            "batchDeletionRequests", request.id, request.updated_at,
+          )));
+        }
         if ((inbox.architectureViews ?? []).length) {
           setArchitectureViews((current) => {
             let next = current;
@@ -793,9 +837,15 @@ export default function FeatureFilesDashboard({
             "architectureProgressEvents", event.id, event.updated_at, event.generation,
           )));
         }
+        const completedBatchEvents = inbox.daemonEvents.filter((event) => event.event_type === "batch_completed");
+        if (completedBatchEvents.length) {
+          setOrchestrationBatches((current) => removeCompletedOrchestrationBatches(current, completedBatchEvents));
+          const latestCompletion = completedBatchEvents.at(-1);
+          if (latestCompletion) setLastIntegratedBatchStatus(`Daemon: ${latestCompletion.content}`);
+        }
         const latestEvent = inbox.daemonEvents.at(-1);
         if (latestEvent) setPromptStatus(`Daemon ${latestEvent.severity}: ${latestEvent.content}`);
-        receipts.push(...inbox.daemonEvents.map((row) => reviewReceipt("daemonEvents", String(row.id))));
+        receipts.push(...inbox.daemonEvents.map((row) => reviewReceipt("daemonEvents", String(row.id), row.updated_at)));
         if (inbox.featureExecutionRuns.length) {
           setFeatureExecutionRuns((current) => {
             const merged = new Map(current.map((row) => [row.id, row]));
@@ -813,7 +863,16 @@ export default function FeatureFilesDashboard({
         }
         setError("");
         if (receipts.length) {
-          await acknowledgeClientReviews(supabaseUrl, supabasePublishableKey, accessToken, receipts);
+          const acknowledgement = await acknowledgeClientReviews(
+            supabaseUrl, supabasePublishableKey, accessToken, receipts,
+          );
+          if (process.env.NODE_ENV !== "production") {
+            console.debug("Supabase client-review acknowledgement", {
+              requested: receipts.length,
+              acknowledged: acknowledgement.acknowledged.length,
+              rejectedAsStale: acknowledgement.rejected.length,
+            });
+          }
         }
       } catch {
         if (mounted) setError("Unable to reach Supabase right now.");
@@ -852,25 +911,18 @@ export default function FeatureFilesDashboard({
       .catch(() => { setEntryPointUpdateError("The entry point changed, but refreshed parameters were unavailable."); setIsEntryPointUpdatePending(false); });
   }, [accessToken, currentUser, currentUserId, entryPointUpdateMessage, supabasePublishableKey, supabaseUrl]);
 
-  useEffect(() => {
-    isAgentOutputViewerOpenRef.current = isAgentOutputViewerOpen;
-  }, [isAgentOutputViewerOpen]);
-
   const rehydrateDurableAgentTasks = useCallback(async () => {
     if (!currentUser || !accessToken) return;
+    const userId = currentUserId;
+    const generation = ++taskHydrationGenerationRef.current;
     const rows = await fetchActiveAgentTaskSummaries(
-      supabaseUrl, supabasePublishableKey, accessToken, currentUserId,
+      supabaseUrl, supabasePublishableKey, accessToken, userId,
     );
+    if (generation !== taskHydrationGenerationRef.current || userId !== currentUserId) return;
     const activeEntries = rows.map(mapAgentTaskRowToQueueEntry);
-    const activeIds = new Set(activeEntries.map((entry) => entry.promptId));
-    setDurableAgentTasks((currentTasks) => {
-      const preservedTerminals = currentTasks.filter(
-        (task) => isFinalizedAgentTaskStatus(task.status) && !activeIds.has(task.promptId),
-      );
-      return [...activeEntries, ...preservedTerminals].sort(
-        (left, right) => left.enqueuedAt - right.enqueuedAt,
-      );
-    });
+    setDurableAgentTasks(activeEntries.sort(
+      (left, right) => left.enqueuedAt - right.enqueuedAt,
+    ));
     for (const row of rows) {
       previousDurableTaskStatusesRef.current.set(row.id, row.status);
     }
@@ -885,9 +937,12 @@ export default function FeatureFilesDashboard({
 
   const rehydrateActiveBatches = useCallback(async () => {
     if (!currentUser || !accessToken) return;
+    const userId = currentUserId;
+    const generation = ++batchHydrationGenerationRef.current;
     const rows = await fetchActiveOrBlockedBatches(
-      supabaseUrl, supabasePublishableKey, accessToken, currentUserId,
+      supabaseUrl, supabasePublishableKey, accessToken, userId,
     );
+    if (generation !== batchHydrationGenerationRef.current || userId !== currentUserId) return;
     setOrchestrationBatches(rows);
   }, [accessToken, currentUser, currentUserId, supabasePublishableKey, supabaseUrl]);
 
@@ -906,171 +961,14 @@ export default function FeatureFilesDashboard({
     setIsAgentTaskNotificationsOpen(false);
     previousDurableTaskStatusesRef.current = new Map();
     hasSeededDurableTaskStatusesRef.current = false;
+    taskHydrationGenerationRef.current += 1;
+    batchHydrationGenerationRef.current += 1;
   }, [currentUserId]);
 
   useEffect(() => {
-    if (!currentUser || !accessToken) {
-      return;
-    }
-
-    let isMounted = true;
-    let isPollInFlight = false;
-    let requestGeneration = 0;
-    const pollUserId = currentUserId;
-
-    void rehydrateDurableAgentTasks().catch((error) => {
-      if (!isMounted) return;
-      if (isAgentOutputViewerOpenRef.current) {
-        setPromptStatus(
-          error instanceof Error
-            ? error.message
-            : "Unable to refresh active agent tasks.",
-        );
-      }
-    });
-
-    async function pollDurableAgentTasks() {
-      if (isPollInFlight) {
-        return;
-      }
-
-      isPollInFlight = true;
-      const acceptedGeneration = ++requestGeneration;
-
-      try {
-        const [rows, events] = await Promise.all([
-          fetchAgentTasks(
-            supabaseUrl,
-            supabasePublishableKey,
-            accessToken,
-            pollUserId,
-          ),
-          fetchDaemonEvents(
-            supabaseUrl,
-            supabasePublishableKey,
-            accessToken,
-            pollUserId,
-          ).catch(() => []),
-        ]);
-
-        if (
-          !isMounted ||
-          acceptedGeneration !== requestGeneration ||
-          pollUserId !== durableTaskPollUserIdRef.current
-        ) {
-          return;
-        }
-
-        const durableQueue = rows.map(mapAgentTaskRowToQueueEntry);
-        const latestEvent = events[0] ?? null;
-        const latestIntegrationEvent = events.find((event) =>
-          event.severity === "info" && event.content.includes("integrated successfully into the repository"),
-        ) ?? null;
-        let finalizedTransitionCount = 0;
-
-        if (!hasSeededDurableTaskStatusesRef.current) {
-          for (const entry of durableQueue) {
-            previousDurableTaskStatusesRef.current.set(
-              entry.promptId,
-              entry.status,
-            );
-          }
-          hasSeededDurableTaskStatusesRef.current = true;
-        } else {
-          const nextNotifications: AgentTaskNotification[] = [];
-
-          for (const entry of durableQueue) {
-            const previousStatus = previousDurableTaskStatusesRef.current.get(
-              entry.promptId,
-            );
-
-            if (
-              isFinalizedAgentTaskStatus(entry.status) &&
-              previousStatus !== entry.status &&
-              (previousStatus === undefined ||
-                !isFinalizedAgentTaskStatus(previousStatus))
-            ) {
-              nextNotifications.push({
-                id: crypto.randomUUID(),
-                taskId: entry.promptId,
-                status: entry.status as AgentTaskNotification["status"],
-                prompt: entry.prompt,
-                repository: entry.directory,
-                error: entry.error,
-                createdAt: Date.now(),
-                read: false,
-              });
-            }
-
-            previousDurableTaskStatusesRef.current.set(
-              entry.promptId,
-              entry.status,
-            );
-          }
-
-          if (nextNotifications.length > 0) {
-            finalizedTransitionCount = nextNotifications.length;
-            setAgentTaskNotifications((currentNotifications) =>
-              [...nextNotifications.reverse(), ...currentNotifications].slice(
-                0,
-                MAX_AGENT_TASK_NOTIFICATIONS,
-              ),
-            );
-          }
-        }
-
-        setFinalizedDurableTaskCount((currentCount) =>
-          currentCount + finalizedTransitionCount,
-        );
-        setDurableAgentTasks((currentRows) => {
-          const nextRows = new Map(currentRows.map((row) => [row.promptId, row]));
-          for (const row of durableQueue) nextRows.set(row.promptId, row);
-          return [...nextRows.values()].sort((left, right) => left.enqueuedAt - right.enqueuedAt);
-        });
-        if (latestIntegrationEvent) {
-          setLastIntegratedBatchStatus(
-            `Daemon: ${latestIntegrationEvent.content}`,
-          );
-        }
-        if (latestEvent?.severity === "warning") {
-          setPromptStatus(`Daemon warning: ${latestEvent.content}`);
-        } else if (latestEvent?.severity === "error") {
-          setPromptStatus(`Daemon error: ${latestEvent.content}`);
-        } else if (latestEvent?.severity === "info") {
-          setPromptStatus(`Daemon: ${latestEvent.content}`);
-        }
-        await Promise.all([
-          ...rows.map((row) => completeAgentTaskReview(
-            supabaseUrl, supabasePublishableKey, accessToken, pollUserId, row.id, row.updated_at,
-          )),
-          ...events.map((event) => completeDaemonEventReview(
-            supabaseUrl, supabasePublishableKey, accessToken, pollUserId, event.id,
-          )),
-        ]);
-      } catch {
-        return;
-      } finally {
-        isPollInFlight = false;
-      }
-    }
-
-    void pollDurableAgentTasks();
-    const pollTimer = window.setInterval(() => {
-      void pollDurableAgentTasks();
-    }, pollIntervalMs);
-    return () => {
-      isMounted = false;
-      window.clearInterval(pollTimer);
-    };
-  }, [
-    accessToken,
-    currentUser,
-    currentUserId,
-    pollIntervalMs,
-    rehydrateDurableAgentTasks,
-    supabasePublishableKey,
-    supabaseUrl,
-  ]);
+    if (!currentUser || !accessToken) return;
+    void Promise.allSettled([rehydrateDurableAgentTasks(), rehydrateActiveBatches()]);
+  }, [accessToken, currentUser, rehydrateActiveBatches, rehydrateDurableAgentTasks]);
 
   useEffect(() => {
     if (message !== DAEMON_SENT_FEATURE_FILES) {
@@ -3060,7 +2958,13 @@ export default function FeatureFilesDashboard({
           mergeArchitectureView(current, view)
         ))}
         onArchitectureCanvasPromptChange={selectArchitectureCanvasPrompt}
-        onRefreshLiveTasks={async () => { await Promise.all([rehydrateDurableAgentTasks(), rehydrateActiveBatches()]); }}
+        onRefreshLiveTasks={async () => {
+          const results = await Promise.allSettled([
+            rehydrateDurableAgentTasks(), rehydrateActiveBatches(),
+          ]);
+          const failed = results.filter((result) => result.status === "rejected");
+          if (failed.length) throw new Error(`${failed.length} live-state source${failed.length === 1 ? "" : "s"} failed to refresh.`);
+        }}
         onRetryDirectPrompt={retryHistoryDirectPrompt}
         onRetryDurableTask={async (exchange) => {
           if (!exchange.taskId || !currentUser || !accessToken) return;
@@ -4898,32 +4802,6 @@ function formatFeatureExecutionTime(value: string) {
   return Number.isNaN(timestamp.valueOf()) ? value : timestamp.toLocaleString();
 }
 
-async function fetchAgentTasks(
-  supabaseUrl: string,
-  supabasePublishableKey: string,
-  accessToken: string,
-  userId: string,
-) {
-  const url = new URL("/rest/v1/agent_tasks", supabaseUrl);
-  url.searchParams.set("select", "id,repository,prompt,provider,model,reasoning,planning_mode,targeted_feature_paths,status,queue_sequence,created_at,started_at,completed_at,error,verification_attempts,cancel_requested,message,updated_at");
-  url.searchParams.set("user_id", `eq.${userId}`);
-  url.searchParams.set("message", `eq.${CLIENT_REVIEW}`);
-  url.searchParams.set("order", "updated_at.asc");
-  url.searchParams.set("limit", "50");
-  const response = await fetch(url, {
-    headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
-  });
-  if (!response.ok) {
-    const detail = (await response.text()).trim();
-    throw new Error(
-      detail
-        ? `agent task query failed (${response.status}): ${detail}`
-        : `agent task query failed (${response.status})`,
-    );
-  }
-  return (await response.json()) as AgentTaskRow[];
-}
-
 async function fetchActiveAgentTaskSummaries(
   supabaseUrl: string, supabasePublishableKey: string, accessToken: string, userId: string,
 ) {
@@ -4982,23 +4860,6 @@ async function fetchAgentTaskById(
   if (!response.ok) throw new Error("agent task lookup failed");
   const rows = (await response.json()) as AgentTaskRow[];
   return rows[0] ?? null;
-}
-
-async function completeAgentTaskReview(
-  supabaseUrl: string, supabasePublishableKey: string, accessToken: string,
-  userId: string, taskId: string, expectedUpdatedAt: string,
-) {
-  const url = new URL("/rest/v1/agent_tasks", supabaseUrl);
-  url.searchParams.set("id", `eq.${taskId}`);
-  url.searchParams.set("user_id", `eq.${userId}`);
-  url.searchParams.set("message", `eq.${CLIENT_REVIEW}`);
-  url.searchParams.set("updated_at", `eq.${expectedUpdatedAt}`);
-  const response = await fetch(url, {
-    method: "PATCH",
-    headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
-    body: JSON.stringify({ message: CLIENT_COMPLETE }),
-  });
-  if (!response.ok) throw new Error("agent task acknowledgement failed");
 }
 
 function isFinalizedAgentTaskStatus(status: AgentPromptQueueStatus) {
@@ -5122,43 +4983,6 @@ async function requestFinalizedTaskDeletion(
   });
   if (!response.ok) throw new Error("finalized task deletion request failed");
   return await response.json() as string;
-}
-
-async function fetchDaemonEvents(
-  supabaseUrl: string,
-  supabasePublishableKey: string,
-  accessToken: string,
-  userId: string,
-) {
-  const url = new URL("/rest/v1/daemon_events", supabaseUrl);
-  url.searchParams.set("select", "id,severity,content,created_at");
-  url.searchParams.set("user_id", `eq.${userId}`);
-  url.searchParams.set("message", `eq.${CLIENT_REVIEW}`);
-  url.searchParams.set("order", "created_at.desc");
-  url.searchParams.set("limit", "50");
-  const response = await fetch(url, {
-    headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
-  });
-  if (!response.ok) {
-    throw new Error("daemon event query failed");
-  }
-  return (await response.json()) as DaemonEventRow[];
-}
-
-async function completeDaemonEventReview(
-  supabaseUrl: string, supabasePublishableKey: string, accessToken: string,
-  userId: string, eventId: number,
-) {
-  const url = new URL("/rest/v1/daemon_events", supabaseUrl);
-  url.searchParams.set("user_id", `eq.${userId}`);
-  url.searchParams.set("id", `eq.${eventId}`);
-  url.searchParams.set("message", `eq.${CLIENT_REVIEW}`);
-  const response = await fetch(url, {
-    method: "PATCH",
-    headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
-    body: JSON.stringify({ message: CLIENT_COMPLETE }),
-  });
-  if (!response.ok) throw new Error("daemon event acknowledgement failed");
 }
 
 function parseParameterUpdateRowMessage(message: string): { state?: string; error?: string } | null {

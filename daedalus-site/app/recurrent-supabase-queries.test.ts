@@ -30,6 +30,18 @@ const progressMigrationSource = readFileSync(
   new URL("../../shared/database/migrations/033_architecture_view_generation_progress.sql", import.meta.url),
   "utf8",
 );
+const reliabilityMigrationSource = readFileSync(
+  new URL("../../shared/database/migrations/035_agent_output_viewer_reliability.sql", import.meta.url),
+  "utf8",
+);
+const batchRetryMigrationSource = readFileSync(
+  new URL("../../shared/database/migrations/036_preserve_batch_retry_worktree.sql", import.meta.url),
+  "utf8",
+);
+const orchestratorSource = readFileSync(
+  new URL("../../local-daemon/src/daedalus_daemon/orchestrator.py", import.meta.url),
+  "utf8",
+);
 const architectureViewSource = readFileSync(
   new URL("../lib/architecture-view.ts", import.meta.url),
   "utf8",
@@ -46,6 +58,52 @@ test("browser has one completion-scheduled recurrent review owner", () => {
   assert.match(dashboardSource, /acknowledgeClientReviews/);
   assert.match(dashboardSource, /window\.setTimeout\(\(\) => void pollInbox\(\), delay\)/);
   assert.doesNotMatch(dashboardSource, /setInterval\(poll(?:Message|DurableAgentTasks|FeatureRuns|ProjectPayloads)/);
+  assert.doesNotMatch(dashboardSource, /pollDurableAgentTasks/);
+  assert.doesNotMatch(dashboardSource, /fetchDaemonEvents/);
+});
+
+test("batch completion tombstones are bounded, generation-safe, and acknowledged conditionally", () => {
+  const inbox = reliabilityMigrationSource.slice(
+    reliabilityMigrationSource.indexOf("get_client_review_inbox"),
+    reliabilityMigrationSource.indexOf("acknowledge_client_reviews"),
+  );
+  assert.match(inbox, /event_type,batch_id,batch_generation,severity,content,created_at,updated_at/);
+  assert.match(inbox, /message='client_review'/);
+  assert.match(inbox, /limit 50/);
+  assert.doesNotMatch(inbox, /select \*/i);
+  assert.match(reliabilityMigrationSource, /daemon_events.*updated_at.*id/);
+  assert.match(reliabilityMigrationSource, /p_batch \? 'retry_generation'/);
+  assert.match(reliabilityMigrationSource, /when 'daemonEvents'[\s\S]*updated_at=\(r->>'updatedAt'\)::timestamptz/);
+  assert.match(dashboardSource, /removeCompletedOrchestrationBatches/);
+});
+
+test("daemon publishes durable batch completion evidence before transient cleanup", () => {
+  const finish = orchestratorSource.slice(
+    orchestratorSource.indexOf("def _finish_batches"),
+    orchestratorSource.indexOf("def load_worktree_settings"),
+  );
+  assert.ok(finish.indexOf('event_type="batch_completed"') > -1);
+  assert.ok(finish.indexOf('event_type="batch_completed"') < finish.indexOf("delete_orchestration_batch"));
+});
+
+test("manual batch retries preserve their retained workspace and project retry state", () => {
+  assert.match(batchRetryMigrationSource, /retry_generation = retry_generation \+ 1/);
+  assert.match(batchRetryMigrationSource, /resolver_attempts = 0, verification_output = ''/);
+  assert.match(batchRetryMigrationSource, /verification_output,retry_generation/);
+  assert.match(batchRetryMigrationSource, /message='daemon_review'/);
+  assert.match(batchRetryMigrationSource, /order by created_at limit 100/);
+  assert.doesNotMatch(batchRetryMigrationSource, /select \*/i);
+  assert.match(orchestratorSource, /if not is_manual_retry:/);
+  assert.match(orchestratorSource, /Retry cannot resume because its retained integration worktree is unavailable/);
+});
+
+test("terminal task timestamps and archive repair cover every terminal outcome", () => {
+  for (const status of ["completed", "failed", "blocked", "cancelled"]) {
+    assert.match(reliabilityMigrationSource, new RegExp(status));
+  }
+  assert.match(reliabilityMigrationSource, /ensure_agent_task_terminal_timestamp/);
+  assert.match(reliabilityMigrationSource, /project_agent_task_to_output_history/);
+  assert.match(reliabilityMigrationSource, /completed_at = coalesce\(completed_at, updated_at\)/);
 });
 
 test("consolidated browser collections are recipient filtered, projected, and bounded", () => {
@@ -78,6 +136,18 @@ test("agent output history is refreshed only on demand", () => {
   assert.match(historySource, /refreshHistory/);
   assert.match(historySource, /fetchRecentAgentOutputHistory/);
   assert.match(historySource, /onRefreshLiveTasks/);
+});
+
+test("viewer loads and refreshes by accepted generation without blanking visible history", () => {
+  assert.match(historySource, /historyRequestGenerationRef/);
+  assert.match(historySource, /Promise\.allSettled/);
+  assert.match(historySource, /refreshPromiseRef/);
+  assert.match(historySource, /reconcileRecentAgentOutputHistory/);
+  assert.match(historySource, /conversationCacheRef/);
+  assert.match(historySource, /detailRequestGenerationRef/);
+  assert.match(historySource, /Refreshing…/);
+  assert.doesNotMatch(historySource, /disabled=\{loading\}[^>]*>Refresh/);
+  assert.match(historySource, /loading && archive\.length === 0/);
 });
 
 test("completed durable outputs expose a persistent architecture rail action", () => {

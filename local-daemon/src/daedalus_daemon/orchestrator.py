@@ -85,7 +85,7 @@ class GitWorktreeOrchestrator:
                 complete_batch_deletion(self.config, str(request["id"]))
                 record_daemon_event(
                     self.config, str(batch["repository"]), "warning",
-                    f"Blocked integration batch {batch['id']} deleted by user.", batch_id=str(batch["id"]),
+                    f"Blocked integration batch {batch['id']} deleted by user.",
                 )
             except Exception as error:
                 complete_batch_deletion(self.config, str(request["id"]), str(error))
@@ -778,12 +778,21 @@ class GitWorktreeOrchestrator:
                 "worktree": "",
             }
         existing_path = str(batch.get("integration_worktree_path") or "")
+        is_manual_retry = int(batch.get("retry_generation") or 0) > 0
         if existing_path and retained_integration_worktree_valid(
             repository, existing_path, str(batch["integration_branch"])
         ):
             worktree_path = existing_path
-            run_process(worktree_path, ["git", "reset", "--hard", str(batch["base_commit"])])
-            run_process(worktree_path, ["git", "clean", "-fd"])
+            if not is_manual_retry:
+                run_process(worktree_path, ["git", "reset", "--hard", str(batch["base_commit"])])
+                run_process(worktree_path, ["git", "clean", "-fd"])
+        elif is_manual_retry:
+            return {
+                "ok": False,
+                "error": "Retry cannot resume because its retained integration worktree is unavailable.",
+                "attempts": 0,
+                "worktree": existing_path,
+            }
         else:
             worktree_path = create_integration_worktree(
                 repository, batch_id, str(batch["base_commit"]), str(batch["integration_branch"]),
@@ -973,6 +982,7 @@ class GitWorktreeOrchestrator:
                 "info",
                 f"Batch {batch_id} integrated successfully into the repository.",
                 batch_id=batch_id,
+                event_type="batch_completed",
             )
             for task in tasks:
                 if str(task["id"]) not in task_ids:

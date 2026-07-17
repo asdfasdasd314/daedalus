@@ -76,6 +76,11 @@ export type OrchestrationBatchSummary = {
   updated_at: string;
 };
 
+export type OrchestrationBatchCompletionEvent = {
+  batch_id: string | null;
+  batch_generation: number | null;
+};
+
 export type AgentOutputCursor = { completedAt: string; id: string };
 export type AgentOutputPage = {
   exchanges: AgentOutputExchange[];
@@ -228,6 +233,7 @@ export function mergeAgentOutputRecords(
         error: history.error || live.error,
         id: history.id,
         taskId: live.taskId ?? history.taskId,
+        completedAt: history.completedAt ?? live.completedAt,
         cancelRequested: Boolean(live.cancelRequested || history.cancelRequested),
         localOnly: false,
       });
@@ -247,12 +253,42 @@ export function mergeAgentOutputRecords(
       error: history.error || live.error,
       id: history.id,
       taskId: live.taskId ?? history.taskId,
+      completedAt: useLiveStatus ? live.completedAt : history.completedAt,
       updatedAt: liveTime >= historyTime ? live.updatedAt : history.updatedAt,
       cancelRequested: Boolean(live.cancelRequested || history.cancelRequested),
       localOnly: false,
     });
   }
   return sortAgentOutputsRecentFirst([...merged.values()]);
+}
+
+export function reconcileRecentAgentOutputHistory(
+  current: AgentOutputExchange[],
+  recent: AgentOutputExchange[],
+) {
+  const recentPromptIds = new Set(recent.map((exchange) => exchange.promptId));
+  const durableOlderArchive = current.filter(
+    (exchange) => exchange.completedAt && !recentPromptIds.has(exchange.promptId),
+  );
+  return dedupeAgentOutputs([...recent, ...durableOlderArchive]);
+}
+
+export function removeCompletedOrchestrationBatches(
+  batches: OrchestrationBatchSummary[],
+  events: OrchestrationBatchCompletionEvent[],
+) {
+  const completedGenerations = new Map<string, number>();
+  for (const event of events) {
+    if (!event.batch_id || event.batch_generation === null) continue;
+    completedGenerations.set(
+      event.batch_id,
+      Math.max(completedGenerations.get(event.batch_id) ?? -1, event.batch_generation),
+    );
+  }
+  return batches.filter((batch) => {
+    const completedGeneration = completedGenerations.get(batch.id);
+    return completedGeneration === undefined || batch.retry_generation > completedGeneration;
+  });
 }
 
 function featureLookup(projects: FeatureFileProjects) {

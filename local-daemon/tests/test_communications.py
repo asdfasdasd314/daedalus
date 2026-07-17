@@ -1,7 +1,9 @@
 import json
 import sys
 import unittest
+from io import BytesIO
 from pathlib import Path
+from urllib.error import HTTPError
 from unittest.mock import patch
 
 
@@ -25,6 +27,9 @@ from daedalus_daemon.communications import (
     post_feature_files,
     post_git_sync_result,
     post_parameter_files,
+    record_daemon_event,
+    SupabaseUnavailableError,
+    open_supabase_request,
     upsert_orchestration_batch,
     update_current_message,
 )
@@ -45,6 +50,29 @@ class FakeResponse:
 
 
 class UpdateCurrentMessageTests(unittest.TestCase):
+    def test_does_not_retry_a_non_retryable_supabase_conflict(self):
+        conflict = HTTPError(
+            "https://example.supabase.co/rest/v1/rpc/example", 409, "Conflict", {},
+            BytesIO(b'{"message":"resource is no longer available"}'),
+        )
+        config = {"httpRequestRetryLimit": 3, "httpRequestRetryDelayMs": 0}
+
+        with patch("daedalus_daemon.communications.request.urlopen", side_effect=conflict) as urlopen:
+            with self.assertRaises(SupabaseUnavailableError):
+                open_supabase_request(config, object())
+
+        self.assertEqual(urlopen.call_count, 1)
+
+    def test_publishes_explicit_batch_completion_event_type(self):
+        with patch("daedalus_daemon.communications.call_daemon_rpc") as rpc:
+            record_daemon_event(
+                {"daemonUserId": "user-1"}, "/repo", "info", "Integrated.",
+                batch_id="batch-1", event_type="batch_completed",
+            )
+        self.assertEqual(rpc.call_args.args[1], "daemon_record_event")
+        self.assertEqual(rpc.call_args.args[2]["p_batch_id"], "batch-1")
+        self.assertEqual(rpc.call_args.args[2]["p_event_type"], "batch_completed")
+
     def test_publishes_generation_scoped_architecture_progress(self):
         with patch("daedalus_daemon.communications.call_daemon_rpc", return_value=True) as rpc:
             published = publish_architecture_progress_event(
@@ -190,7 +218,7 @@ class UpdateCurrentMessageTests(unittest.TestCase):
             return FakeResponse({
                 "communications": [],
                 "agentTasks": [{"id": "task-1"}],
-                "orchestrationBatches": [{"id": "batch-1"}],
+                "orchestrationBatches": [{"id": "batch-1", "retry_generation": 1}],
                 "architectureViews": [{"id": "architecture-1"}],
                 "featureRunControls": [{"id": "run-1", "status": "running"}],
                 "claimedFeatureRun": None,
@@ -205,6 +233,7 @@ class UpdateCurrentMessageTests(unittest.TestCase):
 
         self.assertEqual(snapshot["agentTasks"], [{"id": "task-1"}])
         self.assertEqual(snapshot["orchestrationBatches"][0]["verification_output"], "")
+        self.assertEqual(snapshot["orchestrationBatches"][0]["retry_generation"], 1)
         self.assertEqual(snapshot["architectureViews"], [{"id": "architecture-1"}])
         self.assertIsNone(snapshot["claimedFeatureRun"])
 
