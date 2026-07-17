@@ -303,8 +303,22 @@ def list_task_deletion_requests(config: dict) -> list[dict]:
     return result if isinstance(result, list) else []
 
 
+def list_batch_deletion_requests(config: dict) -> list[dict]:
+    result = call_daemon_rpc(config, "daemon_list_batch_deletion_requests", {
+        "p_user_id": config["daemonUserId"],
+    })
+    return result if isinstance(result, list) else []
+
+
 def complete_task_deletion(config: dict, request_id: str, error: str = "") -> bool:
     return bool(call_daemon_rpc(config, "daemon_complete_task_deletion", {
+        "p_user_id": config["daemonUserId"], "p_request_id": request_id,
+        "p_error": error,
+    }))
+
+
+def complete_batch_deletion(config: dict, request_id: str, error: str = "") -> bool:
+    return bool(call_daemon_rpc(config, "daemon_complete_batch_deletion", {
         "p_user_id": config["daemonUserId"], "p_request_id": request_id,
         "p_error": error,
     }))

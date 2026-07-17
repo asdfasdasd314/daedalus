@@ -3034,6 +3034,13 @@ export default function FeatureFilesDashboard({
           await requestFinalizedTaskDeletion(supabaseUrl, supabasePublishableKey, accessToken, exchange.taskId, exchange.updatedAt);
           setPromptStatus("Synchronized task deletion requested.");
         }}
+        onDeleteBatch={async (batch) => {
+          if (!currentUser || !accessToken) return;
+          await requestBlockedBatchDeletion(
+            supabaseUrl, supabasePublishableKey, accessToken, batch.id, batch.updated_at,
+          );
+          setPromptStatus("Integration deletion requested.");
+        }}
         onImplementPlan={() => void implementPlanningSession()}
         onPlanningReply={handleHistoryPlanningReply}
         onArchitectureViewChange={(view) => setArchitectureViews((current) => (
@@ -5048,6 +5055,17 @@ function requestBatchRetry(
   return callRecoveryRpc(supabaseUrl, key, token, "request_orchestration_batch_retry", {
     p_batch_id: batchId, p_expected_updated_at: updatedAt,
   });
+}
+
+async function requestBlockedBatchDeletion(
+  supabaseUrl: string, key: string, token: string, batchId: string, updatedAt: string,
+) {
+  const response = await fetch(new URL("/rest/v1/rpc/request_orchestration_batch_deletion", supabaseUrl), {
+    method: "POST", headers: getAuthenticatedSupabaseHeaders(key, token),
+    body: JSON.stringify({ p_batch_id: batchId, p_expected_updated_at: updatedAt }), cache: "no-store",
+  });
+  if (!response.ok) throw new Error("integration batch deletion request failed");
+  return await response.json() as string;
 }
 
 async function requestFinalizedTaskDeletion(

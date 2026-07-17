@@ -54,6 +54,7 @@ type AgentOutputViewerProps = {
   onImplementPlan: () => void;
   onPlanningReply: (exchange: AgentOutputExchange) => void;
   onRefreshLiveTasks?: () => Promise<void>;
+  onDeleteBatch: (batch: OrchestrationBatchSummary) => Promise<void>;
   onRetryDirectPrompt: (exchange: AgentOutputExchange) => void;
   onRetryBatch: (batch: OrchestrationBatchSummary) => Promise<void>;
   onRetryDurableTask: (exchange: AgentOutputExchange) => Promise<void>;
@@ -72,7 +73,7 @@ export type AgentOutputViewerPresentation = "drawer" | "architecture-rail";
 export default function AgentOutputViewer({
   accessToken, activitySummary, architectureViews, batches, deletedPromptIds: synchronizedDeletedPromptIds = [], isOpen, liveExchanges, onAbandonDirectPrompt,
   onAnswerPlanningQuestion, onArchitectureCanvasPromptChange, onArchitectureViewChange, onCancelDurableTask, onClearFinalizedTasks,
-  onClose, onDeletedExchange, onDeleteDurableTask, onImplementPlan, onPlanningReply, onRefreshLiveTasks,
+  onClose, onDeletedExchange, onDeleteDurableTask, onDeleteBatch, onImplementPlan, onPlanningReply, onRefreshLiveTasks,
   onRetryBatch, onRetryDirectPrompt, onRetryDurableTask, onSelectedPromptIdChange, planningSession, presentation, projects,
   selectedPromptId, supabasePublishableKey, supabaseUrl,
 }: AgentOutputViewerProps) {
@@ -93,6 +94,7 @@ export default function AgentOutputViewer({
   const [architectureLoadingPromptId, setArchitectureLoadingPromptId] = useState("");
   const [architectureError, setArchitectureError] = useState("");
   const [retryingPromptId, setRetryingPromptId] = useState("");
+  const [deletingBatchId, setDeletingBatchId] = useState("");
   const [checkedArchitecturePromptIds, setCheckedArchitecturePromptIds] = useState<string[]>([]);
   const publishedPlanningPromptRef = useRef("");
   const historyOpenLoadKeyRef = useRef("");
@@ -392,7 +394,7 @@ export default function AgentOutputViewer({
               <p className="font-semibold text-slate-100">{batch.status === "blocked" ? "Integration blocked — task implementation remains complete" : `Integration ${batch.status}`}</p>
               <p className="mt-1 break-all text-slate-400">{batch.task_ids.length} task branch{batch.task_ids.length === 1 ? "" : "es"} · {batch.integration_branch}</p>
               {batch.verification_output ? <p className="mt-2 line-clamp-3 whitespace-pre-wrap text-amber-100">{batch.verification_output}</p> : null}
-              {batch.status === "blocked" ? <button type="button" onClick={() => void onRetryBatch(batch)} className="mt-2 rounded-full border border-amber-300/30 px-3 py-1.5 font-semibold text-amber-100">Retry integration</button> : null}
+              {batch.status === "blocked" ? <div className="mt-2 flex flex-wrap gap-2"><button type="button" onClick={() => void onRetryBatch(batch)} className="rounded-full border border-amber-300/30 px-3 py-1.5 font-semibold text-amber-100">Retry integration</button><button type="button" disabled={deletingBatchId === batch.id} onClick={() => void (async () => { setDeletingBatchId(batch.id); try { await onDeleteBatch(batch); } catch (error) { setFetchError(error instanceof Error ? error.message : "Unable to delete integration batch."); } finally { setDeletingBatchId(""); } })()} className="rounded-full border border-rose-400/30 px-3 py-1.5 font-semibold text-rose-100 disabled:cursor-wait disabled:opacity-50">{deletingBatchId === batch.id ? "Deleting…" : "Delete integration"}</button></div> : null}
             </article>)}
           </section> : null}
           <div className="grid gap-2 border-t border-white/10 pt-3">

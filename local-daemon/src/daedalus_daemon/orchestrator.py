@@ -10,9 +10,11 @@ import uuid
 
 from .communications import (
     get_agent_task_control,
+    complete_batch_deletion,
     complete_task_deletion,
     delete_orchestration_batch,
     list_agent_tasks,
+    list_batch_deletion_requests,
     list_orchestration_batches,
     list_task_deletion_requests,
     record_daemon_event,
@@ -64,10 +66,35 @@ class GitWorktreeOrchestrator:
                 remove_worktree(str(task["repository"]), worktree_path, force=True)
             complete_task_deletion(self.config, str(request["id"]))
 
+    def _handle_batch_deletion_requests(self) -> None:
+        for request in list_batch_deletion_requests(self.config):
+            batch = request.get("batch") or {}
+            if not batch:
+                complete_batch_deletion(
+                    self.config, str(request["id"]), "Integration batch is no longer available for deletion."
+                )
+                continue
+            try:
+                worktree_path = str(batch.get("integration_worktree_path") or "")
+                if worktree_path and Path(worktree_path).is_dir():
+                    remove_worktree(str(batch["repository"]), worktree_path, force=True)
+                for task in request.get("tasks") or []:
+                    task_worktree = str(task.get("worktree_path") or "")
+                    if task_worktree and Path(task_worktree).is_dir():
+                        remove_worktree(str(task["repository"]), task_worktree, force=True)
+                complete_batch_deletion(self.config, str(request["id"]))
+                record_daemon_event(
+                    self.config, str(batch["repository"]), "warning",
+                    f"Blocked integration batch {batch['id']} deleted by user.", batch_id=str(batch["id"]),
+                )
+            except Exception as error:
+                complete_batch_deletion(self.config, str(request["id"]), str(error))
+
     def run_cycle(self, snapshot: dict | None = None) -> None:
         tasks = snapshot.get("agentTasks", []) if snapshot is not None else list_agent_tasks(self.config)
         batches = snapshot.get("orchestrationBatches", []) if snapshot is not None else list_orchestration_batches(self.config)
         self._handle_task_deletion_requests(tasks)
+        self._handle_batch_deletion_requests()
         if not self.recovered_persisted_work:
             self._recover_interrupted_work(tasks, batches)
             self.recovered_persisted_work = True
