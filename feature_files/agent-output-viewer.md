@@ -68,3 +68,5 @@ HACKING
 - 2026-07-16: Started the configured durable-task client-review poll so terminal task updates continue to hydrate the History live model after its initial load.
 - 2026-07-17: Added daemon-synchronized deletion for blocked integration batches, preserving verified task output while cleaning worktrees and preventing dismissed work from being rebatched.
 - 2026-07-17: Reserved blocked integration members from fresh daemon collection so retries remain in-place on the original batch and retained worktree instead of creating duplicate integration cards or workspaces.
+- 2026-07-17: Preserved exact durable-task update timestamps for finalized deletion requests and immediately removed accepted deletion requests from the viewer.
+- 2026-07-17: Resolved the integration merge by preserving both in-place batch recovery and immediate guarded finalized-task deletion feedback.

@@ -172,7 +172,9 @@ type AgentPromptQueueEntry = AgentPromptPayload & {
   enqueuedAt: number;
   sentAt?: number;
   completedAt?: number;
-  updatedAt?: number;
+  // Durable-task recovery RPCs compare this exact database value. Do not
+  // round-trip it through Date, which drops PostgreSQL's microseconds.
+  updatedAt?: string;
   error?: string;
   verificationAttempts?: number;
   cancelRequested?: boolean;
@@ -2079,8 +2081,8 @@ export default function FeatureFilesDashboard({
       createdAt: new Date(entry.enqueuedAt).toISOString(),
       startedAt: entry.sentAt ? new Date(entry.sentAt).toISOString() : null,
       completedAt: entry.completedAt ? new Date(entry.completedAt).toISOString() : null,
-      updatedAt: new Date(
-        entry.updatedAt ?? entry.completedAt ?? entry.sentAt ?? entry.enqueuedAt,
+      updatedAt: entry.updatedAt ?? new Date(
+        entry.completedAt ?? entry.sentAt ?? entry.enqueuedAt,
       ).toISOString(),
       cancelRequested: entry.cancelRequested,
       localOnly: source === "direct_prompt" && entry.status === "queued",
@@ -2779,7 +2781,7 @@ export default function FeatureFilesDashboard({
         .filter((item) => isFinalizedAgentTaskStatus(item.status))
         .map((item) => requestFinalizedTaskDeletion(
           supabaseUrl, supabasePublishableKey, accessToken, item.promptId,
-          new Date(item.updatedAt ?? item.enqueuedAt).toISOString(),
+          item.updatedAt ?? new Date(item.enqueuedAt).toISOString(),
         )));
       setIsConfirmingClearDurableTasks(false);
       setPromptStatus("Synchronized durable task cleanup requested.");
@@ -2822,7 +2824,7 @@ export default function FeatureFilesDashboard({
           enqueuedAt: Date.parse(exchange.createdAt) || Date.now(),
           sentAt: exchange.startedAt ? Date.parse(exchange.startedAt) : undefined,
           completedAt: exchange.completedAt ? Date.parse(exchange.completedAt) : undefined,
-          updatedAt: Date.parse(exchange.updatedAt) || Date.now(),
+          updatedAt: exchange.updatedAt,
           error: exchange.error || undefined,
           cancelRequested: true,
         },
@@ -3039,7 +3041,9 @@ export default function FeatureFilesDashboard({
         onClose={closeAgentOutputViewer}
         onDeletedExchange={handleDeletedHistoryExchange}
         onDeleteDurableTask={async (exchange) => {
-          if (!exchange.taskId || !currentUser || !accessToken) return;
+          if (!exchange.taskId || !currentUser || !accessToken) {
+            throw new Error("This finalized task is unavailable for synchronized deletion.");
+          }
           await requestFinalizedTaskDeletion(supabaseUrl, supabasePublishableKey, accessToken, exchange.taskId, exchange.updatedAt);
           setPromptStatus("Synchronized task deletion requested.");
         }}
@@ -4607,7 +4611,7 @@ function mapAgentTaskRowToQueueEntry(row: AgentTaskRow): AgentPromptQueueEntry {
     enqueuedAt: Date.parse(row.created_at),
     sentAt: row.started_at ? Date.parse(row.started_at) : undefined,
     completedAt: row.completed_at ? Date.parse(row.completed_at) : undefined,
-    updatedAt: Date.parse(row.updated_at) || Date.parse(row.created_at),
+    updatedAt: row.updated_at || row.created_at,
     error: row.error || undefined,
     verificationAttempts: row.verification_attempts,
     cancelRequested: Boolean(row.cancel_requested),
