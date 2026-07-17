@@ -50,3 +50,4 @@ HACKING
 - 2026-07-14: Made archive pages and search summary-first, removed duplicate open-time loads, and bounded conversation retrieval with stable `(created_at, id)` pagination.
 - 2026-07-14: Restored full original prompts and agent output in the selected conversation pane through a one-time bounded detail fetch, while preserving summary-only archive and search egress.
 - 2026-07-16: Added the completed-task Architecture View entry point, nested cached report presentation, regeneration state, and forward-only unavailable treatment.
+- 2026-07-16: Hardened failed and cancelled direct-prompt retry by loading the full original prompt before resubmission, with a visible preparation state and fallback behavior when detail retrieval fails.
