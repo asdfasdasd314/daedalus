@@ -5,19 +5,22 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 type AgentOutputDetailProps = {
+  collapsible?: boolean;
   label: string;
   value: string;
   markdown?: boolean;
 };
 
-export default function AgentOutputDetail({ label, value, markdown = false }: AgentOutputDetailProps) {
+export default function AgentOutputDetail({ collapsible = false, label, value, markdown = false }: AgentOutputDetailProps) {
+  const [expanded, setExpanded] = useState(!collapsible);
   const [formatted, setFormatted] = useState(markdown);
   const [copyLabel, setCopyLabel] = useState("Copy");
 
   useEffect(() => {
+    setExpanded(!collapsible);
     setFormatted(markdown);
     setCopyLabel("Copy");
-  }, [markdown, value]);
+  }, [collapsible, markdown, value]);
 
   function copyValue() {
     void navigator.clipboard.writeText(value).then(() => {
@@ -37,11 +40,21 @@ export default function AgentOutputDetail({ label, value, markdown = false }: Ag
               <button type="button" onClick={() => setFormatted(false)} className={`rounded-full px-3 py-1 text-xs font-semibold ${!formatted ? "bg-cyan-300 text-slate-950" : "text-slate-300"}`}>Raw</button>
             </div>
           ) : null}
+          {collapsible ? (
+            <button
+              type="button"
+              aria-expanded={expanded}
+              onClick={() => setExpanded((current) => !current)}
+              className="rounded-full border border-white/10 px-3 py-1 text-xs font-semibold text-slate-200 hover:bg-white/10"
+            >
+              {expanded ? "Show less" : "Show full"}
+            </button>
+          ) : null}
           <button type="button" onClick={copyValue} className="rounded-full border border-white/10 px-3 py-1 text-xs font-semibold text-slate-200 hover:bg-white/10">{copyLabel}</button>
         </div>
       </div>
       {markdown && formatted ? (
-        <div className="agent-output-markdown min-w-0 overflow-hidden break-words text-sm leading-6 text-slate-200">
+        <div className={`agent-output-markdown min-w-0 overflow-hidden break-words text-sm leading-6 text-slate-200 ${collapsible && !expanded ? "max-h-32" : ""}`}>
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             components={{
@@ -64,7 +77,7 @@ export default function AgentOutputDetail({ label, value, markdown = false }: Ag
           >{value}</ReactMarkdown>
         </div>
       ) : (
-        <pre className="max-h-[32rem] min-w-0 overflow-auto whitespace-pre-wrap break-words text-sm leading-6 text-slate-200">{value}</pre>
+        <pre className={`${collapsible && !expanded ? "max-h-32 overflow-hidden" : "max-h-[32rem] overflow-auto"} min-w-0 whitespace-pre-wrap break-words text-sm leading-6 text-slate-200`}>{value}</pre>
       )}
     </section>
   );

@@ -8,6 +8,7 @@ The Agent Output Viewer is the durable, authenticated history and live-status su
 - **Unified Read Model**: Active direct prompts and durable tasks supply current lifecycle state while history supplies archived content; records merge by prompt ID.
 - **Feature Discovery**: A multi-feature prompt remains one database record and is presented beneath every repository-qualified targeted feature, with separate All activity and Unscoped groups.
 - **Planning Conversation**: A planning conversation ID links the initial request, every refinement, and the implementation task so the viewer presents one chronological transcript: initial prompt, planning questions and plan, then the implementation response or terminal error.
+- **Compact Plan Review**: Planning conversations initially limit their original prompt and agent plan to a small preview, with a per-card control to reveal the complete content before implementation.
 - **Workspace Drawer**: A true upper-left history control opens a responsive drawer that is mutually exclusive with Ventures and supports notification deep links.
 - **Archive Controls**: The viewer owns formatted/raw output, copying, search, stable pagination, retry, abandon, cancel, finalized-task cleanup, and per-exchange delete for every finalized prompt-answer pair (`completed`, `failed`, `blocked`, or `cancelled`).
 - **Summary-First Archive**: Archive pages and searches return fixed-size prompt snippets and lifecycle metadata without output/error bodies; selecting a conversation fetches its bounded full prompt, output, and error records so the detail pane renders the original request and complete plan/agent response.
@@ -57,3 +58,4 @@ HACKING
 - 2026-07-16: Preserved hydrated planning prompts and responses across newer summary-only archive refreshes so the viewer does not blank before replacement detail arrives.
 - 2026-07-16: Resolved the follow-up integration conflict by retaining architecture actions, full-prompt retry, and planning-detail preservation together in the viewer contract.
 - 2026-07-16: Corrected hydrated-detail selection to recognize truncated prompts without blocking a newer full planning response from replacing the preserved output.
+- 2026-07-16: Collapsed planning conversation prompts and plans to a compact preview with an explicit Show full control, keeping the Implement Plan action easy to reach.
