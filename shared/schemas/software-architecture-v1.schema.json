@@ -1,0 +1,210 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://daedalus.dev/schemas/software-architecture-v1.schema.json",
+  "title": "Software Architecture",
+  "description": "A final-state software architecture expressed as systems and directed channels.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "summary",
+    "systems",
+    "channels"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "summary": {
+      "$ref": "#/$defs/non_empty_string"
+    },
+    "systems": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/system_definition"
+      }
+    },
+    "channels": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/channel_definition"
+      }
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+    },
+    "non_empty_string": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "system_definition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "summary",
+        "files"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "name": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "summary": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "files": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/non_empty_string"
+          }
+        }
+      }
+    },
+    "channel_definition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "summary",
+        "source_system_id",
+        "target_system_id",
+        "fields"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "name": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "summary": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "source_system_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "target_system_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/field_definition"
+          }
+        }
+      }
+    },
+    "field_definition": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/primitive_field_definition"
+        },
+        {
+          "$ref": "#/$defs/array_field_definition"
+        },
+        {
+          "$ref": "#/$defs/object_field_definition"
+        }
+      ]
+    },
+    "primitive_field_definition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "summary",
+        "type"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/identifier"
+        },
+        "summary": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "type": {
+          "enum": [
+            "string",
+            "number",
+            "integer",
+            "boolean",
+            "null"
+          ]
+        },
+        "required": {
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "array_field_definition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "summary",
+        "type",
+        "items"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/identifier"
+        },
+        "summary": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "type": {
+          "const": "array"
+        },
+        "required": {
+          "type": "boolean",
+          "default": true
+        },
+        "items": {
+          "$ref": "#/$defs/field_definition"
+        }
+      }
+    },
+    "object_field_definition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "summary",
+        "type",
+        "fields"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/identifier"
+        },
+        "summary": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "type": {
+          "const": "object"
+        },
+        "required": {
+          "type": "boolean",
+          "default": true
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/field_definition"
+          }
+        }
+      }
+    }
+  }
+}

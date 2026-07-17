@@ -11,7 +11,8 @@ The Agent Output Viewer is the durable, authenticated history and live-status su
 - **Workspace Drawer**: A true upper-left history control opens a responsive drawer that is mutually exclusive with Ventures and supports notification deep links.
 - **Archive Controls**: The viewer owns formatted/raw output, copying, search, stable pagination, retry, abandon, cancel, finalized-task cleanup, and per-exchange delete for every finalized prompt-answer pair (`completed`, `failed`, `blocked`, or `cancelled`).
 - **Summary-First Archive**: Archive pages and searches return fixed-size prompt snippets and lifecycle metadata without output/error bodies; selecting a conversation fetches its bounded full prompt, output, and error records so the detail pane renders the original request and complete plan/agent response.
-- **Architecture View Handoff**: Completed durable exchanges can open the architecture engine's persistent final-state report, while older exchanges without immutable commit capture remain explicitly unavailable.
+- **Architecture View Handoff**: Completed durable exchanges expose View or Regenerate actions, while older exchanges without immutable commit capture remain explicitly unavailable.
+- **Persistent Architecture Rail**: Architecture View keeps History, search, feature groups, exchange selection, and a compact selected-exchange action area visible as a fixed left rail without owning diagram layout.
 
 ## Relevant Files
 - `shared/database/migrations/018_agent_output_history.sql`: Durable history table, policies, RPCs, task projection trigger, and recoverable backfills.
@@ -24,7 +25,7 @@ The Agent Output Viewer is the durable, authenticated history and live-status su
 - `local-daemon/src/daedalus_daemon/communications.py`: Narrow direct-prompt history upsert transport.
 - `local-daemon/src/daedalus_daemon/main.py`: Direct planning and ask execution publication.
 - `daedalus-site/lib/agent-output-history.ts`: History types, normalization, grouping, merging, pagination, and search helpers.
-- `daedalus-site/app/agent-output-viewer.tsx`: Responsive live and archived prompt drawer.
+- `daedalus-site/app/agent-output-viewer.tsx`: Responsive live/archive drawer and persistent architecture-rail presentation.
 - `daedalus-site/app/agent-output-detail.tsx`: Reusable prompt/output Markdown, raw, overflow, and copy presentation.
 - `daedalus-site/app/feature-files-dashboard.tsx`: Workspace trigger, active-source composition, overlay routing, and notification history selection.
 - `daedalus-site/app/agent-session-panel.tsx`: Prompt-only Edit composer and submission handoff.
@@ -50,3 +51,4 @@ HACKING
 - 2026-07-14: Made archive pages and search summary-first, removed duplicate open-time loads, and bounded conversation retrieval with stable `(created_at, id)` pagination.
 - 2026-07-14: Restored full original prompts and agent output in the selected conversation pane through a one-time bounded detail fetch, while preserving summary-only archive and search egress.
 - 2026-07-16: Added the completed-task Architecture View entry point, nested cached report presentation, regeneration state, and forward-only unavailable treatment.
+- 2026-07-16: Refactored History into drawer and persistent architecture-rail presentations, removed nested Markdown rendering, and routed View/Regenerate actions to the dashboard-owned canvas target.

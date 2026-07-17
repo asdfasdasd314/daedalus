@@ -15,7 +15,7 @@ The recurrent row review protocol prevents the client, daemon, and manager from 
 - **Measured Budget**: The pre-remediation baseline was approximately 4,320 browser, 5,040 daemon, and 3,600 manager recurrent requests per hour; acceptance is at most 720 per component and 2,160 combined for one visible idle browser, daemon, and manager.
 - **Consolidated Browser Inbox**: `get_client_review_inbox()` returns seven explicitly projected, deterministically ordered, fixed-bound client-review collections, and `acknowledge_client_reviews()` guards mutable receipts by review state and generation.
 - **Consolidated Daemon Snapshot**: `daemon_poll_work()` returns communications, scheduling-only task and batch records, bounded Architecture View requests, active run controls, and one atomic feature-run claim without unreviewed large result fields.
-- **Architecture Report Delivery**: Architecture generation metadata enters the daemon snapshot without report bodies; completed Markdown transfers only from an explicit `client_review` row and acknowledgements match both `updated_at` and the monotonic report generation.
+- **Architecture Document Delivery**: Architecture generation metadata enters the daemon snapshot without document bodies; validated `architecture_document` JSON transfers only from an explicit bounded `client_review` row and acknowledgements match both `updated_at` and the monotonic generation.
 - **Empty-Poll Contract**: Empty inboxes return arrays or `null`, produce no acknowledgement request, and are measured with aggregate request-count and response-byte logging rather than per-poll messages.
 - **Visibility and Cadence**: Visible browser polling is completion-scheduled every five seconds, hidden-page polling backs off to at least thirty seconds, visibility restoration refreshes immediately, and manager database cadence matches its five-second heartbeat.
 
@@ -33,7 +33,7 @@ The recurrent row review protocol prevents the client, daemon, and manager from 
 - `AGENTS.md`: Project-wide recurrent Supabase read requirements.
 - `shared/database/migrations/023_complete_recurrent_supabase_read_hardening.sql`: Remaining control-plane protocol migration and review indexes.
 - `shared/database/migrations/027_recurrent_supabase_egress_remediation.sql`: Consolidated browser, daemon, and manager RPCs, bounded projections, and batched acknowledgements.
-- `shared/database/migrations/028_system_architecture_communication_engine.sql`: Generation-guarded Architecture View work and reviewed Markdown delivery.
+- `shared/database/migrations/029_system_architecture_visualization_engine.sql`: Generation-guarded structured Architecture View completion and reviewed JSON delivery.
 
 ## Dev Mode
 TESTING
@@ -54,3 +54,4 @@ TESTING
 - 2026-07-14: Repaired the cancellation-check regression test to mock the new task-scoped control lookup instead of the retired full task-list refresh.
 - 2026-07-14: Preserved summary-only archive transport while allowing a user-selected agent-output conversation to retrieve its full durable prompt and response bodies once.
 - 2026-07-16: Added bounded Architecture View work metadata, explicit reviewed Markdown delivery, drain coverage, and generation-plus-timestamp stale acknowledgement protection.
+- 2026-07-16: Replaced reviewed Markdown delivery with an explicit bounded `architecture_document` projection while keeping the daemon projection payload-free and acknowledgement generation-plus-timestamp guarded.

@@ -1,7 +1,7 @@
 # Feature-First Graph Workspace Shell
 
 ## Summary
-The feature-first graph workspace shell owns the responsive workspace framing around the feature graph, including primary overlays, Ventures, the prompt-only Edit surface, and the left-side Agent Output Viewer drawer.
+The feature-first graph workspace shell owns the responsive workspace framing around the feature graph, including primary overlays, Ventures, the prompt-only Edit surface, the Agent Output Viewer, and global routing between Feature View and Architecture View.
 
 ## Key Points
 - **Graph-First Default**: The feature graph remains visible as the base workspace on desktop and mobile instead of living under a persistent left control panel.
@@ -18,9 +18,12 @@ The feature-first graph workspace shell owns the responsive workspace framing ar
 - **Drawer Label Consistency**: The shell reuses the shared root-relative project label helpers inside the ventures drawer so project tags match the chat panel instead of exposing absolute daemon paths.
 - **Feature Search Overlay**: The shell mounts the feature-search fuzzy finder as a workspace overlay/control, opens it from the hamburger menu or `⌘K` / `Ctrl+K`, and routes result selection through the same feature-node selection flow as the graph.
 - **Canonical Project Payload**: The shell receives one project entry per canonical filesystem checkout because daemon discovery excludes Git linked task worktrees.
+- **Global Workspace Mode**: A fixed top-center toggle suppresses feature-only controls under an opaque Architecture View while leaving the graph mounted and inert so pan, physics, layout, selection, and zoom state survive.
+- **Canvas Target Safety**: The shell owns the prompt explicitly sent to the architecture canvas and clears it whenever History selects another exchange, preventing a stale diagram from being attributed to the new selection.
 
 ## Relevant Files
 - `daedalus-site/app/feature-files-dashboard.tsx`: Main workspace shell that owns overlay routing, responsive layout rules, venture drawer presentation, and feature-detail tabs.
+- `daedalus-site/app/architecture-visualization.tsx`: Visualization-engine canvas mounted by the shell in Architecture View.
 - `daedalus-site/app/feature-file-graph.tsx`: Graph canvas that the shell mounts full-screen, including the zoom rail that the shell can hide or restore.
 - `daedalus-site/app/agent-session-panel.tsx`: Shared chat session UI reused by the new-feature and feature-detail overlays.
 - `daedalus-site/app/feature-workspace-utils.ts`: Shared feature-path and feature-label helpers used across the shell overlays.
@@ -51,3 +54,4 @@ HACKING
 - 2026-07-13: Mounted the workspace-level daemon manager health, restart, cancellation, and drain-blocker panel independently from execution-specific overlays.
 - 2026-07-16: Generated a repository-wide Graphify map to document the graph workspace shell's relationships with feature rendering, agent prompts, output history, and search.
 - 2026-07-16: Refreshed the repository Graphify map after semantic and structural extraction, preserving the workspace shell's graph relationships for future navigation.
+- 2026-07-16: Added the top-center Feature/Architecture mode toggle, opaque inert graph overlay routing, persistent History rail mount, and stale-safe dashboard-owned architecture canvas selection.

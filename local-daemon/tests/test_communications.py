@@ -19,6 +19,7 @@ from daedalus_daemon.communications import (
     fetch_current_message,
     fetch_current_messages,
     fetch_work_snapshot,
+    complete_architecture_view,
     upsert_agent_output_history,
     post_feature_files,
     post_git_sync_result,
@@ -43,6 +44,19 @@ class FakeResponse:
 
 
 class UpdateCurrentMessageTests(unittest.TestCase):
+    def test_completes_architecture_view_with_structured_document(self):
+        document = {"schema_version": "1.0", "summary": "Test", "systems": [], "channels": []}
+        with patch("daedalus_daemon.communications.call_daemon_rpc", return_value=True) as rpc:
+            completed = complete_architecture_view(
+                {"daemonUserId": "user-1"}, "view-1", 3,
+                "2026-07-16T12:00:00Z", "completed", [], document, "",
+                "codex", "model", "high",
+            )
+        self.assertTrue(completed)
+        self.assertEqual(rpc.call_args.args[1], "daemon_complete_architecture_view")
+        self.assertEqual(rpc.call_args.args[2]["p_architecture_document"], document)
+        self.assertNotIn("p_report_markdown", rpc.call_args.args[2])
+
     def test_upserts_message_through_daemon_rpc(self):
         seen_methods: list[str] = []
         request_bodies: list[dict] = []
