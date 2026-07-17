@@ -54,3 +54,4 @@ TESTING
 - 2026-07-14: Repaired the cancellation-check regression test to mock the new task-scoped control lookup instead of the retired full task-list refresh.
 - 2026-07-14: Preserved summary-only archive transport while allowing a user-selected agent-output conversation to retrieve its full durable prompt and response bodies once.
 - 2026-07-16: Added bounded Architecture View work metadata, explicit reviewed Markdown delivery, drain coverage, and generation-plus-timestamp stale acknowledgement protection.
+- 2026-07-16: Confirmed summary-only agent-output archive refreshes retain already-hydrated viewer detail locally while the bounded refresh updates lifecycle metadata.

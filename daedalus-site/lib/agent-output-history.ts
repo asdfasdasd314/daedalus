@@ -131,20 +131,30 @@ export function dedupeAgentOutputs(exchanges: AgentOutputExchange[]) {
   const byPromptId = new Map<string, AgentOutputExchange>();
   for (const exchange of sortAgentOutputsRecentFirst(exchanges)) {
     const existing = byPromptId.get(exchange.promptId);
-    if (!existing || hasMoreAgentOutputContent(exchange, existing)) {
-      byPromptId.set(exchange.promptId, exchange);
-    }
+    byPromptId.set(
+      exchange.promptId,
+      existing ? mergeAgentOutputContent(exchange, existing) : exchange,
+    );
   }
   return [...byPromptId.values()];
 }
 
-function hasMoreAgentOutputContent(
-  candidate: AgentOutputExchange,
-  existing: AgentOutputExchange,
+function mergeAgentOutputContent(
+  current: AgentOutputExchange,
+  previous: AgentOutputExchange,
 ) {
-  if (candidate.updatedAt !== existing.updatedAt) return false;
-  return candidate.prompt.length + candidate.output.length + candidate.error.length
-    > existing.prompt.length + existing.output.length + existing.error.length;
+  return {
+    ...previous,
+    // Archive pages are deliberately summary-only. Keep a selected conversation's
+    // already-hydrated detail visible while a newer summary updates its lifecycle.
+    prompt: longestAgentOutputContent(current.prompt, previous.prompt),
+    output: longestAgentOutputContent(current.output, previous.output),
+    error: longestAgentOutputContent(current.error, previous.error),
+  };
+}
+
+function longestAgentOutputContent(current: string, previous: string) {
+  return current.length >= previous.length ? current : previous;
 }
 
 export function dedupeAgentOutputConversations(exchanges: AgentOutputExchange[]) {
