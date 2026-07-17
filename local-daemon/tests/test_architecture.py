@@ -162,6 +162,7 @@ class ArchitectureEvidenceTests(unittest.TestCase):
 
     def test_validation_retries_succeed_on_third_attempt_with_corrective_details(self):
         calls = []
+        progress = []
         responses = iter([
             "not json",
             json.dumps({"schema_version": "1.0"}),
@@ -182,7 +183,10 @@ class ArchitectureEvidenceTests(unittest.TestCase):
             result = generate_architecture_view({
                 "id": "view-1", "repository": "/repo", "base_commit": "base",
                 "final_commit": "final", "generation": 1, "targeted_feature_paths": [],
-            }, load_architecture_settings(), run_codex)
+            }, load_architecture_settings(), run_codex,
+               lambda _view, stage, detail="", attempt=None, total_attempts=None: progress.append(
+                   (stage, detail, attempt, total_attempts),
+               ))
 
         self.assertEqual(result["status"], "completed")
         self.assertEqual(len(calls), 3)
@@ -191,6 +195,30 @@ class ArchitectureEvidenceTests(unittest.TestCase):
         self.assertIn("feature_files/owned.md", calls[2])
         self.assertIn("Published JSON Schema", calls[2])
         self.assertIn("complete corrected document, not a patch", calls[2])
+        self.assertEqual([item[0] for item in progress], [
+            "preparing_snapshot", "collecting_evidence", "generating_document",
+            "validating_document", "correcting_document", "generating_document",
+            "validating_document", "correcting_document", "generating_document",
+            "validating_document", "finalizing",
+        ])
+        self.assertEqual(progress[4][1], "Correcting document, attempt 2 of 3.")
+
+    def test_provider_failure_preserves_last_successful_progress_stage(self):
+        progress = []
+        with (
+            patch("daedalus_daemon.architecture.collect_changed_files", return_value=[]),
+            patch("daedalus_daemon.architecture.add_snapshot_worktree"),
+            patch("daedalus_daemon.architecture.remove_snapshot_worktree"),
+            patch("daedalus_daemon.architecture.collect_relevant_feature_files", return_value=[]),
+            patch("daedalus_daemon.architecture.collect_graph_community_evidence", return_value=[]),
+        ):
+            result = generate_architecture_view({
+                "id": "view-1", "repository": "/repo", "base_commit": "base",
+                "final_commit": "final", "generation": 1, "targeted_feature_paths": [],
+            }, load_architecture_settings(), lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("provider unavailable")),
+               lambda _view, stage, *_args: progress.append(stage))
+        self.assertEqual(result["failure_kind"], "operational")
+        self.assertEqual(progress[-1], "finalizing")
 
     def test_validation_can_succeed_on_attempts_one_two_and_three(self):
         for success_attempt in (1, 2, 3):

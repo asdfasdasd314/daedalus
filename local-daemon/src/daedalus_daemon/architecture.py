@@ -11,7 +11,11 @@ from .architecture_document import (
     format_architecture_validation_errors,
     parse_and_validate_architecture_response,
 )
-from .communications import claim_architecture_view, complete_architecture_view
+from .communications import (
+    claim_architecture_view,
+    complete_architecture_view,
+    publish_architecture_progress_event,
+)
 
 
 DAEDALUS_ROOT = Path(__file__).resolve().parents[3]
@@ -48,11 +52,13 @@ class ArchitectureViewSupervisor:
             claimed = claim_architecture_view(self.config, queued)
             if not claimed:
                 continue
+            self._publish_progress(claimed, "queued", "Generation claimed by daemon.")
             future = self.executor.submit(
                 generate_architecture_view,
                 claimed,
                 self.settings,
                 self.run_codex,
+                self._publish_progress,
             )
             self.active[view_id] = (claimed, future)
 
@@ -97,6 +103,27 @@ class ArchitectureViewSupervisor:
             )
             self.active.pop(view_id, None)
 
+    def _publish_progress(
+        self,
+        view: dict,
+        stage: str,
+        detail: str = "",
+        attempt: int | None = None,
+        total_attempts: int | None = None,
+    ) -> None:
+        try:
+            publish_architecture_progress_event(
+                self.config,
+                str(view["id"]),
+                int(view["generation"]),
+                stage,
+                detail,
+                attempt,
+                total_attempts,
+            )
+        except Exception as error:
+            print(f"Architecture progress publication failed: {error}")
+
 
 def classify_architecture_result(result: dict) -> str:
     if result.get("status") == "completed" and isinstance(
@@ -124,7 +151,12 @@ def load_architecture_settings() -> dict:
     }
 
 
-def generate_architecture_view(view: dict, settings: dict, run_codex) -> dict:
+def generate_architecture_view(
+    view: dict,
+    settings: dict,
+    run_codex,
+    publish_progress=lambda *_args, **_kwargs: None,
+) -> dict:
     repository = Path(str(view["repository"])).resolve()
     snapshot_path = architecture_snapshot_path(
         repository, str(view["id"]), int(view["generation"])
@@ -136,6 +168,7 @@ def generate_architecture_view(view: dict, settings: dict, run_codex) -> dict:
     )
     add_snapshot_worktree(repository, snapshot_path, str(view["final_commit"]))
     try:
+        publish_progress(view, "preparing_snapshot", "Detached final-commit snapshot prepared.")
         targeted_paths = [
             str(path)
             for path in view.get("targeted_feature_paths", [])
@@ -147,12 +180,20 @@ def generate_architecture_view(view: dict, settings: dict, run_codex) -> dict:
         graph_evidence = collect_graph_community_evidence(
             snapshot_path, changed_files
         )
+        publish_progress(view, "collecting_evidence", "Feature and Graphify evidence collected.")
         prompt = build_architecture_prompt(
             changed_files, feature_paths, graph_evidence
         )
         raw_response = ""
         final_problems = ""
         for attempt in range(settings["maxValidationAttempts"]):
+            publish_progress(
+                view,
+                "generating_document",
+                "Generating architecture document.",
+                attempt + 1,
+                settings["maxValidationAttempts"],
+            )
             raw_response = run_codex(
                 str(snapshot_path),
                 prompt,
@@ -161,9 +202,17 @@ def generate_architecture_view(view: dict, settings: dict, run_codex) -> dict:
                 ask_mode=True,
             )
             try:
+                publish_progress(
+                    view,
+                    "validating_document",
+                    "Validating architecture document.",
+                    attempt + 1,
+                    settings["maxValidationAttempts"],
+                )
                 architecture_document = parse_and_validate_architecture_response(
                     raw_response
                 )
+                publish_progress(view, "finalizing", "Finalizing Architecture View.")
                 return {
                     "status": "completed",
                     "changed_files": changed_files,
@@ -175,6 +224,13 @@ def generate_architecture_view(view: dict, settings: dict, run_codex) -> dict:
                 final_problems = format_architecture_validation_errors(error)
                 if attempt + 1 >= settings["maxValidationAttempts"]:
                     break
+                publish_progress(
+                    view,
+                    "correcting_document",
+                    f"Correcting document, attempt {attempt + 2} of {settings['maxValidationAttempts']}.",
+                    attempt + 2,
+                    settings["maxValidationAttempts"],
+                )
                 prompt = build_architecture_correction_prompt(
                     changed_files,
                     feature_paths,
@@ -182,6 +238,7 @@ def generate_architecture_view(view: dict, settings: dict, run_codex) -> dict:
                     raw_response,
                     final_problems,
                 )
+        publish_progress(view, "finalizing", "Finalizing Architecture View.")
         return {
             "status": "failed",
             "changed_files": changed_files,
@@ -193,6 +250,7 @@ def generate_architecture_view(view: dict, settings: dict, run_codex) -> dict:
             "failure_kind": "validation_exhausted",
         }
     except Exception as error:
+        publish_progress(view, "finalizing", "Finalizing Architecture View.")
         return {
             "status": "failed",
             "changed_files": changed_files,

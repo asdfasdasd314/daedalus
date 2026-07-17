@@ -26,6 +26,10 @@ const visualizationMigrationSource = readFileSync(
   new URL("../../shared/database/migrations/029_system_architecture_visualization_engine.sql", import.meta.url),
   "utf8",
 );
+const progressMigrationSource = readFileSync(
+  new URL("../../shared/database/migrations/032_architecture_view_generation_progress.sql", import.meta.url),
+  "utf8",
+);
 const architectureViewSource = readFileSync(
   new URL("../lib/architecture-view.ts", import.meta.url),
   "utf8",
@@ -109,6 +113,19 @@ test("structured migration replaces Markdown and preserves generation guards", (
   const daemonPoll = visualizationMigrationSource.slice(visualizationMigrationSource.indexOf("daemon_poll_work"));
   assert.doesNotMatch(daemonPoll, /architecture_document/);
   assert.doesNotMatch(daemonPoll, /select \*/i);
+});
+
+test("Architecture View progress uses bounded generation-safe recurrent delivery", () => {
+  assert.match(progressMigrationSource, /create table architecture_view_progress_events/);
+  assert.match(progressMigrationSource, /message in \('daemon_review', 'client_review', 'client_complete', 'daemon_complete'\)/);
+  assert.match(progressMigrationSource, /architecture_progress_client_review_idx/);
+  assert.match(progressMigrationSource, /order by created_at, id limit 50/);
+  assert.match(progressMigrationSource, /generation = \(receipt->>'generation'\)::integer/);
+  assert.match(progressMigrationSource, /updated_at = \(receipt->>'updatedAt'\)::timestamptz/);
+  assert.match(progressMigrationSource, /status = 'running' and message = 'daemon_review'/);
+  assert.match(dashboardSource, /architectureProgressEvents/);
+  assert.match(dashboardSource, /mergeArchitectureProgressEvents/);
+  assert.match(historySource, /Correcting document, attempt/);
 });
 
 test("workspace exposes two modes and clears stale canvas selection", () => {

@@ -26,7 +26,7 @@ import type {
 } from "@/lib/agent-chat-cache";
 import type { AgentModelsConfig } from "@/lib/agent-models";
 import type { AgentOutputExchange as HistoryExchange, OrchestrationBatchSummary } from "@/lib/agent-output-history";
-import type { ArchitectureView } from "@/lib/architecture-view";
+import type { ArchitectureProgressEvent, ArchitectureView } from "@/lib/architecture-view";
 import {
   buildImplementationPrompt,
   parsePlanningReply,
@@ -245,7 +245,7 @@ type FeatureExecutionRunRow = {
 
 type ReviewReceipt = {
   receiptId: string;
-  transport: "communications" | "daemonPayloads" | "agentTasks" | "orchestrationBatches" | "taskDeletionRequests" | "architectureViews" | "featureExecutionRuns" | "daemonEvents" | "managerStatus";
+  transport: "communications" | "daemonPayloads" | "agentTasks" | "orchestrationBatches" | "taskDeletionRequests" | "architectureViews" | "architectureProgressEvents" | "featureExecutionRuns" | "daemonEvents" | "managerStatus";
   key: string;
   updatedAt?: string;
   generation?: number;
@@ -258,6 +258,7 @@ type ClientReviewInbox = {
   orchestrationBatches: OrchestrationBatchSummary[];
   taskDeletionRequests: TaskDeletionRequestRow[];
   architectureViews: ArchitectureView[];
+  architectureProgressEvents: ArchitectureProgressEvent[];
   featureExecutionRuns: FeatureExecutionRunRow[];
   daemonEvents: DaemonEventRow[];
   managerStatus: DaemonManagerStatus | null;
@@ -780,6 +781,14 @@ export default function FeatureFilesDashboard({
           });
           receipts.push(...(inbox.architectureViews ?? []).map((view) => reviewReceipt(
             "architectureViews", view.id, view.updated_at, view.generation,
+          )));
+        }
+        if ((inbox.architectureProgressEvents ?? []).length) {
+          setArchitectureViews((current) => mergeArchitectureProgressEvents(
+            current, inbox.architectureProgressEvents ?? [],
+          ));
+          receipts.push(...(inbox.architectureProgressEvents ?? []).map((event) => reviewReceipt(
+            "architectureProgressEvents", event.id, event.updated_at, event.generation,
           )));
         }
         const latestEvent = inbox.daemonEvents.at(-1);
@@ -4127,7 +4136,39 @@ function mergeArchitectureView(
     existing.generation > incoming.generation
     || (existing.generation === incoming.generation && existing.updated_at > incoming.updated_at)
   )) return current;
-  return { ...current, [incoming.prompt_id]: incoming };
+  return {
+    ...current,
+    [incoming.prompt_id]: {
+      ...incoming,
+      progress_events: existing?.generation === incoming.generation
+        ? existing.progress_events ?? []
+        : [],
+    },
+  };
+}
+
+function mergeArchitectureProgressEvents(
+  current: Record<string, ArchitectureView>, events: ArchitectureProgressEvent[],
+) {
+  let next = current;
+  for (const event of events) {
+    const entry = Object.entries(next).find(([, view]) => view.id === event.architecture_view_id);
+    if (!entry) continue;
+    const [promptId, view] = entry;
+    if (view.generation !== event.generation) continue;
+    const prior = view.progress_events ?? [];
+    const retained = prior.filter((item) => item.id !== event.id);
+    next = {
+      ...next,
+      [promptId]: {
+        ...view,
+        progress_events: [...retained, event].sort((left, right) => (
+          left.created_at.localeCompare(right.created_at) || left.id.localeCompare(right.id)
+        )),
+      },
+    };
+  }
+  return next;
 }
 
 function isManagerHeartbeatCurrent(status: DaemonManagerStatus) {
