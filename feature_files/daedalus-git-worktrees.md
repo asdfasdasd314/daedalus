@@ -4,6 +4,7 @@
 Daedalus Git Worktrees isolates agent-mode prompts on task branches and uses a durable daemon orchestrator to verify, batch, resolve, and fast-forward successful work into local `main`.
 
 ## Key Points
+- **Recoverable Separation**: A blocked integration batch retains completed member branches and its diagnostic integration worktree, while task retries resume their retained worktree instead of creating replacement branches.
 - **Per-Repository Capacity**: Each repository may run up to four isolated agent worktrees while later submissions remain durably queued.
 - **Central Configuration**: Scheduler, resolver, branch, and verification settings are loaded once from Daedalus's feature-owned parameter file rather than requiring configuration files in managed repositories.
 - **Durable Progress**: Every task insert and lifecycle update atomically projects status, result, error, metadata, and timestamps into Agent Output Viewer history.
@@ -27,6 +28,7 @@ Daedalus Git Worktrees isolates agent-mode prompts on task branches and uses a d
 - `local-daemon/src/daedalus_daemon/main.py`: Tracked agent subprocess registry and SIGTERM/SIGKILL cancel plumbing.
 - `shared/database/migrations/015_agent_task_cancel.sql`: Adds `cancelled` status, `cancel_requested`, cancel RLS, and terminal RPC handling.
 - `shared/database/migrations/024_repair_agent_tasks_cancel_requested.sql`: Idempotent repair when live DB skipped 015's `cancel_requested` column.
+- `shared/database/migrations/030_task_and_batch_failure_recovery.sql`: Batch recovery, retained-worktree task retry, and daemon-owned deletion protocol.
 - `shared/database/migrations/009_git_worktree_orchestrator.sql`: Auth-scoped orchestration tables, policies, and daemon RPCs.
 - `daedalus-site/app/feature-files-dashboard.tsx`: Durable agent task submission, cancel requests, and status polling.
 - `daedalus-site/app/agent-session-panel.tsx`: Cancel control on in-flight durable tasks.
@@ -57,3 +59,4 @@ HACKING
 - 2026-07-14: Added deterministic migration-number reconcile on integration so duplicate `NNN_*.sql` prefixes are renumbered before combined verification and promotion.
 - 2026-07-16: Persisted each successful task's final verified branch commit after repair completion for forward-only Architecture View reconstruction.
 - 2026-07-16: Recovered blocked batch `de42f513-83d8-4405-9a50-61beac599016` by merging the user's newer primary commit into its integration branch and fast-forwarding the clean combined history to `main`.
+- 2026-07-16: Separated implementation completion from batch integration failure, preserving recoverable task worktrees and adding guarded batch-only retries with successful batch cleanup.

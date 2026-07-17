@@ -970,6 +970,25 @@ grant execute on function daemon_manager_complete_recovery(uuid, uuid) to anon;
 grant execute on function daemon_manager_complete_restart(uuid, uuid, uuid) to anon;
 grant execute on function daemon_manager_complete_control_request(uuid, uuid, uuid, timestamptz) to anon;
 
+-- Task and batch failure recovery (migration 030).
+alter table agent_tasks add column if not exists retry_generation integer not null default 0;
+alter table orchestration_batches add column if not exists retry_generation integer not null default 0;
+create table if not exists agent_task_deletion_requests (
+  id uuid primary key default gen_random_uuid(), user_id uuid not null references auth.users(id) on delete cascade,
+  task_id uuid not null, prompt_id text not null,
+  expected_updated_at timestamptz not null, message text not null default 'daemon_review' check (message in ('daemon_review','client_review','client_complete','daemon_complete')),
+  status text not null default 'requested' check (status in ('requested','completed','rejected')),
+  error text not null default '', created_at timestamptz not null default now(), updated_at timestamptz not null default now(),
+  unique (user_id, task_id, expected_updated_at)
+);
+alter table agent_task_deletion_requests enable row level security;
+create policy "authenticated users can read own task deletion requests" on agent_task_deletion_requests for select to authenticated using (user_id = auth.uid());
+create index if not exists agent_task_deletion_requests_daemon_review_idx on agent_task_deletion_requests (user_id, created_at, id) where message='daemon_review';
+create index if not exists orchestration_batches_client_review_idx on orchestration_batches (user_id, updated_at, id) where message='client_review';
+
+-- The authoritative recovery RPC, inbox, acknowledgement, and daemon helpers are
+-- intentionally defined in the ordered migration so deployed schemas receive one atomic replacement.
+
 -- Consolidated recurrent egress interfaces (migration 027).
 create function get_client_review_inbox()
 returns jsonb language sql stable security definer set search_path = public as $$

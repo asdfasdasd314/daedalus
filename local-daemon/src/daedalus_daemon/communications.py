@@ -296,12 +296,32 @@ def list_orchestration_batches(config: dict) -> list[dict]:
     })
 
 
+def list_task_deletion_requests(config: dict) -> list[dict]:
+    result = call_daemon_rpc(config, "daemon_list_task_deletion_requests", {
+        "p_user_id": config["daemonUserId"],
+    })
+    return result if isinstance(result, list) else []
+
+
+def complete_task_deletion(config: dict, request_id: str, error: str = "") -> bool:
+    return bool(call_daemon_rpc(config, "daemon_complete_task_deletion", {
+        "p_user_id": config["daemonUserId"], "p_request_id": request_id,
+        "p_error": error,
+    }))
+
+
+def delete_orchestration_batch(config: dict, batch_id: str) -> bool:
+    return bool(call_daemon_rpc(config, "daemon_delete_orchestration_batch", {
+        "p_user_id": config["daemonUserId"], "p_batch_id": batch_id,
+    }))
+
+
 def upsert_orchestration_batch(config: dict, batch: dict) -> None:
     batch = {
         **batch,
         "message": (
             DAEMON_COMPLETE
-            if batch.get("status") in {"completed", "blocked"}
+            if batch.get("status") == "completed"
             else DAEMON_REVIEW
         ),
     }
