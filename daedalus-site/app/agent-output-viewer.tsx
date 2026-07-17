@@ -527,9 +527,18 @@ function architectureActionLabel(view: ArchitectureView | null, checked: boolean
   if (loading || (!checked && !view)) return "Checking Architecture View...";
   if (!view) return "Architecture unavailable";
   if (view.status === "queued") return "Generation queued";
-  if (view.status === "running") return "Generation running";
+  if (view.status === "running") return architectureProgressLabel(view);
   if (view.status === "failed" || (view.status === "completed" && !view.architecture_document)) return "Regenerate Architecture";
   return "View Architecture";
+}
+
+function architectureProgressLabel(view: ArchitectureView) {
+  const progress = view.progress_events?.at(-1);
+  if (!progress) return "Generation running";
+  if (progress.stage === "correcting_document") {
+    return `Correcting document, attempt ${progress.attempt} of ${progress.total_attempts}`;
+  }
+  return progress.detail || "Generation running";
 }
 
 function PlanningResponse({

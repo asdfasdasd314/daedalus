@@ -268,6 +268,28 @@ def complete_architecture_view(
     return bool(result)
 
 
+def publish_architecture_progress_event(
+    config: dict,
+    view_id: str,
+    generation: int,
+    stage: str,
+    detail: str = "",
+    attempt: int | None = None,
+    total_attempts: int | None = None,
+) -> bool:
+    """Publish one generation-scoped Architecture View progress event."""
+    result = call_daemon_rpc(config, "daemon_publish_architecture_progress_event", {
+        "p_user_id": config["daemonUserId"],
+        "p_view_id": view_id,
+        "p_generation": generation,
+        "p_stage": stage,
+        "p_detail": detail,
+        "p_attempt": attempt,
+        "p_total_attempts": total_attempts,
+    })
+    return bool(result)
+
+
 def claim_feature_execution_run(config: dict) -> dict | None:
     result = call_daemon_rpc(config, "daemon_claim_feature_execution_run", {
         "p_user_id": config["daemonUserId"],

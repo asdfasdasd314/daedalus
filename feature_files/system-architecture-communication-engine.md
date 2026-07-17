@@ -1,7 +1,7 @@
 # System Architecture Communication Engine
 
 ## Summary
-The system architecture communication engine coordinates persistent, task-scoped Architecture Views for completed durable agent work. It captures immutable Git commit boundaries, uses changed paths only as attention hints, combines feature-file ownership with Graphify community evidence, invokes the configured read-only model, and hands each raw response to the visualization engine's validator.
+The system architecture communication engine coordinates persistent, task-scoped Architecture Views for completed durable agent work. It captures immutable Git commit boundaries, publishes generation-scoped durable stage events, uses changed paths only as attention hints, combines feature-file ownership with Graphify community evidence, invokes the configured read-only model, and hands each raw response to the visualization engine's validator.
 
 ## Key Points
 - **Immutable Task Scope**: Each completed durable task stores its admission commit and final verified task-branch commit independently of its reclaimed worktree.
@@ -9,6 +9,7 @@ The system architecture communication engine coordinates persistent, task-scoped
 - **Two-Layer System Evidence**: Feature files are primary system-boundary candidates while Graphify communities containing changed source files provide secondary structural evidence.
 - **Structured Handoff**: Model invocation uses the visualization engine's published schema, validator, and corrective retry boundary before handing normalized JSON to the existing completion lifecycle.
 - **Durable Regeneration**: Architecture Views persist with the Agent Output Viewer exchange, support explicit regeneration, and use generation-guarded review states so stale work cannot replace newer output.
+- **Durable Progress**: Generation stages are immutable, separately acknowledged events, so client delivery cannot race the guarded terminal Architecture View update.
 - **Forward-Only Availability**: Historical tasks without captured commit boundaries remain visible but cannot generate an Architecture View.
 
 ## Relevant Files
@@ -27,3 +28,5 @@ HACKING
 - 2026-07-16: Implemented verified commit capture, persistent generation-safe Architecture Views, detached read-only Codex reporting with feature and Graphify evidence, reviewed daemon transport, and completed-task viewer controls.
 - 2026-07-16: Replaced Markdown report prompting with schema-bound JSON invocation, validator correction handoff, and normalized structured completion while retaining immutable snapshots and stale-generation lifecycle guards.
 - 2026-07-17: Added generation-stage failure diagnostics, bounded tracebacks, daemon error events, and durable failure-detail persistence so architecture generation faults are visible in daemon logs, client state, and the database.
+- 2026-07-17: Added generation-scoped durable Architecture View progress events at claim, snapshot, evidence, document, validation, correction, and finalization boundaries without changing generation or terminal-result guards.
+- 2026-07-17: Resolved the integration by retaining both durable progress delivery and generation-stage failure diagnostics across daemon publication and terminal persistence.

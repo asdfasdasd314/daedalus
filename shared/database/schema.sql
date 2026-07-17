@@ -1013,6 +1013,19 @@ begin
   return request_id;
 end; $$;
 
+-- Final Architecture View progress inbox/acknowledgement overrides.
+alter function get_client_review_inbox() rename to get_client_review_inbox_032_previous;
+create function get_client_review_inbox() returns jsonb language sql stable security definer set search_path=public as $$
+ with owner as(select auth.uid() user_id)select jsonb_set(previous.inbox,'{architectureProgressEvents}',coalesce((select jsonb_agg(to_jsonb(r)order by created_at,id)from(select id,architecture_view_id,generation,stage,stage_order,attempt,total_attempts,detail,created_at,updated_at from architecture_view_progress_events,owner where architecture_view_progress_events.user_id=owner.user_id and message='client_review' order by created_at,id limit 50)r),'[]'::jsonb))from(select get_client_review_inbox_032_previous() inbox)previous;
+$$;
+revoke all on function get_client_review_inbox()from public;grant execute on function get_client_review_inbox()to authenticated;
+alter function acknowledge_client_reviews(jsonb) rename to acknowledge_client_reviews_032_previous;
+create function acknowledge_client_reviews(receipts jsonb)returns jsonb language plpgsql security definer set search_path=public as $$
+declare owner_id uuid:=auth.uid();r jsonb;rid text;ok jsonb:='[]'::jsonb;stale jsonb:='[]'::jsonb;begin
+ if owner_id is null then raise exception 'Authentication required';end if;if jsonb_typeof(receipts)<>'array'then raise exception 'Receipts must be an array';end if;
+ for r in select value from jsonb_array_elements(receipts)loop rid:=coalesce(r->>'receiptId','');if r->>'transport'='architectureProgressEvents'then update architecture_view_progress_events set message='client_complete'where user_id=owner_id and id=(r->>'key')::uuid and generation=(r->>'generation')::integer and message='client_review' and updated_at=(r->>'updatedAt')::timestamptz;else perform 1 from acknowledge_client_reviews_032_previous(jsonb_build_array(r));if found then ok:=ok||jsonb_build_array(rid);else stale:=stale||jsonb_build_array(rid);end if;continue;end if;if found then ok:=ok||jsonb_build_array(rid);else stale:=stale||jsonb_build_array(rid);end if;end loop;return jsonb_build_object('acknowledged',ok,'rejected',stale);end;$$;
+revoke all on function acknowledge_client_reviews(jsonb)from public;grant execute on function acknowledge_client_reviews(jsonb)to authenticated;
+
 create or replace function daemon_list_batch_deletion_requests(p_user_id uuid)
 returns table (id uuid, batch jsonb, tasks jsonb) language sql security definer set search_path = public as $$
   select request.id, to_jsonb(batch), coalesce((
@@ -1124,12 +1137,81 @@ declare result jsonb;begin
  from(select(select count(*)from agent_tasks where user_id=p_user_id and message='daemon_review' and status in('queued','running','verifying','ready','integrating','resolving'))agent_count,(select count(*)from orchestration_batches where user_id=p_user_id and message='daemon_review' and status in('collecting','integrating','resolving'))batch_count,(select count(*)from feature_execution_runs where user_id=p_user_id and message='daemon_review' and status in('queued','running'))feature_count,(select count(*)from architecture_views where user_id=p_user_id and message='daemon_review' and status in('queued','running'))architecture_count,(select count(*)from communications where user_id=p_user_id and message='daemon_review' and purpose in('agent_prompt','git_sync_request','feature_file_load','parameter_file_load','parameter_file_update','entry_point_update'))communication_count,coalesce((select jsonb_object_agg(purpose,purpose_count)from(select purpose,count(*)purpose_count from communications where user_id=p_user_id and message='daemon_review' and purpose in('agent_prompt','git_sync_request','feature_file_load','parameter_file_load','parameter_file_update','entry_point_update')group by purpose)groups),'{}')communication_counts)counts;return result;
 end; $$;
 
+-- Final Architecture View progress inbox/acknowledgement overrides.
+alter function get_client_review_inbox() rename to get_client_review_inbox_032_final_previous;
+create function get_client_review_inbox() returns jsonb language sql stable security definer set search_path=public as $$
+ with owner as(select auth.uid() user_id)select jsonb_set(previous.inbox,'{architectureProgressEvents}',coalesce((select jsonb_agg(to_jsonb(r)order by created_at,id)from(select id,architecture_view_id,generation,stage,stage_order,attempt,total_attempts,detail,created_at,updated_at from architecture_view_progress_events,owner where architecture_view_progress_events.user_id=owner.user_id and message='client_review' order by created_at,id limit 50)r),'[]'::jsonb))from(select get_client_review_inbox_032_final_previous() inbox)previous;
+$$;
+revoke all on function get_client_review_inbox()from public;grant execute on function get_client_review_inbox()to authenticated;
+alter function acknowledge_client_reviews(jsonb) rename to acknowledge_client_reviews_032_final_previous;
+create function acknowledge_client_reviews(receipts jsonb)returns jsonb language plpgsql security definer set search_path=public as $$
+declare owner_id uuid:=auth.uid();r jsonb;rid text;ok jsonb:='[]'::jsonb;stale jsonb:='[]'::jsonb;begin
+ if owner_id is null then raise exception 'Authentication required';end if;if jsonb_typeof(receipts)<>'array'then raise exception 'Receipts must be an array';end if;
+ for r in select value from jsonb_array_elements(receipts)loop rid:=coalesce(r->>'receiptId','');if r->>'transport'='architectureProgressEvents'then update architecture_view_progress_events set message='client_complete'where user_id=owner_id and id=(r->>'key')::uuid and generation=(r->>'generation')::integer and message='client_review' and updated_at=(r->>'updatedAt')::timestamptz;else perform 1 from acknowledge_client_reviews_032_final_previous(jsonb_build_array(r));if found then ok:=ok||jsonb_build_array(rid);else stale:=stale||jsonb_build_array(rid);end if;continue;end if;if found then ok:=ok||jsonb_build_array(rid);else stale:=stale||jsonb_build_array(rid);end if;end loop;return jsonb_build_object('acknowledged',ok,'rejected',stale);end;$$;
+revoke all on function acknowledge_client_reviews(jsonb)from public;grant execute on function acknowledge_client_reviews(jsonb)to authenticated;
+
+-- Manager tick snapshot retained before later architecture migration snapshots.
+-- Manager tick snapshot retained before later architecture migration snapshots.
+-- Final Architecture View progress inbox/acknowledgement overrides.
+alter function get_client_review_inbox() rename to get_client_review_inbox_032_latest_previous;
+create function get_client_review_inbox() returns jsonb language sql stable security definer set search_path=public as $$
+ with owner as(select auth.uid() user_id)select jsonb_set(previous.inbox,'{architectureProgressEvents}',coalesce((select jsonb_agg(to_jsonb(r)order by created_at,id)from(select id,architecture_view_id,generation,stage,stage_order,attempt,total_attempts,detail,created_at,updated_at from architecture_view_progress_events,owner where architecture_view_progress_events.user_id=owner.user_id and message='client_review' order by created_at,id limit 50)r),'[]'::jsonb))from(select get_client_review_inbox_032_latest_previous() inbox)previous;
+$$;
+revoke all on function get_client_review_inbox()from public;grant execute on function get_client_review_inbox()to authenticated;
+alter function acknowledge_client_reviews(jsonb) rename to acknowledge_client_reviews_032_latest_previous;
+create function acknowledge_client_reviews(receipts jsonb)returns jsonb language plpgsql security definer set search_path=public as $$
+declare owner_id uuid:=auth.uid();r jsonb;rid text;ok jsonb:='[]'::jsonb;stale jsonb:='[]'::jsonb;begin
+ if owner_id is null then raise exception 'Authentication required';end if;if jsonb_typeof(receipts)<>'array'then raise exception 'Receipts must be an array';end if;
+ for r in select value from jsonb_array_elements(receipts)loop rid:=coalesce(r->>'receiptId','');if r->>'transport'='architectureProgressEvents'then update architecture_view_progress_events set message='client_complete'where user_id=owner_id and id=(r->>'key')::uuid and generation=(r->>'generation')::integer and message='client_review' and updated_at=(r->>'updatedAt')::timestamptz;else perform 1 from acknowledge_client_reviews_032_latest_previous(jsonb_build_array(r));if found then ok:=ok||jsonb_build_array(rid);else stale:=stale||jsonb_build_array(rid);end if;continue;end if;if found then ok:=ok||jsonb_build_array(rid);else stale:=stale||jsonb_build_array(rid);end if;end loop;return jsonb_build_object('acknowledged',ok,'rejected',stale);end;$$;
+revoke all on function acknowledge_client_reviews(jsonb)from public;grant execute on function acknowledge_client_reviews(jsonb)to authenticated;
+
 create or replace function daemon_manager_tick(p_user_id uuid,p_manager_instance_id uuid,p_execution_process_id integer,p_execution_started_at timestamptz,p_status_detail text default null)
 returns jsonb language plpgsql security definer set search_path=public as $$
 declare result jsonb;begin
  update daemon_manager_state set manager_heartbeat_at=now(),execution_process_id=p_execution_process_id,execution_started_at=p_execution_started_at,status_detail=coalesce(p_status_detail,status_detail),message='client_review',updated_at=now()where user_id=p_user_id and manager_instance_id=p_manager_instance_id;if not found then raise exception 'Manager lease ownership was lost';end if;
  select jsonb_build_object('activeRequest',case when q.id is null then null else jsonb_build_object('id',q.id,'status',q.status,'updated_at',q.updated_at)end,'drainSummary',case when q.status<>'draining' then null else jsonb_build_object('total',(select count(*)from agent_tasks where user_id=p_user_id and message='daemon_review')+(select count(*)from orchestration_batches where user_id=p_user_id and message='daemon_review')+(select count(*)from feature_execution_runs where user_id=p_user_id and message='daemon_review' and status in('queued','running'))+(select count(*)from architecture_views where user_id=p_user_id and message='daemon_review' and status in('queued','running'))+(select count(*)from communications where user_id=p_user_id and message='daemon_review'),'agentTasks',(select count(*)from agent_tasks where user_id=p_user_id and message='daemon_review'),'orchestrationBatches',(select count(*)from orchestration_batches where user_id=p_user_id and message='daemon_review'),'featureExecutions',(select count(*)from feature_execution_runs where user_id=p_user_id and message='daemon_review' and status in('queued','running')),'architectureViews',(select count(*)from architecture_views where user_id=p_user_id and message='daemon_review' and status in('queued','running')),'communications',coalesce((select jsonb_object_agg(purpose,count)from(select purpose,count(*)count from communications where user_id=p_user_id and message='daemon_review' group by purpose order by purpose limit 10)counts),'{}'))end)into result from daemon_manager_state s left join daemon_manager_requests q on q.id=s.active_request_id and q.message='daemon_review' where s.user_id=p_user_id and s.manager_instance_id=p_manager_instance_id;return result;
 end; $$;
+
+-- Architecture View generation progress (migration 033 snapshot).
+create table architecture_view_progress_events (
+ id uuid primary key default gen_random_uuid(),user_id uuid not null,
+ architecture_view_id uuid not null references architecture_views(id) on delete cascade,
+ generation integer not null check(generation>=1),stage text not null check(stage in('queued','preparing_snapshot','collecting_evidence','generating_document','validating_document','correcting_document','finalizing')),
+ stage_order integer not null check(stage_order between 1 and 7),attempt integer check(attempt is null or attempt>=1),total_attempts integer check(total_attempts is null or total_attempts>=1),detail text not null default '',
+ message text not null default 'client_review' check(message in('daemon_review','client_review','client_complete','daemon_complete')),
+ created_at timestamptz not null default now(),updated_at timestamptz not null default now(),check(attempt is null or total_attempts is null or attempt<=total_attempts)
+);
+alter table architecture_view_progress_events enable row level security;
+revoke all on architecture_view_progress_events from anon,authenticated;
+grant select on architecture_view_progress_events to authenticated;
+create policy "authenticated users can read own architecture progress" on architecture_view_progress_events for select to authenticated using(user_id=auth.uid());
+create index architecture_progress_daemon_review_idx on architecture_view_progress_events(user_id,created_at,id)where message='daemon_review';
+create index architecture_progress_client_review_idx on architecture_view_progress_events(user_id,created_at,id)where message='client_review';
+create trigger set_architecture_view_progress_events_updated_at before update on architecture_view_progress_events for each row execute function set_updated_at();
+
+create function daemon_publish_architecture_progress_event(p_user_id uuid,p_view_id uuid,p_generation integer,p_stage text,p_detail text default '',p_attempt integer default null,p_total_attempts integer default null)
+returns boolean language plpgsql security definer set search_path=public as $$
+declare stage_position integer;begin
+ stage_position:=case p_stage when 'queued' then 1 when 'preparing_snapshot' then 2 when 'collecting_evidence' then 3 when 'generating_document' then 4 when 'validating_document' then 5 when 'correcting_document' then 6 when 'finalizing' then 7 else null end;
+ if stage_position is null then raise exception 'Unsupported architecture progress stage: %',p_stage;end if;
+ if not exists(select 1 from architecture_views where id=p_view_id and user_id=p_user_id and generation=p_generation and status='running' and message='daemon_review')then return false;end if;
+ insert into architecture_view_progress_events(user_id,architecture_view_id,generation,stage,stage_order,attempt,total_attempts,detail,message)values(p_user_id,p_view_id,p_generation,p_stage,stage_position,p_attempt,p_total_attempts,left(coalesce(p_detail,''),240),'client_review');return true;
+end; $$;
+revoke all on function daemon_publish_architecture_progress_event(uuid,uuid,integer,text,text,integer,integer)from public;
+grant execute on function daemon_publish_architecture_progress_event(uuid,uuid,integer,text,text,integer,integer)to anon;
+
+alter function get_client_review_inbox() rename to get_client_review_inbox_previous;
+create function get_client_review_inbox() returns jsonb language sql stable security definer set search_path=public as $$
+ with owner as(select auth.uid() user_id)select jsonb_set(previous.inbox,'{architectureProgressEvents}',coalesce((select jsonb_agg(to_jsonb(r)order by created_at,id)from(select id,architecture_view_id,generation,stage,stage_order,attempt,total_attempts,detail,created_at,updated_at from architecture_view_progress_events,owner where architecture_view_progress_events.user_id=owner.user_id and message='client_review' order by created_at,id limit 50)r),'[]'::jsonb))from(select get_client_review_inbox_previous() inbox)previous;
+$$;
+revoke all on function get_client_review_inbox()from public;grant execute on function get_client_review_inbox()to authenticated;
+
+alter function acknowledge_client_reviews(jsonb) rename to acknowledge_client_reviews_previous;
+create function acknowledge_client_reviews(receipts jsonb)returns jsonb language plpgsql security definer set search_path=public as $$
+declare owner_id uuid:=auth.uid();r jsonb;rid text;ok jsonb:='[]'::jsonb;stale jsonb:='[]'::jsonb;begin
+ if owner_id is null then raise exception 'Authentication required';end if;if jsonb_typeof(receipts)<>'array'then raise exception 'Receipts must be an array';end if;
+ for r in select value from jsonb_array_elements(receipts)loop rid:=coalesce(r->>'receiptId','');if r->>'transport'='architectureProgressEvents'then update architecture_view_progress_events set message='client_complete'where user_id=owner_id and id=(r->>'key')::uuid and generation=(r->>'generation')::integer and message='client_review' and updated_at=(r->>'updatedAt')::timestamptz;else perform 1 from acknowledge_client_reviews_previous(jsonb_build_array(r));if found then ok:=ok||jsonb_build_array(rid);else stale:=stale||jsonb_build_array(rid);end if;continue;end if;if found then ok:=ok||jsonb_build_array(rid);else stale:=stale||jsonb_build_array(rid);end if;end loop;return jsonb_build_object('acknowledged',ok,'rejected',stale);end;$$;
+revoke all on function acknowledge_client_reviews(jsonb)from public;grant execute on function acknowledge_client_reviews(jsonb)to authenticated;
 revoke all on function acknowledge_client_reviews(jsonb) from public;
 grant execute on function acknowledge_client_reviews(jsonb) to authenticated;
 

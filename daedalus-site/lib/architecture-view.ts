@@ -12,6 +12,28 @@ export type ArchitectureFailureDetails = {
   traceback: string;
 };
 
+export type ArchitectureProgressStage =
+  | "queued"
+  | "preparing_snapshot"
+  | "collecting_evidence"
+  | "generating_document"
+  | "validating_document"
+  | "correcting_document"
+  | "finalizing";
+
+export type ArchitectureProgressEvent = {
+  id: string;
+  architecture_view_id: string;
+  generation: number;
+  stage: ArchitectureProgressStage;
+  stage_order: number;
+  attempt: number | null;
+  total_attempts: number | null;
+  detail: string;
+  created_at: string;
+  updated_at: string;
+};
+
 export type PrimitiveFieldDefinition = {
   name: string;
   summary: string;
@@ -84,6 +106,7 @@ export type ArchitectureView = {
   completed_at: string | null;
   created_at: string;
   updated_at: string;
+  progress_events?: ArchitectureProgressEvent[];
 };
 
 export async function fetchArchitectureView(

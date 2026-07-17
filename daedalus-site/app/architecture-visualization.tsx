@@ -1,6 +1,6 @@
 "use client";
 
-import type { ArchitectureView } from "@/lib/architecture-view";
+import type { ArchitectureProgressStage, ArchitectureView } from "@/lib/architecture-view";
 import { canvasBounds, layoutChannels, placeSystems, unknownEndpointChannels } from "@/lib/architecture-layout";
 
 type ArchitectureVisualizationProps = {
@@ -18,14 +18,14 @@ export default function ArchitectureVisualization({
 
   const document = view.architecture_document;
   if ((view.status === "queued" || view.status === "running") && !document) {
-    return <CanvasMessage title={view.status === "queued" ? "Generation queued" : "Generation running"} detail="The validated architecture will appear here when the daemon completes it." />;
+    return <CanvasMessage title={view.status === "queued" ? "Generation queued" : "Generation running"} detail="The validated architecture will appear here when the daemon completes it." progressView={view} />;
   }
   if (view.status === "available" && !document) {
     return <CanvasMessage title="Generation requested" detail="Waiting for the Architecture View request to enter the daemon queue." />;
   }
   if (view.status === "failed" && !document) {
     const validationExhausted = view.error.includes("validation exhausted after");
-    return <CanvasMessage title={validationExhausted ? "Validation failed after three attempts" : "Architecture generation failed"} detail={architectureFailureDetail(view)} tone="error" />;
+    return <CanvasMessage title={validationExhausted ? "Document validation failed after three attempts" : "Architecture generation failed"} detail={architectureFailureDetail(view)} tone="error" progressView={view} />;
   }
   if (!document) return <CanvasMessage title="Architecture unavailable" detail="This terminal row has no structured architecture document. Regenerate it from History." />;
 
@@ -53,6 +53,7 @@ export default function ArchitectureVisualization({
         <p className="text-[11px] uppercase tracking-[0.28em] text-cyan-200">System architecture</p>
         <h1 className="mt-2 text-xl font-semibold text-white">Final-state systems and channels</h1>
         <p className="mt-2 max-w-4xl text-sm text-slate-400">{document.summary}</p>
+        <ArchitectureProgressStepper view={view} />
         {regenerationWarning ? <p className="mt-3 rounded-xl border border-amber-300/25 bg-amber-300/10 px-4 py-2 text-sm text-amber-100">{regenerationWarning}</p> : null}
       </header>
       <div className="agent-chat-scrollbar min-h-0 flex-1 overflow-auto">
@@ -99,8 +100,38 @@ function architectureFailureDetail(view: ArchitectureView) {
   ].filter(Boolean).join("\n\n");
 }
 
-function CanvasMessage({ title, detail, tone = "neutral" }: { title: string; detail: string; tone?: "neutral" | "error" }) {
-  return <section className="absolute inset-0 grid place-items-center bg-slate-950 p-8 text-slate-100"><div className={`max-w-xl rounded-[1.75rem] border p-7 text-center ${tone === "error" ? "border-rose-400/25 bg-rose-500/10" : "border-white/10 bg-white/[0.03]"}`}><h1 className="text-xl font-semibold text-white">{title}</h1><p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-300">{detail}</p></div></section>;
+function CanvasMessage({ title, detail, tone = "neutral", progressView }: { title: string; detail: string; tone?: "neutral" | "error"; progressView?: ArchitectureView }) {
+  return <section className="absolute inset-0 grid place-items-center bg-slate-950 p-8 text-slate-100"><div className={`max-w-xl rounded-[1.75rem] border p-7 text-center ${tone === "error" ? "border-rose-400/25 bg-rose-500/10" : "border-white/10 bg-white/[0.03]"}`}><h1 className="text-xl font-semibold text-white">{title}</h1><p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-300">{detail}</p>{progressView ? <ArchitectureProgressStepper view={progressView} /> : null}</div></section>;
+}
+
+const PROGRESS_PHASES: Array<{ stage: ArchitectureProgressStage; label: string }> = [
+  { stage: "queued", label: "Queued" },
+  { stage: "preparing_snapshot", label: "Preparing snapshot" },
+  { stage: "collecting_evidence", label: "Collecting evidence" },
+  { stage: "generating_document", label: "Generating document" },
+  { stage: "validating_document", label: "Validating document" },
+  { stage: "finalizing", label: "Finalizing" },
+];
+
+function ArchitectureProgressStepper({ view }: { view: ArchitectureView }) {
+  const events = view.progress_events ?? [];
+  const latest = events.at(-1);
+  const activeOrder = latest?.stage_order ?? 0;
+  const failed = view.status === "failed";
+  const correction = [...events].reverse().find((event) => event.stage === "correcting_document");
+  return <div className="mt-4 grid gap-2 text-left" aria-label="Architecture generation progress">
+    <div className="flex flex-wrap gap-2">
+      {PROGRESS_PHASES.map((phase) => {
+        const status = failed && phase.stage === "finalizing" ? "failed" : activeOrder > stageOrder(phase.stage) ? "completed" : activeOrder === stageOrder(phase.stage) ? "active" : "pending";
+        return <span key={phase.stage} className={`rounded-full border px-2.5 py-1 text-[11px] font-medium ${status === "completed" ? "border-emerald-300/30 bg-emerald-300/10 text-emerald-100" : status === "active" ? "border-cyan-300/35 bg-cyan-300/10 text-cyan-100" : status === "failed" ? "border-rose-300/35 bg-rose-300/10 text-rose-100" : "border-white/10 text-slate-500"}`}>{phase.label}</span>;
+      })}
+    </div>
+    {correction ? <p className="text-xs text-amber-100">Correcting document, attempt {correction.attempt} of {correction.total_attempts}.</p> : latest?.detail ? <p className="text-xs text-slate-400">{latest.detail}</p> : null}
+  </div>;
+}
+
+function stageOrder(stage: ArchitectureProgressStage) {
+  return ({ queued: 1, preparing_snapshot: 2, collecting_evidence: 3, generating_document: 4, validating_document: 5, correcting_document: 6, finalizing: 7 } as const)[stage];
 }
 
 function truncate(value: string, limit: number) {
