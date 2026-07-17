@@ -29,6 +29,7 @@ import {
   searchAgentOutputArchive,
   type AgentOutputCursor,
   type AgentOutputExchange,
+  type OrchestrationBatchSummary,
 } from "@/lib/agent-output-history";
 import AgentOutputDetail from "./agent-output-detail";
 import { getProjectLabel } from "./feature-workspace-utils";
@@ -37,6 +38,8 @@ type AgentOutputViewerProps = {
   accessToken: string;
   activitySummary: string;
   architectureViews: Record<string, ArchitectureView>;
+  batches: OrchestrationBatchSummary[];
+  deletedPromptIds?: string[];
   isOpen: boolean;
   liveExchanges: AgentOutputExchange[];
   onAbandonDirectPrompt: (promptId: string) => void;
@@ -47,10 +50,13 @@ type AgentOutputViewerProps = {
   onClearFinalizedTasks: () => void;
   onClose: () => void;
   onDeletedExchange: (exchange: AgentOutputExchange) => void;
+  onDeleteDurableTask: (exchange: AgentOutputExchange) => Promise<void>;
   onImplementPlan: () => void;
   onPlanningReply: (exchange: AgentOutputExchange) => void;
   onRefreshLiveTasks?: () => Promise<void>;
   onRetryDirectPrompt: (exchange: AgentOutputExchange) => void;
+  onRetryBatch: (batch: OrchestrationBatchSummary) => Promise<void>;
+  onRetryDurableTask: (exchange: AgentOutputExchange) => Promise<void>;
   onSelectedPromptIdChange: (promptId: string) => void;
   planningSession: PlanningSession | null;
   pollIntervalMs: number;
@@ -64,10 +70,10 @@ type AgentOutputViewerProps = {
 export type AgentOutputViewerPresentation = "drawer" | "architecture-rail";
 
 export default function AgentOutputViewer({
-  accessToken, activitySummary, architectureViews, isOpen, liveExchanges, onAbandonDirectPrompt,
+  accessToken, activitySummary, architectureViews, batches, deletedPromptIds: synchronizedDeletedPromptIds = [], isOpen, liveExchanges, onAbandonDirectPrompt,
   onAnswerPlanningQuestion, onArchitectureCanvasPromptChange, onArchitectureViewChange, onCancelDurableTask, onClearFinalizedTasks,
-  onClose, onDeletedExchange, onImplementPlan, onPlanningReply, onRefreshLiveTasks,
-  onRetryDirectPrompt, onSelectedPromptIdChange, planningSession, presentation, projects,
+  onClose, onDeletedExchange, onDeleteDurableTask, onImplementPlan, onPlanningReply, onRefreshLiveTasks,
+  onRetryBatch, onRetryDirectPrompt, onRetryDurableTask, onSelectedPromptIdChange, planningSession, presentation, projects,
   selectedPromptId, supabasePublishableKey, supabaseUrl,
 }: AgentOutputViewerProps) {
   const [archive, setArchive] = useState<AgentOutputExchange[]>([]);
@@ -142,7 +148,7 @@ export default function AgentOutputViewer({
     return () => window.clearTimeout(timer);
   }, [accessToken, isOpen, projects, search, supabasePublishableKey, supabaseUrl]);
 
-  const deletedPromptIdSet = useMemo(() => new Set(deletedPromptIds), [deletedPromptIds]);
+  const deletedPromptIdSet = useMemo(() => new Set([...deletedPromptIds, ...synchronizedDeletedPromptIds]), [deletedPromptIds, synchronizedDeletedPromptIds]);
   const exchanges = useMemo(
     () => mergeAgentOutputRecords(archive, liveExchanges).filter((exchange) => !deletedPromptIdSet.has(exchange.promptId)),
     [archive, deletedPromptIdSet, liveExchanges],
@@ -309,6 +315,10 @@ export default function AgentOutputViewer({
     setDeletingPromptId(exchange.promptId);
     setFetchError("");
     try {
+      if (exchange.source === "durable_task") {
+        await onDeleteDurableTask(exchange);
+        return;
+      }
       if (!exchange.localOnly) {
         await deleteAgentOutputHistory(supabaseUrl, supabasePublishableKey, accessToken, exchange.promptId);
       }
@@ -376,6 +386,15 @@ export default function AgentOutputViewer({
               <GroupButton key={group.key} label={group.featureName} detail={`${getProjectLabel(group.repository, projectDirectories)}${group.unavailable ? " · Unavailable" : ""}`} count={activeSearchResults ? group.exchanges.length : featureSummaryCounts[group.key] ?? group.exchanges.length} active={selectedGroupKey === group.key} onClick={() => setSelectedGroupKey(group.key)} />
             ))}
           </div>
+          {batches.length ? <section className="mb-3 grid gap-2 border-t border-white/10 pt-3" aria-label="Integration batches">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-violet-200">Integration batches</p>
+            {batches.map((batch) => <article key={batch.id} className={`rounded-xl border p-3 text-xs ${batch.status === "blocked" ? "border-amber-300/35 bg-amber-300/[0.08]" : "border-violet-300/20 bg-violet-300/[0.05]"}`}>
+              <p className="font-semibold text-slate-100">{batch.status === "blocked" ? "Integration blocked — task implementation remains complete" : `Integration ${batch.status}`}</p>
+              <p className="mt-1 break-all text-slate-400">{batch.task_ids.length} task branch{batch.task_ids.length === 1 ? "" : "es"} · {batch.integration_branch}</p>
+              {batch.verification_output ? <p className="mt-2 line-clamp-3 whitespace-pre-wrap text-amber-100">{batch.verification_output}</p> : null}
+              {batch.status === "blocked" ? <button type="button" onClick={() => void onRetryBatch(batch)} className="mt-2 rounded-full border border-amber-300/30 px-3 py-1.5 font-semibold text-amber-100">Retry integration</button> : null}
+            </article>)}
+          </section> : null}
           <div className="grid gap-2 border-t border-white/10 pt-3">
             {loading ? <p className="p-3 text-sm text-slate-400">Loading history...</p> : null}
             {!loading && visibleExchanges.length === 0 ? <p className="p-3 text-sm text-slate-400">{search.trim() ? "No archived prompts match this search." : "No agent output has been archived yet."}</p> : null}
@@ -473,6 +492,7 @@ export default function AgentOutputViewer({
               {selected.mode === "planning" && parsedPlanning && !planningQuestion ? <section className="grid gap-3 rounded-xl border border-cyan-300/20 bg-cyan-300/[0.05] p-4"><h3 className="font-semibold text-white">Planning workflow</h3>{canImplement ? <button type="button" onClick={onImplementPlan} className="w-fit rounded-full bg-cyan-300 px-4 py-2 text-sm font-semibold text-slate-950">Implement Plan</button> : <p className="text-sm text-slate-400">The selected plan is ready for review.</p>}</section> : null}
               <div className="flex flex-wrap gap-2 border-t border-white/10 pt-4">
                 {canCancel ? <button type="button" onClick={() => onCancelDurableTask(selected)} className="rounded-full border border-rose-400/25 bg-rose-500/10 px-4 py-2 text-xs font-semibold text-rose-100">Cancel task</button> : null}
+                {selected.source === "durable_task" && ["failed", "blocked"].includes(selected.status) ? <button type="button" onClick={() => void onRetryDurableTask(selected)} className="rounded-full border border-cyan-300/25 px-4 py-2 text-xs font-semibold text-cyan-100">Resume task</button> : null}
                 {canRetry ? <button
                   type="button"
                   disabled={retryingPromptId === selected.promptId}
@@ -491,7 +511,7 @@ export default function AgentOutputViewer({
                 >
                   {architectureActionLabel(selectedArchitectureView, selectedArchitectureChecked, architectureLoadingPromptId === selected.promptId)}
                 </button> : null}
-                <button type="button" onClick={onClearFinalizedTasks} className="rounded-full border border-white/10 px-4 py-2 text-xs font-semibold text-slate-200" title="Deletes finalized task queue rows only; archived History remains.">Clear finalized task rows (keeps History)</button>
+                <button type="button" onClick={onClearFinalizedTasks} className="rounded-full border border-white/10 px-4 py-2 text-xs font-semibold text-slate-200" title="Requests synchronized daemon cleanup for finalized tasks and their history.">Request finalized task cleanup</button>
               </div>
             </div>
           ) : <p className="text-sm text-slate-400">Choose an exchange from the history list.</p>}

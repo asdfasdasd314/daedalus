@@ -60,6 +60,22 @@ export type AgentOutputExchange = {
   localOnly?: boolean;
 };
 
+export type OrchestrationBatchSummary = {
+  id: string;
+  repository: string;
+  base_commit: string;
+  task_ids: string[];
+  integration_branch: string;
+  integration_worktree_path: string;
+  status: "collecting" | "integrating" | "resolving" | "blocked";
+  resolver_attempts: number;
+  verification_output: string;
+  retry_generation: number;
+  created_at: string;
+  completed_at: string | null;
+  updated_at: string;
+};
+
 export type AgentOutputCursor = { completedAt: string; id: string };
 export type AgentOutputPage = {
   exchanges: AgentOutputExchange[];

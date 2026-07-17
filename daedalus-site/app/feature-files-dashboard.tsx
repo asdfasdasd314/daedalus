@@ -25,7 +25,7 @@ import type {
   TargetedFeature,
 } from "@/lib/agent-chat-cache";
 import type { AgentModelsConfig } from "@/lib/agent-models";
-import type { AgentOutputExchange as HistoryExchange } from "@/lib/agent-output-history";
+import type { AgentOutputExchange as HistoryExchange, OrchestrationBatchSummary } from "@/lib/agent-output-history";
 import type { ArchitectureView } from "@/lib/architecture-view";
 import {
   buildImplementationPrompt,
@@ -197,7 +197,10 @@ type AgentTaskRow = {
   cancel_requested?: boolean;
   message?: string;
   updated_at: string;
+  retry_generation?: number;
 };
+
+type TaskDeletionRequestRow = { id: string; task_id: string; prompt_id: string; status: "completed" | "rejected" | "requested"; error: string; updated_at: string };
 
 type DaemonEventRow = {
   id: number;
@@ -242,7 +245,7 @@ type FeatureExecutionRunRow = {
 
 type ReviewReceipt = {
   receiptId: string;
-  transport: "communications" | "daemonPayloads" | "agentTasks" | "architectureViews" | "featureExecutionRuns" | "daemonEvents" | "managerStatus";
+  transport: "communications" | "daemonPayloads" | "agentTasks" | "orchestrationBatches" | "taskDeletionRequests" | "architectureViews" | "featureExecutionRuns" | "daemonEvents" | "managerStatus";
   key: string;
   updatedAt?: string;
   generation?: number;
@@ -252,6 +255,8 @@ type ClientReviewInbox = {
   communications: Array<{ purpose: string; content: string | null; updated_at: string }>;
   daemonPayloads: DaemonPayloadRow<unknown>[];
   agentTasks: AgentTaskRow[];
+  orchestrationBatches: OrchestrationBatchSummary[];
+  taskDeletionRequests: TaskDeletionRequestRow[];
   architectureViews: ArchitectureView[];
   featureExecutionRuns: FeatureExecutionRunRow[];
   daemonEvents: DaemonEventRow[];
@@ -301,6 +306,8 @@ export default function FeatureFilesDashboard({
   const [durableAgentTasks, setDurableAgentTasks] = useState<
     AgentPromptQueueEntry[]
   >([]);
+  const [orchestrationBatches, setOrchestrationBatches] = useState<OrchestrationBatchSummary[]>([]);
+  const [synchronizedDeletedPromptIds, setSynchronizedDeletedPromptIds] = useState<string[]>([]);
   const [architectureViews, setArchitectureViews] = useState<
     Record<string, ArchitectureView>
   >({});
@@ -740,6 +747,29 @@ export default function FeatureFilesDashboard({
           });
           receipts.push(...inbox.agentTasks.map((row) => reviewReceipt("agentTasks", row.id, row.updated_at)));
         }
+        if ((inbox.orchestrationBatches ?? []).length) {
+          setOrchestrationBatches((current) => {
+            const merged = new Map(current.map((batch) => [batch.id, batch]));
+            for (const batch of inbox.orchestrationBatches) merged.set(batch.id, batch);
+            return [...merged.values()].filter((batch) => batch.status !== "completed");
+          });
+          receipts.push(...inbox.orchestrationBatches.map((batch) => reviewReceipt(
+            "orchestrationBatches", batch.id, batch.updated_at,
+          )));
+        }
+        if ((inbox.taskDeletionRequests ?? []).length) {
+          for (const request of inbox.taskDeletionRequests) {
+            if (request.status === "completed") {
+              setSynchronizedDeletedPromptIds((current) => current.includes(request.prompt_id)
+                ? current : [...current, request.prompt_id]);
+              setDurableAgentTasks((current) => current.filter((task) => task.promptId !== request.task_id));
+            }
+            if (request.status === "rejected") setPromptStatus(request.error || "Task deletion was rejected.");
+          }
+          receipts.push(...inbox.taskDeletionRequests.map((request) => reviewReceipt(
+            "taskDeletionRequests", request.id, request.updated_at,
+          )));
+        }
         if ((inbox.architectureViews ?? []).length) {
           setArchitectureViews((current) => {
             let next = current;
@@ -841,6 +871,14 @@ export default function FeatureFilesDashboard({
     supabasePublishableKey,
     supabaseUrl,
   ]);
+
+  const rehydrateActiveBatches = useCallback(async () => {
+    if (!currentUser || !accessToken) return;
+    const rows = await fetchActiveOrBlockedBatches(
+      supabaseUrl, supabasePublishableKey, accessToken, currentUserId,
+    );
+    setOrchestrationBatches(rows);
+  }, [accessToken, currentUser, currentUserId, supabasePublishableKey, supabaseUrl]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -1992,20 +2030,7 @@ export default function FeatureFilesDashboard({
       setLatestChat(null);
     }
 
-    if (!exchange.taskId || !currentUser || !accessToken) {
-      setPromptStatus("History exchange deleted.");
-      return;
-    }
-
-    void deleteAgentTaskRow(
-      supabaseUrl,
-      supabasePublishableKey,
-      accessToken,
-      currentUserId,
-      exchange.taskId,
-    )
-      .then(() => setPromptStatus("History exchange deleted."))
-      .catch(() => setPromptStatus("History deleted. Durable task row may still need clearing."));
+    setPromptStatus("History exchange deleted.");
   }
 
   const projectEntries = Object.entries(projects ?? {});
@@ -2737,24 +2762,14 @@ export default function FeatureFilesDashboard({
     setPromptStatus("");
 
     try {
-      await deleteAgentTaskRows(
-        supabaseUrl,
-        supabasePublishableKey,
-        accessToken,
-        currentUserId,
-      );
-      setDurableAgentTasks((currentTasks) =>
-        currentTasks.filter(
-          (item) => !isFinalizedAgentTaskStatus(item.status),
-        ),
-      );
-      setFinalizedDurableTaskCount(0);
-      activePromptId.current = "";
-      setLatestChat((currentChat) =>
-        currentChat?.planningMode || currentChat?.askMode ? currentChat : null,
-      );
+      await Promise.all(durableAgentTasks
+        .filter((item) => isFinalizedAgentTaskStatus(item.status))
+        .map((item) => requestFinalizedTaskDeletion(
+          supabaseUrl, supabasePublishableKey, accessToken, item.promptId,
+          new Date(item.updatedAt ?? item.enqueuedAt).toISOString(),
+        )));
       setIsConfirmingClearDurableTasks(false);
-      setPromptStatus("Durable agent tasks cleared.");
+      setPromptStatus("Synchronized durable task cleanup requested.");
     } catch {
       setPromptStatus("Unable to clear durable agent tasks right now.");
     } finally {
@@ -3000,6 +3015,8 @@ export default function FeatureFilesDashboard({
         accessToken={accessToken}
         activitySummary={lastIntegratedBatchStatus}
         architectureViews={architectureViews}
+        batches={orchestrationBatches}
+        deletedPromptIds={synchronizedDeletedPromptIds}
         isOpen={workspaceView === "architecture" || isAgentOutputViewerOpen}
         liveExchanges={liveHistoryExchanges}
         onAbandonDirectPrompt={abandonQueuedAgentPrompt}
@@ -3008,14 +3025,32 @@ export default function FeatureFilesDashboard({
         onClearFinalizedTasks={() => void clearDurableTasks()}
         onClose={closeAgentOutputViewer}
         onDeletedExchange={handleDeletedHistoryExchange}
+        onDeleteDurableTask={async (exchange) => {
+          if (!exchange.taskId || !currentUser || !accessToken) return;
+          await requestFinalizedTaskDeletion(supabaseUrl, supabasePublishableKey, accessToken, exchange.taskId, exchange.updatedAt);
+          setPromptStatus("Synchronized task deletion requested.");
+        }}
         onImplementPlan={() => void implementPlanningSession()}
         onPlanningReply={handleHistoryPlanningReply}
         onArchitectureViewChange={(view) => setArchitectureViews((current) => (
           mergeArchitectureView(current, view)
         ))}
         onArchitectureCanvasPromptChange={selectArchitectureCanvasPrompt}
-        onRefreshLiveTasks={rehydrateDurableAgentTasks}
+        onRefreshLiveTasks={async () => { await Promise.all([rehydrateDurableAgentTasks(), rehydrateActiveBatches()]); }}
         onRetryDirectPrompt={retryHistoryDirectPrompt}
+        onRetryDurableTask={async (exchange) => {
+          if (!exchange.taskId || !currentUser || !accessToken) return;
+          const accepted = await requestDurableTaskRetry(supabaseUrl, supabasePublishableKey, accessToken, exchange.taskId, exchange.updatedAt);
+          if (!accepted) throw new Error("Task changed before retry could be requested.");
+          setPromptStatus("Task recovery requested.");
+        }}
+        onRetryBatch={async (batch) => {
+          if (!currentUser || !accessToken) return;
+          const accepted = await requestBatchRetry(supabaseUrl, supabasePublishableKey, accessToken, batch.id, batch.updated_at);
+          if (!accepted) throw new Error("Batch changed before retry could be requested.");
+          setOrchestrationBatches((current) => current.map((item) => item.id === batch.id ? { ...item, status: "integrating" } : item));
+          setPromptStatus("Integration recovery requested.");
+        }}
         onSelectedPromptIdChange={selectHistoryPrompt}
         planningSession={planningSession}
         pollIntervalMs={pollIntervalMs}
@@ -4855,6 +4890,20 @@ async function fetchActiveAgentTaskSummaries(
   return (await response.json()) as AgentTaskRow[];
 }
 
+async function fetchActiveOrBlockedBatches(
+  supabaseUrl: string, key: string, token: string, userId: string,
+) {
+  const url = new URL("/rest/v1/orchestration_batches", supabaseUrl);
+  url.searchParams.set("select", "id,repository,base_commit,task_ids,integration_branch,integration_worktree_path,status,resolver_attempts,verification_output,retry_generation,created_at,completed_at,updated_at");
+  url.searchParams.set("user_id", `eq.${userId}`);
+  url.searchParams.set("status", "in.(collecting,integrating,resolving,blocked)");
+  url.searchParams.set("order", "updated_at.desc");
+  url.searchParams.set("limit", "30");
+  const response = await fetch(url, { headers: getAuthenticatedSupabaseHeaders(key, token), cache: "no-store" });
+  if (!response.ok) throw new Error("integration batch hydration query failed");
+  return await response.json() as OrchestrationBatchSummary[];
+}
+
 async function fetchAgentTaskById(
   supabaseUrl: string,
   supabasePublishableKey: string,
@@ -4967,6 +5016,45 @@ async function requestAgentTaskCancel(
   if (!response.ok) {
     throw new Error("agent task cancel request failed");
   }
+}
+
+async function callRecoveryRpc(
+  supabaseUrl: string, supabasePublishableKey: string, accessToken: string,
+  rpc: string, body: Record<string, string>,
+) {
+  const response = await fetch(new URL(`/rest/v1/rpc/${rpc}`, supabaseUrl), {
+    method: "POST", headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
+    body: JSON.stringify(body), cache: "no-store",
+  });
+  if (!response.ok) throw new Error(`${rpc} failed`);
+  return Boolean(await response.json());
+}
+
+function requestDurableTaskRetry(
+  supabaseUrl: string, key: string, token: string, taskId: string, updatedAt: string,
+) {
+  return callRecoveryRpc(supabaseUrl, key, token, "request_agent_task_retry", {
+    p_task_id: taskId, p_expected_updated_at: updatedAt,
+  });
+}
+
+function requestBatchRetry(
+  supabaseUrl: string, key: string, token: string, batchId: string, updatedAt: string,
+) {
+  return callRecoveryRpc(supabaseUrl, key, token, "request_orchestration_batch_retry", {
+    p_batch_id: batchId, p_expected_updated_at: updatedAt,
+  });
+}
+
+async function requestFinalizedTaskDeletion(
+  supabaseUrl: string, key: string, token: string, taskId: string, updatedAt: string,
+) {
+  const response = await fetch(new URL("/rest/v1/rpc/request_finalized_task_deletion", supabaseUrl), {
+    method: "POST", headers: getAuthenticatedSupabaseHeaders(key, token),
+    body: JSON.stringify({ p_task_id: taskId, p_expected_updated_at: updatedAt }), cache: "no-store",
+  });
+  if (!response.ok) throw new Error("finalized task deletion request failed");
+  return await response.json() as string;
 }
 
 async function fetchDaemonEvents(

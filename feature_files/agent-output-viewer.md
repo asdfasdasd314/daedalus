@@ -4,6 +4,7 @@
 The Agent Output Viewer is the durable, authenticated history and live-status surface for standard, planning, and ask prompts. It composes transient direct-prompt queue state, authoritative durable-task lifecycle state, and the `agent_output_history` archive into one feature-centric workspace drawer without becoming a general daemon-log viewer.
 
 ## Key Points
+- **Separate Integration Lifecycle**: Blocked integration batches are rendered independently from completed task implementation output, so a merge failure never overwrites the task's verified outcome.
 - **Durable Projection**: One `agent_output_history` row is stored per user and prompt ID, preserving prompt metadata, raw output, terminal error, concise outcome, and lifecycle timestamps after transient task rows are cleared.
 - **Unified Read Model**: Active direct prompts and durable tasks supply current lifecycle state while history supplies archived content; records merge by prompt ID.
 - **Feature Discovery**: A multi-feature prompt remains one database record and is presented beneath every repository-qualified targeted feature, with separate All activity and Unscoped groups.
@@ -21,6 +22,7 @@ The Agent Output Viewer is the durable, authenticated history and live-status su
 - `shared/database/migrations/020_planning_conversation_history.sql`: Durable planning conversation linkage for direct prompts and implementation tasks.
 - `shared/database/migrations/024_repair_agent_tasks_cancel_requested.sql`: Idempotent repair when live `agent_tasks` is missing `cancel_requested` (breaks History hydration selects).
 - `shared/database/schema.sql`: Current database schema snapshot.
+- `shared/database/migrations/030_task_and_batch_failure_recovery.sql`: Guarded task/batch retry and daemon-synchronized deletion requests.
 - `parameter_files/agent-output-viewer.toml`: Viewer-owned tunable settings.
 - `local-daemon/src/daedalus_daemon/communications.py`: Narrow direct-prompt history upsert transport.
 - `local-daemon/src/daedalus_daemon/main.py`: Direct planning and ask execution publication.
@@ -57,3 +59,4 @@ HACKING
 - 2026-07-16: Preserved hydrated planning prompts and responses across newer summary-only archive refreshes so the viewer does not blank before replacement detail arrives.
 - 2026-07-16: Resolved the follow-up integration conflict by retaining architecture actions, full-prompt retry, and planning-detail preservation together in the viewer contract.
 - 2026-07-16: Corrected hydrated-detail selection to recognize truncated prompts without blocking a newer full planning response from replacing the preserved output.
+- 2026-07-16: Added separate integration-batch visibility plus guarded task/batch recovery and daemon-synchronized finalized-task deletion requests.
