@@ -481,7 +481,7 @@ export default function AgentOutputViewer({
                   </button>
                 ) : null}
                 {conversationTurns.map((turn, index) => <div key={turn.promptId} className="grid min-w-0 gap-4 border-b border-white/10 pb-4 last:border-0 last:pb-0">
-                  {index === 0 ? <AgentOutputDetail label="Initial prompt" value={turn.prompt} /> : null}
+                  {index === 0 ? <AgentOutputDetail collapsible={turn.mode === "planning"} label="Initial prompt" value={turn.prompt} /> : null}
                   {turn.mode === "planning" && index > 0 ? <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-cyan-200">Planning refinement</p> : null}
                   {turn.source === "durable_task" ? <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-200">Plan implementation</p> : null}
                   {turn.output ? turn.mode === "planning" ? <PlanningResponse value={turn.output} activeQuestion={turn === selected ? planningQuestion : null} otherAnswer={otherAnswer} onOtherAnswerChange={setOtherAnswer} onAnswer={onAnswerPlanningQuestion} /> : <AgentOutputDetail label="Implementation response" value={turn.output} markdown /> : <p className="rounded-xl border border-dashed border-white/10 p-4 text-sm text-slate-400">{turn === selected ? "No output has been published yet." : "This stage ended before output was published."}</p>}
@@ -546,7 +546,7 @@ function PlanningResponse({
   const { plan, questions } = parsePlanningReply(value);
   return <>
     {activeQuestion ? <PlanningQuestionnaire question={activeQuestion} otherAnswer={otherAnswer} onOtherAnswerChange={onOtherAnswerChange} onAnswer={onAnswer} /> : questions.length > 0 ? <section className="rounded-[1.25rem] border border-cyan-300/20 bg-cyan-300/[0.05] p-4"><h3 className="text-[11px] font-semibold uppercase tracking-[0.24em] text-cyan-100">Planning questions</h3><ol className="mt-3 grid gap-3 text-sm text-slate-200">{questions.map((question, index) => <li key={`${question.question}-${index}`}><p>{question.question}</p><ul className="mt-1 flex flex-wrap gap-2">{question.options.map((option) => <li key={option} className="rounded-full border border-white/10 px-2.5 py-1 text-xs text-slate-300">{option}</li>)}</ul></li>)}</ol></section> : null}
-    <AgentOutputDetail label="Agent plan" value={plan} markdown />
+    <AgentOutputDetail collapsible label="Agent plan" value={plan} markdown />
   </>;
 }
 
