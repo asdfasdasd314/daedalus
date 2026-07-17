@@ -131,20 +131,38 @@ export function dedupeAgentOutputs(exchanges: AgentOutputExchange[]) {
   const byPromptId = new Map<string, AgentOutputExchange>();
   for (const exchange of sortAgentOutputsRecentFirst(exchanges)) {
     const existing = byPromptId.get(exchange.promptId);
-    if (!existing || hasMoreAgentOutputContent(exchange, existing)) {
-      byPromptId.set(exchange.promptId, exchange);
-    }
+    byPromptId.set(
+      exchange.promptId,
+      existing ? mergeAgentOutputContent(exchange, existing) : exchange,
+    );
   }
   return [...byPromptId.values()];
 }
 
-function hasMoreAgentOutputContent(
+function mergeAgentOutputContent(
   candidate: AgentOutputExchange,
   existing: AgentOutputExchange,
 ) {
-  if (candidate.updatedAt !== existing.updatedAt) return false;
-  return candidate.prompt.length + candidate.output.length + candidate.error.length
-    > existing.prompt.length + existing.output.length + existing.error.length;
+  const candidateTime = Date.parse(candidate.updatedAt) || 0;
+  const existingTime = Date.parse(existing.updatedAt) || 0;
+  const latest = candidateTime >= existingTime ? candidate : existing;
+  const other = latest === candidate ? existing : candidate;
+  const latestHasBody = Boolean(latest.output || latest.error);
+  const otherHasBody = Boolean(other.output || other.error);
+  const latestIsSummaryOnly = !latestHasBody && (
+    otherHasBody
+    || latest.prompt.endsWith("…") && !other.prompt.endsWith("…")
+  );
+  const content = latestIsSummaryOnly ? other : latest;
+
+  return {
+    ...latest,
+    // Archive pages are deliberately summary-only. Keep a selected conversation's
+    // already-hydrated detail visible while a newer summary updates its lifecycle.
+    prompt: content.prompt,
+    output: content.output,
+    error: content.error,
+  };
 }
 
 export function dedupeAgentOutputConversations(exchanges: AgentOutputExchange[]) {

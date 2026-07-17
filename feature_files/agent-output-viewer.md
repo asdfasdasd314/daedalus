@@ -54,3 +54,6 @@ HACKING
 - 2026-07-16: Refactored History into drawer and persistent architecture-rail presentations, removed nested Markdown rendering, and routed View/Regenerate actions to the dashboard-owned canvas target.
 - 2026-07-16: Hardened failed and cancelled direct-prompt retry by loading the full original prompt before resubmission, with a visible preparation state and fallback behavior when detail retrieval fails.
 - 2026-07-16: Resolved the integration conflict by retaining both the architecture-rail handoff and full-prompt retry behavior in the merged viewer contract.
+- 2026-07-16: Preserved hydrated planning prompts and responses across newer summary-only archive refreshes so the viewer does not blank before replacement detail arrives.
+- 2026-07-16: Resolved the follow-up integration conflict by retaining architecture actions, full-prompt retry, and planning-detail preservation together in the viewer contract.
+- 2026-07-16: Corrected hydrated-detail selection to recognize truncated prompts without blocking a newer full planning response from replacing the preserved output.

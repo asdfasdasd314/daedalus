@@ -131,6 +131,48 @@ test("prefers a selected conversation's full record over its archive summary", (
   assert.equal(result[0]?.output, detail.output);
 });
 
+test("keeps hydrated planning detail visible when a newer refresh returns a summary", () => {
+  const detail = exchange({
+    mode: "planning",
+    prompt: "Build the complete agent output viewer",
+    output: "## Plan\n\nKeep the initial planning response visible.",
+    updatedAt: "2026-01-01T00:01:00Z",
+  });
+  const refreshedSummary = exchange({
+    mode: "planning",
+    prompt: "Build the complete agent output viewer…",
+    output: "",
+    error: "",
+    status: "running",
+    statusDetail: "Updating plan",
+    updatedAt: "2026-01-01T00:02:00Z",
+  });
+  const result = dedupeAgentOutputs([detail, refreshedSummary]);
+
+  assert.equal(result[0]?.prompt, detail.prompt);
+  assert.equal(result[0]?.output, detail.output);
+  assert.equal(result[0]?.status, refreshedSummary.status);
+  assert.equal(result[0]?.statusDetail, refreshedSummary.statusDetail);
+});
+
+test("replaces preserved planning detail when the newer full response arrives", () => {
+  const initialDetail = exchange({
+    mode: "planning",
+    output: "## Initial plan\n\nKeep this visible while updating.",
+    updatedAt: "2026-01-01T00:01:00Z",
+  });
+  const updatedDetail = exchange({
+    mode: "planning",
+    output: "## New plan",
+    status: "completed",
+    updatedAt: "2026-01-01T00:03:00Z",
+  });
+  const result = dedupeAgentOutputs([initialDetail, updatedDetail]);
+
+  assert.equal(result[0]?.output, updatedDetail.output);
+  assert.equal(result[0]?.status, updatedDetail.status);
+});
+
 test("groups planning refinements and implementation into one conversation", () => {
   const conversations = dedupeAgentOutputConversations([
     exchange({ promptId: "plan-1", conversationId: "chat-1", completedAt: "2026-01-01T00:01:00Z" }),

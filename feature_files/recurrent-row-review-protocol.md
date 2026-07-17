@@ -55,3 +55,5 @@ TESTING
 - 2026-07-14: Preserved summary-only archive transport while allowing a user-selected agent-output conversation to retrieve its full durable prompt and response bodies once.
 - 2026-07-16: Added bounded Architecture View work metadata, explicit reviewed Markdown delivery, drain coverage, and generation-plus-timestamp stale acknowledgement protection.
 - 2026-07-16: Replaced reviewed Markdown delivery with an explicit bounded `architecture_document` projection while keeping the daemon projection payload-free and acknowledgement generation-plus-timestamp guarded.
+- 2026-07-16: Confirmed summary-only agent-output archive refreshes retain already-hydrated viewer detail locally while the bounded refresh updates lifecycle metadata.
+- 2026-07-16: Resolved the follow-up integration conflict by preserving both structured Architecture View delivery and hydrated History detail across bounded refreshes.
