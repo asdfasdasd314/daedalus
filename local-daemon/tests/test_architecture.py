@@ -76,6 +76,7 @@ class ArchitectureEvidenceTests(unittest.TestCase):
             "reasoning": "high",
             "maxConcurrentGenerations": 1,
             "maxValidationAttempts": 3,
+            "maxFailureTracebackChars": 8000,
         })
         self.assertEqual(result["status"], "completed")
         self.assertEqual(calls[0][0][2:4], ("gpt-5.6-terra", "high"))
@@ -241,6 +242,7 @@ class ArchitectureEvidenceTests(unittest.TestCase):
         self.assertEqual(result["failure_kind"], "validation_exhausted")
         self.assertIsNone(result["architecture_document"])
         self.assertIn("validation exhausted after 3 attempts", result["error"])
+        self.assertEqual(result["failure_details"]["stage"], "document_validation")
 
     def test_provider_failure_is_not_retried(self):
         calls = []
@@ -264,6 +266,8 @@ class ArchitectureEvidenceTests(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         self.assertEqual(result["failure_kind"], "operational")
         self.assertIn("provider unavailable", result["error"])
+        self.assertEqual(result["failure_details"]["stage"], "model_invocation")
+        self.assertIn("RuntimeError: provider unavailable", result["failure_details"]["traceback"])
 
     @staticmethod
     def git(repository: Path, *arguments: str) -> str:

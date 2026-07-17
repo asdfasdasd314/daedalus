@@ -26,3 +26,4 @@ HACKING
 - 2026-07-16: Initialized the immutable-commit Architecture View feature, its final-state reporting philosophy, and its durable generation boundary.
 - 2026-07-16: Implemented verified commit capture, persistent generation-safe Architecture Views, detached read-only Codex reporting with feature and Graphify evidence, reviewed daemon transport, and completed-task viewer controls.
 - 2026-07-16: Replaced Markdown report prompting with schema-bound JSON invocation, validator correction handoff, and normalized structured completion while retaining immutable snapshots and stale-generation lifecycle guards.
+- 2026-07-17: Added generation-stage failure diagnostics, bounded tracebacks, daemon error events, and durable failure-detail persistence so architecture generation faults are visible in daemon logs, client state, and the database.

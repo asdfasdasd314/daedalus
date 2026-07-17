@@ -25,3 +25,4 @@ HACKING
 ## State Log
 - 2026-07-16: Initialized the structured architecture contract, strict validation boundary, JSON persistence payload, and deterministic SVG rendering ownership.
 - 2026-07-16: Implemented the published recursive schema, strict Pydantic normalization and three-attempt correction, structured database payload, frontend types, pure layout helpers, and accessible SVG canvas states.
+- 2026-07-17: Rendered persisted Architecture View failure stage, exception type, and traceback details in the visualization error state for actionable regeneration diagnostics.

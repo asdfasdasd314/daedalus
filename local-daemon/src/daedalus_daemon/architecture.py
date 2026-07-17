@@ -3,6 +3,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 import subprocess
 import tomllib
+import traceback
 
 from pydantic import ValidationError
 
@@ -11,7 +12,11 @@ from .architecture_document import (
     format_architecture_validation_errors,
     parse_and_validate_architecture_response,
 )
-from .communications import claim_architecture_view, complete_architecture_view
+from .communications import (
+    claim_architecture_view,
+    complete_architecture_view,
+    record_daemon_event,
+)
 
 
 DAEDALUS_ROOT = Path(__file__).resolve().parents[3]
@@ -63,13 +68,9 @@ class ArchitectureViewSupervisor:
             try:
                 result = future.result()
             except Exception as error:
-                result = {
-                    "status": "failed",
-                    "changed_files": [],
-                    "architecture_document": None,
-                    "error": str(error),
-                    "failure_kind": "operational",
-                }
+                result = architecture_operational_failure(
+                    "supervisor_result", error, self.settings
+                )
             result_kind = classify_architecture_result(result)
             architecture_document = (
                 result["architecture_document"]
@@ -82,19 +83,40 @@ class ArchitectureViewSupervisor:
             completion_error = result.get("error", "")
             if result_kind == "other_generation_failure" and not completion_error:
                 completion_error = "Architecture generation failed."
-            complete_architecture_view(
-                self.config,
-                view_id,
-                int(view["generation"]),
-                str(view["updated_at"]),
-                completion_status,
-                result["changed_files"],
-                architecture_document,
-                completion_error,
-                self.settings["provider"],
-                self.settings["model"],
-                self.settings["reasoning"],
-            )
+            try:
+                completed = complete_architecture_view(
+                    self.config, view_id, int(view["generation"]),
+                    str(view["updated_at"]), completion_status,
+                    result["changed_files"], architecture_document, completion_error,
+                    result.get("failure_details"), self.settings["provider"],
+                    self.settings["model"], self.settings["reasoning"],
+                )
+                if not completed:
+                    print(f"Architecture View completion was not accepted: view={view_id} generation={view['generation']}")
+            except Exception as error:
+                details = architecture_failure_details(
+                    "completion_publish", error, self.settings
+                )
+                print(format_architecture_failure_log(view_id, int(view["generation"]), details))
+                try:
+                    record_daemon_event(
+                        self.config, str(view.get("repository") or ""), "error",
+                        f"Architecture View {view_id} could not publish its failure result. "
+                        f"stage={details['stage']} type={details['error_type']}: {details['message']}",
+                    )
+                except Exception as event_error:
+                    print(f"Architecture View event reporting also failed: {event_error}")
+            if completion_status == "failed":
+                details = result.get("failure_details") or {}
+                print(format_architecture_failure_log(view_id, int(view["generation"]), details))
+                try:
+                    record_daemon_event(
+                        self.config, str(view.get("repository") or ""), "error",
+                        f"Architecture View {view_id} failed at {details.get('stage', 'unknown')}: "
+                        f"{details.get('message', completion_error)}",
+                    )
+                except Exception as event_error:
+                    print(f"Architecture View event reporting failed: {event_error}")
             self.active.pop(view_id, None)
 
 
@@ -121,6 +143,9 @@ def load_architecture_settings() -> dict:
         "maxValidationAttempts": int(
             visualization_values.get("max_validation_attempts", 3)
         ),
+        "maxFailureTracebackChars": int(
+            values.get("max_failure_traceback_chars", 8000)
+        ),
     }
 
 
@@ -129,13 +154,15 @@ def generate_architecture_view(view: dict, settings: dict, run_codex) -> dict:
     snapshot_path = architecture_snapshot_path(
         repository, str(view["id"]), int(view["generation"])
     )
-    changed_files = collect_changed_files(
-        repository,
-        str(view["base_commit"]),
-        str(view["final_commit"]),
-    )
-    add_snapshot_worktree(repository, snapshot_path, str(view["final_commit"]))
+    changed_files: list[dict] = []
+    stage = "changed_file_collection"
     try:
+        changed_files = collect_changed_files(
+            repository, str(view["base_commit"]), str(view["final_commit"])
+        )
+        stage = "snapshot_creation"
+        add_snapshot_worktree(repository, snapshot_path, str(view["final_commit"]))
+        stage = "evidence_collection"
         targeted_paths = [
             str(path)
             for path in view.get("targeted_feature_paths", [])
@@ -153,14 +180,18 @@ def generate_architecture_view(view: dict, settings: dict, run_codex) -> dict:
         raw_response = ""
         final_problems = ""
         for attempt in range(settings["maxValidationAttempts"]):
-            raw_response = run_codex(
-                str(snapshot_path),
-                prompt,
-                settings["model"],
-                settings["reasoning"],
-                ask_mode=True,
-            )
+            stage = "model_invocation"
             try:
+                raw_response = run_codex(
+                    str(snapshot_path), prompt, settings["model"],
+                    settings["reasoning"], ask_mode=True,
+                )
+            except Exception as error:
+                return architecture_operational_failure(
+                    stage, error, settings, changed_files
+                )
+            try:
+                stage = "document_validation"
                 architecture_document = parse_and_validate_architecture_response(
                     raw_response
                 )
@@ -191,17 +222,25 @@ def generate_architecture_view(view: dict, settings: dict, run_codex) -> dict:
                 f"{settings['maxValidationAttempts']} attempts. {final_problems}"
             ),
             "failure_kind": "validation_exhausted",
+            "failure_details": {
+                "stage": "document_validation",
+                "error_type": "ValidationError",
+                "message": final_problems,
+                "traceback": "",
+            },
         }
     except Exception as error:
-        return {
-            "status": "failed",
-            "changed_files": changed_files,
-            "architecture_document": None,
-            "error": str(error),
-            "failure_kind": "operational",
-        }
+        return architecture_operational_failure(
+            stage, error, settings, changed_files
+        )
     finally:
-        remove_snapshot_worktree(repository, snapshot_path)
+        try:
+            remove_snapshot_worktree(repository, snapshot_path)
+        except Exception as error:
+            print(
+                "Architecture View snapshot cleanup failed: "
+                f"view={view['id']} generation={view['generation']} error={error}"
+            )
 
 
 def architecture_snapshot_path(repository: Path, view_id: str, generation: int) -> Path:
@@ -412,3 +451,40 @@ def run_git(repository: Path, arguments: list[str]) -> str:
     if process.returncode != 0:
         raise RuntimeError(process.stderr.strip() or process.stdout.strip())
     return process.stdout.strip()
+
+
+def architecture_operational_failure(
+    stage: str, error: Exception, settings: dict, changed_files: list[dict] | None = None,
+) -> dict:
+    details = architecture_failure_details(stage, error, settings)
+    return {
+        "status": "failed",
+        "changed_files": changed_files or [],
+        "architecture_document": None,
+        "error": f"Architecture generation failed at {stage}: {details['message']}",
+        "failure_kind": "operational",
+        "failure_details": details,
+    }
+
+
+def architecture_failure_details(stage: str, error: Exception, settings: dict) -> dict:
+    traceback_text = traceback.format_exc()
+    if traceback_text.strip() == "NoneType: None":
+        traceback_text = ""
+    maximum = settings["maxFailureTracebackChars"]
+    return {
+        "stage": stage,
+        "error_type": type(error).__name__,
+        "message": str(error) or repr(error),
+        "traceback": traceback_text[:maximum],
+    }
+
+
+def format_architecture_failure_log(view_id: str, generation: int, details: dict) -> str:
+    return (
+        f"Architecture View failed: view={view_id} generation={generation} "
+        f"stage={details.get('stage', 'unknown')} "
+        f"type={details.get('error_type', 'unknown')} "
+        f"message={details.get('message', 'No error detail provided.')}\n"
+        f"{details.get('traceback', '')}"
+    )

@@ -5,6 +5,13 @@ export type ArchitectureViewStatus =
   | "completed"
   | "failed";
 
+export type ArchitectureFailureDetails = {
+  stage: string;
+  error_type: string;
+  message: string;
+  traceback: string;
+};
+
 export type PrimitiveFieldDefinition = {
   name: string;
   summary: string;
@@ -68,6 +75,7 @@ export type ArchitectureView = {
   changed_files: Array<{ status: string; path: string; previousPath?: string }>;
   architecture_document: SoftwareArchitecture | null;
   error: string;
+  failure_details: ArchitectureFailureDetails | null;
   provider: string;
   model: string;
   reasoning: string;
