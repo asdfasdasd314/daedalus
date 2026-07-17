@@ -50,11 +50,12 @@ class UpdateCurrentMessageTests(unittest.TestCase):
             completed = complete_architecture_view(
                 {"daemonUserId": "user-1"}, "view-1", 3,
                 "2026-07-16T12:00:00Z", "completed", [], document, "",
-                "codex", "model", "high",
+                None, "codex", "model", "high",
             )
         self.assertTrue(completed)
         self.assertEqual(rpc.call_args.args[1], "daemon_complete_architecture_view")
         self.assertEqual(rpc.call_args.args[2]["p_architecture_document"], document)
+        self.assertIsNone(rpc.call_args.args[2]["p_failure_details"])
         self.assertNotIn("p_report_markdown", rpc.call_args.args[2])
 
     def test_upserts_message_through_daemon_rpc(self):

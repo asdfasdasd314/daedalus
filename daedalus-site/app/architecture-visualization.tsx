@@ -25,7 +25,7 @@ export default function ArchitectureVisualization({
   }
   if (view.status === "failed" && !document) {
     const validationExhausted = view.error.includes("validation exhausted after");
-    return <CanvasMessage title={validationExhausted ? "Validation failed after three attempts" : "Architecture generation failed"} detail={view.error || "No structured document was produced."} tone="error" />;
+    return <CanvasMessage title={validationExhausted ? "Validation failed after three attempts" : "Architecture generation failed"} detail={architectureFailureDetail(view)} tone="error" />;
   }
   if (!document) return <CanvasMessage title="Architecture unavailable" detail="This terminal row has no structured architecture document. Regenerate it from History." />;
 
@@ -42,7 +42,7 @@ export default function ArchitectureVisualization({
   const channels = layoutChannels(document, placements);
   const bounds = canvasBounds(placements, channels);
   const regenerationWarning = view.status === "failed"
-    ? view.error || "Regeneration failed; the last valid architecture remains visible."
+    ? architectureFailureDetail(view)
     : view.status === "queued" || view.status === "running"
       ? "Regeneration is in progress; the last valid architecture remains visible."
       : "";
@@ -86,6 +86,17 @@ export default function ArchitectureVisualization({
       </div>
     </section>
   );
+}
+
+function architectureFailureDetail(view: ArchitectureView) {
+  const details = view.failure_details;
+  if (!details) return view.error || "No structured document was produced.";
+  return [
+    view.error || "Architecture generation failed.",
+    `Stage: ${details.stage}`,
+    `Error type: ${details.error_type}`,
+    details.traceback ? `Traceback:\n${details.traceback}` : "",
+  ].filter(Boolean).join("\n\n");
 }
 
 function CanvasMessage({ title, detail, tone = "neutral" }: { title: string; detail: string; tone?: "neutral" | "error" }) {
