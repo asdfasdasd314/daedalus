@@ -65,3 +65,4 @@ HACKING
 - 2026-07-16: Diagnosed blocked-integration history loss: member tasks remain `ready` without `completed_at`, the archive correctly excludes them, and the dashboard's intended durable-task poll is referenced but never invoked, so its live fallback does not receive those task rows after initial hydration.
 - 2026-07-16: Started the configured durable-task client-review poll so terminal task updates continue to hydrate the History live model after its initial load.
 - 2026-07-17: Added daemon-synchronized deletion for blocked integration batches, preserving verified task output while cleaning worktrees and preventing dismissed work from being rebatched.
+- 2026-07-17: Preserved exact durable-task update timestamps for finalized deletion requests and immediately removed accepted deletion requests from the viewer.

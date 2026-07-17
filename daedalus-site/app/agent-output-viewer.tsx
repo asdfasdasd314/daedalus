@@ -84,6 +84,7 @@ export default function AgentOutputViewer({
   const [loadingMore, setLoadingMore] = useState(false);
   const [deletingPromptId, setDeletingPromptId] = useState("");
   const [deletedPromptIds, setDeletedPromptIds] = useState<string[]>([]);
+  const [pendingDurableDeletionPromptIds, setPendingDurableDeletionPromptIds] = useState<string[]>([]);
   const [fetchError, setFetchError] = useState("");
   const [search, setSearch] = useState("");
   const [searchResults, setSearchResults] = useState<AgentOutputExchange[] | null>(null);
@@ -150,7 +151,14 @@ export default function AgentOutputViewer({
     return () => window.clearTimeout(timer);
   }, [accessToken, isOpen, projects, search, supabasePublishableKey, supabaseUrl]);
 
-  const deletedPromptIdSet = useMemo(() => new Set([...deletedPromptIds, ...synchronizedDeletedPromptIds]), [deletedPromptIds, synchronizedDeletedPromptIds]);
+  const deletedPromptIdSet = useMemo(
+    () => new Set([
+      ...deletedPromptIds,
+      ...pendingDurableDeletionPromptIds,
+      ...synchronizedDeletedPromptIds,
+    ]),
+    [deletedPromptIds, pendingDurableDeletionPromptIds, synchronizedDeletedPromptIds],
+  );
   const exchanges = useMemo(
     () => mergeAgentOutputRecords(archive, liveExchanges).filter((exchange) => !deletedPromptIdSet.has(exchange.promptId)),
     [archive, deletedPromptIdSet, liveExchanges],
@@ -317,8 +325,14 @@ export default function AgentOutputViewer({
     setDeletingPromptId(exchange.promptId);
     setFetchError("");
     try {
-      if (exchange.source === "durable_task") {
+      if (exchange.source === "durable_task" && exchange.taskId) {
         await onDeleteDurableTask(exchange);
+        setPendingDurableDeletionPromptIds((current) => current.includes(exchange.promptId)
+          ? current : [...current, exchange.promptId]);
+        if (selectedPromptId === exchange.promptId) {
+          onSelectedPromptIdChange("");
+          setMobileDetail(false);
+        }
         return;
       }
       if (!exchange.localOnly) {
