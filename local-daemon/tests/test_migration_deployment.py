@@ -80,6 +80,7 @@ class MigrationDeploymentTests(unittest.TestCase):
             result = deploy_pending_migrations(str(worktree), str(primary_repository), "base", settings, runner)
 
         self.assertTrue(result["ok"])
+        self.assertIn(["supabase", "link", "--project-ref", "project-a"], commands)
         self.assertIn(["supabase", "migration", "list", "--linked"], commands)
         self.assertIn(["supabase", "db", "push", "--linked"], commands)
 
