@@ -68,7 +68,7 @@ class MigrationDeploymentTests(unittest.TestCase):
             if command[:3] == ["git", "diff", "--name-only"]:
                 return {"command": command, "returncode": 0, "stdout": "supabase/migrations/037_new.sql\n", "stderr": ""}
             if command == ["supabase", "db", "push", "--dry-run", "--linked"]:
-                return {"command": command, "returncode": 0, "stdout": "Would apply migration 037_new.sql", "stderr": ""}
+                return {"command": command, "returncode": 0, "stdout": "Would push these migrations:\n • 037_new.sql", "stderr": ""}
             return {"command": command, "returncode": 0, "stdout": "", "stderr": ""}
 
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {}, clear=True):

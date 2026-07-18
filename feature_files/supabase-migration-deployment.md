@@ -30,3 +30,6 @@ TESTING
 - 2026-07-18: Made the exact repository-to-project parameter mapping the deployment source of truth, with separate unlisted, ambiguous, and missing-credential blocked states.
 - 2026-07-18: Removed the daemon-only credential precheck so migration deployment uses the operator's existing local Supabase CLI session while retaining the exact repository-to-project guard.
 - 2026-07-18: Link each temporary task worktree to its allowlisted project before preflight, because Supabase CLI link state is ignored rather than shared across Git worktrees.
+- 2026-07-18: Recognize the Supabase CLI dry-run wording “Would push these migrations” so pending migrations proceed to the live push rather than being incorrectly skipped.
+- 2026-07-18: Repaired unapplied migration 039 and its schema snapshot to keep `conversation_id` confined to task and agent-output history records, removing its erroneous daemon-event projection.
+- 2026-07-18: Repaired migration 039’s event-type cutover by retaining historical `batch_completed` audit rows as neutral `status` events before removing the legacy type.

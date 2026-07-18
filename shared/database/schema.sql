@@ -209,7 +209,6 @@ create table daemon_events (
   user_id uuid not null references auth.users(id) on delete cascade,
   repository text not null,
   task_id uuid references agent_tasks(id) on delete set null,
-  conversation_id text,
   severity text not null check (severity in ('info', 'warning', 'error')),
   event_type text not null default 'status' check (event_type in (
     'status', 'task_integrated', 'migration_deployment_started',

@@ -177,7 +177,7 @@ def diagnostic_text(result: dict) -> str:
 
 def reports_pending_migrations(diagnostic: dict) -> bool:
     output = diagnostic.get("stdout", "") + "\n" + diagnostic.get("stderr", "")
-    return bool(re.search(r"(?im)(would apply|applying migration|pending migration)", output))
+    return bool(re.search(r"(?im)(would apply|would push|applying migration|pending migration)", output))
 
 
 def blocked(message: str, diagnostics: list[dict] | None = None, retryable: bool = False) -> dict:

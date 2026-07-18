@@ -97,6 +97,9 @@ test("cleanup migration safely retires every batch persistence dependency", () =
   assert.match(batchCleanupMigrationSource, /drop column batch_id/);
   assert.match(batchCleanupMigrationSource, /drop column batch_generation/);
   assert.match(batchCleanupMigrationSource, /drop table orchestration_batch_deletion_requests/);
+  const legacyEventConversion = batchCleanupMigrationSource.indexOf("update daemon_events set event_type = 'status'");
+  const taskOnlyEventConstraint = batchCleanupMigrationSource.lastIndexOf("add constraint daemon_events_event_type_check");
+  assert.ok(legacyEventConversion > -1 && legacyEventConversion < taskOnlyEventConstraint);
   assert.doesNotMatch(batchCleanupMigrationSource, /cascade/i);
 });
 
@@ -124,6 +127,11 @@ test("canonical database contract is task-only", () => {
   assert.match(canonicalSchemaSource, /task_integrated/);
   assert.match(canonicalSchemaSource, /when'blocked'then'ready'/);
   assert.doesNotMatch(canonicalSchemaSource, /agent_count\s*\+\s*batch_count/i);
+  const daemonEventsSchema = canonicalSchemaSource.slice(
+    canonicalSchemaSource.indexOf("create table daemon_events"),
+    canonicalSchemaSource.indexOf("create table agent_output_history"),
+  );
+  assert.doesNotMatch(daemonEventsSchema, /conversation_id/);
 });
 
 test("task-only shared RPC replacements retain reviewed non-task subsystems", () => {
@@ -132,6 +140,8 @@ test("task-only shared RPC replacements retain reviewed non-task subsystems", ()
     batchCleanupMigrationSource.indexOf("create or replace function acknowledge_client_reviews"),
   );
   assert.doesNotMatch(inbox, /orchestrationBatches|batchDeletionRequests|batch_id|batch_generation/);
+  assert.doesNotMatch(inbox, /select id,event_type,task_id,conversation_id,severity,content/);
+  assert.doesNotMatch(batchCleanupMigrationSource, /alter table daemon_events add column if not exists conversation_id/);
   for (const field of ["taskDeletionRequests", "architectureViews", "architectureProgressEvents", "featureExecutionRuns", "daemonEvents"]) {
     assert.match(inbox, new RegExp(field));
   }
