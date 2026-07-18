@@ -15,7 +15,7 @@ The Git Sync panel submits user-scoped commit, pull/push, and status requests to
 - `daedalus-site/app/feature-files-dashboard.tsx`: Request submission and result polling.
 - `local-daemon/src/daedalus_daemon/main.py`: Daemon-side Git command execution and request lifecycle.
 - `local-daemon/src/daedalus_daemon/communications.py`: Supabase transport and detailed HTTP failure reporting.
-- `shared/database/migrations/012_allow_git_sync_results.sql`: Permits durable Git Sync result payloads.
+- `supabase/migrations/012_allow_git_sync_results.sql`: Permits durable Git Sync result payloads.
 
 ## Dev Mode
 HACKING

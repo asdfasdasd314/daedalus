@@ -21,6 +21,10 @@ from .communications import (
     update_agent_task,
     upsert_orchestration_batch,
 )
+from .migration_deployment import (
+    deploy_pending_migrations,
+    load_deployment_settings,
+)
 
 
 DAEDALUS_ROOT = Path(__file__).resolve().parents[3]
@@ -857,6 +861,68 @@ class GitWorktreeOrchestrator:
                     "cancelled": batch_id in self.cancelled_batch_ids,
                 }
 
+        deployment_settings = load_deployment_settings()
+        deployment_retryable = False
+
+        def deploy() -> str:
+            nonlocal deployment_retryable
+            if batch_id in self.cancelled_batch_ids:
+                return CANCELLED_BY_USER
+            record_daemon_event(
+                self.config, repository, "info", "Supabase migration deployment started.",
+                batch_id=batch_id, event_type="migration_deployment_started",
+            )
+            result = deploy_pending_migrations(
+                worktree_path, repository, str(batch["base_commit"]), deployment_settings,
+                cancelled=lambda: batch_id in self.cancelled_batch_ids,
+            )
+            deployment_retryable = result.get("retryable", False)
+            diagnostics = result.get("diagnostics", [])
+            if result["ok"]:
+                if result["state"] == "no_pending":
+                    record_daemon_event(
+                        self.config, repository, "info", "No pending Supabase migrations.",
+                        batch_id=batch_id, event_type="migration_deployment_no_pending",
+                    )
+                else:
+                    record_daemon_event(
+                        self.config, repository, "info", "Supabase migration deployment succeeded.",
+                        batch_id=batch_id, event_type="migration_deployment_succeeded",
+                    )
+                return ""
+            failure_details = result["error"]
+            if diagnostics:
+                failure_details += "\n\nDeployment diagnostics:\n" + json.dumps(diagnostics, indent=2)
+            record_daemon_event(
+                self.config, repository, "error", "Supabase migration deployment blocked: " + failure_details,
+                batch_id=batch_id, event_type="migration_deployment_blocked",
+            )
+            return failure_details
+
+        failure = deploy()
+        if failure:
+            if not deployment_retryable:
+                return {
+                    "ok": False,
+                    "error": failure,
+                    "attempts": attempts,
+                    "worktree": worktree_path,
+                    "cancelled": False,
+                }
+            failure, attempts = self._run_resolver_loop(
+                batch, tasks, settings, worktree_path, failure, attempts,
+                post_validation=deploy,
+                limit=deployment_settings["resolverAttemptLimit"],
+            )
+            if failure:
+                return {
+                    "ok": False,
+                    "error": failure,
+                    "attempts": attempts,
+                    "worktree": worktree_path,
+                    "cancelled": False,
+                }
+
         if batch_id in self.cancelled_batch_ids:
             return {
                 "ok": False,
@@ -886,8 +952,10 @@ class GitWorktreeOrchestrator:
         worktree_path: str,
         failure: str,
         attempts: int,
+        post_validation=None,
+        limit: int | None = None,
     ) -> tuple[str, int]:
-        limit = settings["resolverAttemptLimit"]
+        limit = limit or settings["resolverAttemptLimit"]
         while failure and attempts < limit:
             if str(batch["id"]) in self.cancelled_batch_ids:
                 return CANCELLED_BY_USER, attempts
@@ -927,6 +995,8 @@ class GitWorktreeOrchestrator:
             )
             verification = run_verification(worktree_path, commands)
             failure = "" if verification["ok"] else verification["output"]
+            if not failure and post_validation is not None:
+                failure = post_validation()
         return failure, attempts
 
     def _finish_batches(self, tasks: list[dict], batches: list[dict]) -> None:
@@ -1292,7 +1362,8 @@ def build_resolver_prompt(batch: dict, tasks: list[dict], failure: str) -> str:
         "Resolve the current integration failure while preserving every task's intent. "
         "Inspect the existing worktree state, make the smallest compatible fix, run relevant checks, "
         "and commit the resolution. If your sandbox cannot commit, leave the completed resolution for Daedalus to commit. "
-        "Do not switch branches or push.\n\n"
+        "Do not switch branches or push. For Supabase deployment failures, modify only migrations confirmed unapplied "
+        "or add a corrective migration; never edit an applied migration or invoke migration-history repair.\n\n"
         f"Batch goals:\n{goals}\n\nFailure details:\n{failure}"
     )
 

@@ -13,7 +13,7 @@ The system architecture communication engine coordinates persistent, task-scoped
 - **Forward-Only Availability**: Historical tasks without captured commit boundaries remain visible but cannot generate an Architecture View.
 
 ## Relevant Files
-- `shared/database/migrations/028_system_architecture_communication_engine.sql`: Architecture View storage, lifecycle RPCs, recurrent review projections, and task completion projection.
+- `supabase/migrations/028_system_architecture_communication_engine.sql`: Architecture View storage, lifecycle RPCs, recurrent review projections, and task completion projection.
 - `local-daemon/src/daedalus_daemon/architecture.py`: Detached snapshot creation, scope and Graphify evidence collection, model invocation, validator handoff, and asynchronous generation lifecycle.
 - `local-daemon/src/daedalus_daemon/architecture_document.py`: Visualization-engine dependency that validates model output before completion.
 - `daedalus-site/app/agent-output-viewer.tsx`: Completed-task Architecture View action owned by the Agent Output Viewer.

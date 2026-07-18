@@ -11,7 +11,7 @@ Auth-scoped Supabase access moves Daedalus database interaction from global anon
 - **Local File Edits**: Parameter-file saves are sent as user-scoped Supabase commands and executed by the daemon locally, keeping hosted frontend code away from local filesystem writes.
 
 ## Relevant Files
-- `shared/database/migrations/008_auth_scoped_daedalus.sql`: Adds user ownership, authenticated RLS, daemon payload storage, and trusted daemon RPC functions.
+- `supabase/migrations/008_auth_scoped_daedalus.sql`: Adds user ownership, authenticated RLS, daemon payload storage, and trusted daemon RPC functions.
 - `daedalus-site/app/feature-files-dashboard.tsx`: Hosts the auth gate, Settings tab, authenticated Supabase REST calls, and daemon command writes.
 - `local-daemon/src/daedalus_daemon/communications.py`: Uses trusted daemon RPC calls and writes daemon payloads to Supabase.
 - `local-daemon/src/daedalus_daemon/main.py`: Handles parameter-file update commands in the daemon polling loop.

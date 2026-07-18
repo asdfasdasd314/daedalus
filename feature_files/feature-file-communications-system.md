@@ -15,9 +15,9 @@ The feature file communications system uses Supabase as a user-scoped message bu
 - **Durable Direct Output**: Planning and ask requests remain communications rows until `agent_output_history` publication succeeds, after which the frontend may acknowledge completion.
 
 ## Relevant Files
-- `shared/database/migrations/001_create_communications_table.sql`: First migration for the communications table.
-- `shared/database/migrations/002_enable_communications_rls.sql`: Enables row level security and allows browser-side anon reads and writes for the communications table.
-- `shared/database/migrations/008_auth_scoped_daedalus.sql`: Adds user-scoped communications, daemon payload storage, authenticated RLS, and trusted daemon RPC functions.
+- `supabase/migrations/001_create_communications_table.sql`: First migration for the communications table.
+- `supabase/migrations/002_enable_communications_rls.sql`: Enables row level security and allows browser-side anon reads and writes for the communications table.
+- `supabase/migrations/008_auth_scoped_daedalus.sql`: Adds user-scoped communications, daemon payload storage, authenticated RLS, and trusted daemon RPC functions.
 - `shared/database/schema.sql`: Checked-in snapshot of the current database schema.
 - `local-daemon/src/daedalus_daemon/main.py`: Daemon polling loop and Supabase message handling.
 - `parameter_files/feature-file-communications-system.toml`: Daemon-owned polling cadence for the Supabase message loop.
