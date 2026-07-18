@@ -1,11 +1,11 @@
 # Graph Report - daedalus  (2026-07-18)
 
 ## Corpus Check
-- 140 files · ~117,137 words
+- 140 files · ~116,684 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1233 nodes · 2227 edges · 87 communities (72 shown, 15 thin omitted)
+- 1232 nodes · 2226 edges · 83 communities (69 shown, 14 thin omitted)
 - Extraction: 91% EXTRACTED · 9% INFERRED · 0% AMBIGUOUS · INFERRED: 193 edges (avg confidence: 0.74)
 - Token cost: 0 input · 0 output
 
@@ -70,7 +70,6 @@
 - Ventures
 - Daedalus Workspace
 - README.md
-- record_daemon_event
 - $defs
 - properties
 - $ref
@@ -81,8 +80,6 @@
 - entry-point-picker.tsx
 - integrating.md
 - update_execution_entry_point_in_toml
-- properties
-- plan_migration_renames
 - Agent Task Notifications
 - Auth-Scoped Supabase Access
 - Cursor Agent
@@ -97,7 +94,6 @@
 - Local Daemon Manager
 - System Architecture Communication Engine
 - System Architecture Visualization Engine
-- WorktreeTests
 - README.md
 
 ## God Nodes (most connected - your core abstractions)
@@ -127,11 +123,11 @@
 ## Import Cycles
 - None detected.
 
-## Communities (87 total, 15 thin omitted)
+## Communities (83 total, 14 thin omitted)
 
 ### Community 0 - "orchestrator.py"
-Cohesion: 0.09
-Nodes (12): Exception, SupabaseUnavailableError, GitWorktreeOrchestrator, Publish optional deployment telemetry without blocking a database repair., record_migration_deployment_event(), reply_indicates_cancel(), CancelOrchestratorTests, MigrationDeploymentEventTests (+4 more)
+Cohesion: 0.06
+Nodes (45): get_agent_task_control(), Exception, record_daemon_event(), SupabaseUnavailableError, update_agent_task(), build_resolver_prompt(), build_task_prompt(), build_task_repair_prompt() (+37 more)
 
 ### Community 1 - "parameter-file-parser.ts"
 Cohesion: 0.17
@@ -178,12 +174,12 @@ Cohesion: 0.12
 Nodes (13): BaseModel, ArchitectureDocumentModel, ArrayFieldDefinition, ChannelDefinition, load_published_architecture_schema(), NamedFieldDefinition, ObjectFieldDefinition, parse_and_validate_architecture_response() (+5 more)
 
 ### Community 12 - "main.py"
-Cohesion: 0.17
-Nodes (17): snapshot_communication_messages(), build_entry_point_update_state_message(), build_parameter_file_update_state_message(), build_skipped_push_step(), DirectPromptSupervisor, execute_git_sync_operation(), is_toml_float(), is_toml_string() (+9 more)
+Cohesion: 0.16
+Nodes (18): snapshot_communication_messages(), apply_parameter_file_update(), build_entry_point_update_state_message(), build_parameter_file_update_state_message(), build_skipped_push_step(), DirectPromptSupervisor, execute_git_sync_operation(), is_toml_float() (+10 more)
 
 ### Community 13 - "communications.py"
-Cohesion: 0.10
-Nodes (24): call_daemon_rpc(), complete_architecture_view(), complete_task_deletion(), fetch_communication_rows(), fetch_current_message(), fetch_current_messages(), fetch_work_snapshot(), get_agent_task_control() (+16 more)
+Cohesion: 0.09
+Nodes (24): call_daemon_rpc(), complete_architecture_view(), complete_task_deletion(), fetch_communication_rows(), fetch_current_message(), fetch_current_messages(), fetch_work_snapshot(), get_supabase_headers() (+16 more)
 
 ### Community 14 - "planning-questionnaire.ts"
 Cohesion: 0.14
@@ -198,16 +194,16 @@ Cohesion: 0.09
 Nodes (34): architectureFailureDetail(), ArchitectureProgressStepper(), ArchitectureVisualization(), ArchitectureVisualizationProps, PROGRESS_PHASES, stageOrder(), truncate(), wrapName() (+26 more)
 
 ### Community 17 - "SupabaseUnavailableError"
-Cohesion: 0.15
-Nodes (15): properties, system_definition, $ref, $ref, id, name, source_system_id, summary (+7 more)
+Cohesion: 0.13
+Nodes (15): additionalProperties, properties, type, channel_definition, items, type, uniqueItems, $ref (+7 more)
 
 ### Community 19 - "update_execution_entry_point_in_toml"
 Cohesion: 0.29
 Nodes (6): 4-Stage Development Lifecycle, Alignment, Debugging, Execution Boundaries (CRITICAL), Feature File Automation, Parameter File Centralization
 
 ### Community 20 - "GitWorktreeOrchestrator"
-Cohesion: 0.21
-Nodes (21): build_resolver_prompt(), build_task_prompt(), build_task_repair_prompt(), commit_worktree_changes(), create_task_worktree(), find_migration_directories(), format_process_failure(), git_output() (+13 more)
+Cohesion: 0.33
+Nodes (6): boolean, integer, null, number, string, enum
 
 ### Community 21 - "__init__.py"
 Cohesion: 0.27
@@ -262,16 +258,16 @@ Cohesion: 0.29
 Nodes (6): Dev Mode, Key Points, Relevant Files, State Log, Summary, Supabase Migration Deployment
 
 ### Community 48 - "run_agent_prompt_cycle"
-Cohesion: 0.12
-Nodes (10): build_agent_prompt_state_message(), filter_targeted_feature_paths(), parse_agent_prompt_message(), run_agent_prompt_cycle(), AgentOutputHistoryPublicationTests, CursorProviderRoutingTests, FakeGitProcess, FilterTargetedFeaturePathsTests (+2 more)
+Cohesion: 0.11
+Nodes (11): build_agent_prompt_state_message(), build_cursor_prompt(), filter_targeted_feature_paths(), parse_agent_prompt_message(), run_agent_prompt_cycle(), AgentOutputHistoryPublicationTests, CursorProviderRoutingTests, FakeGitProcess (+3 more)
 
 ### Community 49 - "getProjectLabel"
 Cohesion: 0.13
 Nodes (17): AgentPromptMode, AgentSessionPanel(), AgentSessionPanelProps, getCompactProjectLabel(), getProjectLabel(), getSharedProjectRoot(), GitSyncPanel(), GitSyncPanelProps (+9 more)
 
 ### Community 50 - "build_codex_prompt"
-Cohesion: 0.26
-Nodes (4): build_codex_prompt(), build_cursor_prompt(), build_planning_refinement_context(), BuildCodexPromptTests
+Cohesion: 0.33
+Nodes (3): build_codex_prompt(), build_planning_refinement_context(), BuildCodexPromptTests
 
 ### Community 51 - "load_daemon_config"
 Cohesion: 0.22
@@ -293,25 +289,17 @@ Nodes (6): Dev Mode, Frontend Supabase Config, Key Points, Relevant Files, State
 Cohesion: 0.29
 Nodes (6): Dev Mode, Key Points, Relevant Files, State Log, Summary, Ventures
 
-### Community 57 - "README.md"
-Cohesion: 0.50
-Nodes (3): Automated deployment bootstrap, Shared Database Artifacts, Task-integration cutover
-
-### Community 58 - "record_daemon_event"
-Cohesion: 0.32
-Nodes (7): record_daemon_event(), update_agent_task(), load_worktree_settings(), non_negative_number(), positive_int(), remove_worktree(), utc_now()
-
 ### Community 59 - "$defs"
 Cohesion: 0.12
-Nodes (16): additionalProperties, type, additionalProperties, type, $defs, array_field_definition, channel_definition, field_definition (+8 more)
+Nodes (16): additionalProperties, type, $defs, array_field_definition, field_definition, identifier, non_empty_string, system_definition (+8 more)
 
 ### Community 60 - "properties"
-Cohesion: 0.13
-Nodes (16): boolean, integer, null, number, string, properties, primitive_field_definition, additionalProperties (+8 more)
+Cohesion: 0.15
+Nodes (18): properties, object_field_definition, primitive_field_definition, $ref, additionalProperties, properties, type, additionalProperties (+10 more)
 
 ### Community 61 - "$ref"
-Cohesion: 0.14
-Nodes (15): items, type, items, type, uniqueItems, $ref, properties, channels (+7 more)
+Cohesion: 0.15
+Nodes (14): items, type, items, type, $ref, properties, channels, fields (+6 more)
 
 ### Community 62 - "required"
 Cohesion: 0.23
@@ -338,12 +326,8 @@ Cohesion: 0.40
 Nodes (4): 4-Stage Development Lifecycle, Execution Boundaries (CRITICAL), Feature File Automation, Parameter File Centralization
 
 ### Community 68 - "update_execution_entry_point_in_toml"
-Cohesion: 0.23
-Nodes (8): apply_entry_point_update(), apply_parameter_file_update(), Path, split_toml_value_and_comment(), update_execution_entry_point_in_toml(), update_parameter_variable_in_toml(), EntryPointTomlUpdateTests, ParameterFileUpdateTests
-
-### Community 69 - "properties"
-Cohesion: 0.29
-Nodes (7): object_field_definition, items, type, additionalProperties, properties, type, fields
+Cohesion: 0.24
+Nodes (7): apply_entry_point_update(), Path, split_toml_value_and_comment(), update_execution_entry_point_in_toml(), update_parameter_variable_in_toml(), EntryPointTomlUpdateTests, ParameterFileUpdateTests
 
 ### Community 71 - "Agent Task Notifications"
 Cohesion: 0.29
@@ -406,18 +390,18 @@ Cohesion: 0.50
 Nodes (3): Deploy on Vercel, Getting Started, Learn More
 
 ## Knowledge Gaps
-- **366 isolated node(s):** `AgentOutputDetailProps`, `AgentOutputViewerProps`, `AgentOutputViewerPresentation`, `AgentPromptMode`, `AgentSessionPanelProps` (+361 more)
+- **365 isolated node(s):** `AgentOutputDetailProps`, `AgentOutputViewerProps`, `AgentOutputViewerPresentation`, `AgentPromptMode`, `AgentSessionPanelProps` (+360 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **15 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **14 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `SupabaseUnavailableError` connect `orchestrator.py` to `plan_migration_renames`, `main.py`, `communications.py`, `FakeResponse`, `GitWorktreeOrchestrator`, `WorktreeTests`?**
+- **Why does `SupabaseUnavailableError` connect `orchestrator.py` to `FakeResponse`, `main.py`, `communications.py`?**
   _High betweenness centrality (0.011) - this node is a cross-community bridge._
-- **Why does `GitWorktreeOrchestrator` connect `orchestrator.py` to `plan_migration_renames`, `main.py`, `communications.py`, `GitWorktreeOrchestrator`, `WorktreeTests`, `record_daemon_event`?**
+- **Why does `GitWorktreeOrchestrator` connect `orchestrator.py` to `main.py`?**
   _High betweenness centrality (0.009) - this node is a cross-community bridge._
-- **Why does `deploy_pending_migrations()` connect `planning-questionnaire.ts` to `GitWorktreeOrchestrator`?**
+- **Why does `deploy_pending_migrations()` connect `planning-questionnaire.ts` to `orchestrator.py`?**
   _High betweenness centrality (0.009) - this node is a cross-community bridge._
 - **Are the 19 inferred relationships involving `GitWorktreeOrchestrator` (e.g. with `DirectPromptSupervisor` and `SupabaseUnavailableError`) actually correct?**
   _`GitWorktreeOrchestrator` has 19 INFERRED edges - model-reasoned connections that need verification._

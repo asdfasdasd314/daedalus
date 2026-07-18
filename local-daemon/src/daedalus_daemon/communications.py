@@ -69,18 +69,13 @@ def fetch_current_messages(config: dict) -> dict[str, str]:
 
 def fetch_work_snapshot(config: dict) -> dict:
     """Fetch and normalize the single bounded recurrent response for a cycle."""
-    payload = call_daemon_rpc(config, "daemon_poll_work", {
+    payload = call_daemon_rpc(config, "daemon_poll_task_work", {
         "p_user_id": config["daemonUserId"],
     })
     source = payload if isinstance(payload, dict) else {}
-    batches = source.get("orchestrationBatches")
-    normalized_batches = batches if isinstance(batches, list) else []
-    for batch in normalized_batches:
-        batch.setdefault("verification_output", "")
     return {
         "communications": source.get("communications") if isinstance(source.get("communications"), list) else [],
         "agentTasks": source.get("agentTasks") if isinstance(source.get("agentTasks"), list) else [],
-        "orchestrationBatches": normalized_batches,
         "architectureViews": source.get("architectureViews") if isinstance(source.get("architectureViews"), list) else [],
         "featureRunControls": source.get("featureRunControls") if isinstance(source.get("featureRunControls"), list) else [],
         "claimedFeatureRun": source.get("claimedFeatureRun") if isinstance(source.get("claimedFeatureRun"), dict) else None,
@@ -314,21 +309,8 @@ def list_active_feature_execution_runs(config: dict) -> list[dict]:
     return result if isinstance(result, list) else []
 
 
-def list_orchestration_batches(config: dict) -> list[dict]:
-    return call_daemon_rpc(config, "daemon_list_orchestration_batches", {
-        "p_user_id": config["daemonUserId"],
-    })
-
-
 def list_task_deletion_requests(config: dict) -> list[dict]:
     result = call_daemon_rpc(config, "daemon_list_task_deletion_requests", {
-        "p_user_id": config["daemonUserId"],
-    })
-    return result if isinstance(result, list) else []
-
-
-def list_batch_deletion_requests(config: dict) -> list[dict]:
-    result = call_daemon_rpc(config, "daemon_list_batch_deletion_requests", {
         "p_user_id": config["daemonUserId"],
     })
     return result if isinstance(result, list) else []
@@ -341,48 +323,18 @@ def complete_task_deletion(config: dict, request_id: str, error: str = "") -> bo
     }))
 
 
-def complete_batch_deletion(config: dict, request_id: str, error: str = "") -> bool:
-    return bool(call_daemon_rpc(config, "daemon_complete_batch_deletion", {
-        "p_user_id": config["daemonUserId"], "p_request_id": request_id,
-        "p_error": error,
-    }))
-
-
-def delete_orchestration_batch(config: dict, batch_id: str) -> bool:
-    return bool(call_daemon_rpc(config, "daemon_delete_orchestration_batch", {
-        "p_user_id": config["daemonUserId"], "p_batch_id": batch_id,
-    }))
-
-
-def upsert_orchestration_batch(config: dict, batch: dict) -> None:
-    batch = {
-        **batch,
-        "message": (
-            DAEMON_COMPLETE
-            if batch.get("status") == "completed"
-            else DAEMON_REVIEW
-        ),
-    }
-    call_daemon_rpc(config, "daemon_upsert_orchestration_batch", {
-        "p_user_id": config["daemonUserId"],
-        "p_batch": batch,
-    })
-
-
 def record_daemon_event(
     config: dict,
     repository: str,
     severity: str,
     message: str,
     task_id: str | None = None,
-    batch_id: str | None = None,
     event_type: str = "status",
 ) -> None:
-    call_daemon_rpc(config, "daemon_record_event", {
+    call_daemon_rpc(config, "daemon_record_task_event", {
         "p_user_id": config["daemonUserId"],
         "p_repository": repository,
         "p_task_id": task_id,
-        "p_batch_id": batch_id,
         "p_severity": severity,
         "p_message": message,
         "p_event_type": event_type,

@@ -30,7 +30,16 @@ The daemon environment needs `DAEDALUS_SUPABASE_PROJECT_REF`,
 `SUPABASE_ACCESS_TOKEN`, and `SUPABASE_DB_PASSWORD`. After the baseline is accepted,
 set `enabled = true` and add the exact `resolved-repository-path::project-ref` mapping
 to the deployment parameter file. Run one controlled dry run before enabling a live
-push. Deployment events are recorded as `migration_deployment_*`; a blocked batch
-retains its integration worktree and diagnostics. Production schema changes must use
+push. Deployment events are recorded as `migration_deployment_*`; a blocked task
+retains its worktree and diagnostics. Production schema changes must use
 committed files in `supabase/migrations/`; Dashboard SQL bypasses migration history
 and can break automated deployment.
+
+## Task-integration cutover
+
+Migration 038 is intentionally additive: it installs the task-only poll and event
+RPCs while leaving the legacy batch objects available to the daemon that promotes
+the migration. Pause submissions, let that daemon finish and delete every legacy
+batch, then restart into the task-scoped daemon. Only after the new daemon is
+running may the follow-up cleanup migration drop the batch tables, columns, RPCs,
+inbox fields, and manager blocker fields.

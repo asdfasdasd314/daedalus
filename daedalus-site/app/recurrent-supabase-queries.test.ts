@@ -34,8 +34,8 @@ const reliabilityMigrationSource = readFileSync(
   new URL("../../supabase/migrations/035_agent_output_viewer_reliability.sql", import.meta.url),
   "utf8",
 );
-const batchRetryMigrationSource = readFileSync(
-  new URL("../../supabase/migrations/036_preserve_batch_retry_worktree.sql", import.meta.url),
+const taskIntegrationMigrationSource = readFileSync(
+  new URL("../../supabase/migrations/038_task_scoped_integration_compatibility.sql", import.meta.url),
   "utf8",
 );
 const migrationDeploymentEventsSource = readFileSync(
@@ -66,28 +66,20 @@ test("browser has one completion-scheduled recurrent review owner", () => {
   assert.doesNotMatch(dashboardSource, /fetchDaemonEvents/);
 });
 
-test("batch completion tombstones are bounded, generation-safe, and acknowledged conditionally", () => {
-  const inbox = reliabilityMigrationSource.slice(
-    reliabilityMigrationSource.indexOf("get_client_review_inbox"),
-    reliabilityMigrationSource.indexOf("acknowledge_client_reviews"),
-  );
-  assert.match(inbox, /event_type,batch_id,batch_generation,severity,content,created_at,updated_at/);
-  assert.match(inbox, /message='client_review'/);
-  assert.match(inbox, /limit 50/);
-  assert.doesNotMatch(inbox, /select \*/i);
-  assert.match(reliabilityMigrationSource, /daemon_events.*updated_at.*id/);
-  assert.match(reliabilityMigrationSource, /p_batch \? 'retry_generation'/);
-  assert.match(reliabilityMigrationSource, /when 'daemonEvents'[\s\S]*updated_at=\(r->>'updatedAt'\)::timestamptz/);
-  assert.match(dashboardSource, /removeCompletedOrchestrationBatches/);
+test("task integration events contain no batch identity", () => {
+  assert.match(taskIntegrationMigrationSource, /daemon_record_task_event/);
+  assert.match(taskIntegrationMigrationSource, /task_integrated/);
+  assert.doesNotMatch(dashboardSource, /OrchestrationBatchSummary|removeCompletedOrchestrationBatches/);
+  assert.doesNotMatch(historySource, /Integration batches/);
 });
 
-test("daemon publishes durable batch completion evidence before transient cleanup", () => {
+test("daemon publishes durable task completion evidence before worktree cleanup", () => {
   const finish = orchestratorSource.slice(
-    orchestratorSource.indexOf("def _finish_batches"),
+    orchestratorSource.indexOf("def _finish_integrations"),
     orchestratorSource.indexOf("def load_worktree_settings"),
   );
-  assert.ok(finish.indexOf('event_type="batch_completed"') > -1);
-  assert.ok(finish.indexOf('event_type="batch_completed"') < finish.indexOf("delete_orchestration_batch"));
+  assert.ok(finish.indexOf('event_type="task_integrated"') > -1);
+  assert.ok(finish.indexOf('event_type="task_integrated"') < finish.indexOf("remove_worktree"));
 });
 
 test("migration deployment telemetry is supported by the daemon event RPC", () => {
@@ -100,15 +92,12 @@ test("migration deployment telemetry is supported by the daemon event RPC", () =
   assert.match(migrationDeploymentEventsSource, /create or replace function daemon_record_event/);
 });
 
-test("manual batch retries preserve their retained workspace and project retry state", () => {
-  assert.match(batchRetryMigrationSource, /retry_generation = retry_generation \+ 1/);
-  assert.match(batchRetryMigrationSource, /resolver_attempts = 0, verification_output = ''/);
-  assert.match(batchRetryMigrationSource, /verification_output,retry_generation/);
-  assert.match(batchRetryMigrationSource, /message='daemon_review'/);
-  assert.match(batchRetryMigrationSource, /order by created_at limit 100/);
-  assert.doesNotMatch(batchRetryMigrationSource, /select \*/i);
-  assert.match(orchestratorSource, /if not is_manual_retry:/);
-  assert.match(orchestratorSource, /Retry cannot resume because its retained integration worktree is unavailable/);
+test("blocked task retries preserve their worktree and return to integration", () => {
+  assert.match(taskIntegrationMigrationSource, /when 'failed' then 'queued' when 'blocked' then 'ready'/);
+  assert.match(taskIntegrationMigrationSource, /retry_generation = retry_generation \+ 1/);
+  assert.match(taskIntegrationMigrationSource, /resolver_attempts = case when status = 'blocked' then 0/);
+  assert.match(orchestratorSource, /retained_task_worktree_valid/);
+  assert.doesNotMatch(orchestratorSource, /create_integration_worktree|integration\/batch/);
 });
 
 test("terminal task timestamps and archive repair cover every terminal outcome", () => {
@@ -127,7 +116,7 @@ test("consolidated browser collections are recipient filtered, projected, and bo
   assert.doesNotMatch(migrationSource.slice(migrationSource.indexOf("get_client_review_inbox"), migrationSource.indexOf("acknowledge_client_reviews")), /select \*/i);
 });
 
-test("batched acknowledgements are state and generation guarded", () => {
+test("consolidated acknowledgements are state and generation guarded", () => {
   const ack = migrationSource.slice(migrationSource.indexOf("acknowledge_client_reviews"), migrationSource.indexOf("daemon_poll_work"));
   assert.match(ack, /message = 'client_review'/);
   assert.equal((ack.match(/updated_at = \(receipt->>'updatedAt'\)::timestamptz/g) ?? []).length, 6);
@@ -242,10 +231,10 @@ test("manager panel is display/action only", () => {
 });
 
 test("daemon recurrent work is recipient filtered and communications are consolidated", () => {
-  assert.match(migrationSource, /daemon_poll_work/);
-  assert.match(migrationSource, /agent_tasks where user_id = p_user_id and message = 'daemon_review'/);
-  assert.match(migrationSource, /orchestration_batches where user_id = p_user_id and message = 'daemon_review'/);
-  assert.match(migrationSource, /architecture_views where user_id = p_user_id and message = 'daemon_review'/);
+  assert.match(taskIntegrationMigrationSource, /daemon_poll_task_work/);
+  assert.match(taskIntegrationMigrationSource, /task\.user_id = p_user_id and task\.message = 'daemon_review'/);
+  assert.doesNotMatch(taskIntegrationMigrationSource.slice(taskIntegrationMigrationSource.indexOf("daemon_poll_task_work")), /orchestrationBatches/);
+  assert.match(taskIntegrationMigrationSource, /architecture_views where user_id=p_user_id and message='daemon_review'/);
   assert.match(daemonMainSource, /work_snapshot = fetch_work_snapshot\(config\)/);
 });
 

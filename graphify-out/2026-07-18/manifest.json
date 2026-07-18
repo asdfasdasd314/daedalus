@@ -275,8 +275,8 @@
     "semantic_hash": "9232ec7285fc84f358a5aa95599ae952"
   },
   "shared/database/schema.sql": {
-    "mtime": 1784349372.2354987,
-    "ast_hash": "26707dfef99dcbe62db37cf52de2b042",
+    "mtime": 1784344695.7105443,
+    "ast_hash": "09ce288ce52021763b62f9cebbe1a701",
     "semantic_hash": ""
   },
   "AGENTS.md": {
@@ -405,8 +405,8 @@
     "semantic_hash": ""
   },
   "shared/database/README.md": {
-    "mtime": 1784349337.4828627,
-    "ast_hash": "89b6a08cf96b0fae421c49e64ee88346",
+    "mtime": 1784333150.0191362,
+    "ast_hash": "89576d8856c50eb3dbad7ea796ce0762",
     "semantic_hash": ""
   },
   "daedalus-site/public/file.svg": {

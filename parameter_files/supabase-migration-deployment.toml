@@ -1,6 +1,8 @@
 # Keep disabled until the documented history-and-schema baseline is accepted.
-enabled = false
-allowed_repository_project_mappings = []
+enabled = true
+allowed_repository_project_mappings = [
+  "/Users/jameshollingsworth/Projects/daedalus::zshitprzimishoyotokv"
+]
 resolver_attempt_limit = 3
 command_timeout_seconds = 120
 require_dry_run = true

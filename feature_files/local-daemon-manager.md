@@ -30,3 +30,4 @@ HACKING
 - 2026-07-14: Fixed `daemon_manager_begin_restart` failing with ambiguous `blockers` by renaming the PL/pgSQL variable to `v_blockers`.
 - 2026-07-14: Consolidated idle heartbeat and restart-control reads into one five-second manager tick while retaining local child checks and generation-safe transitions.
 - 2026-07-16: Extended daemon restart draining and fallback blocker metadata to wait for active Architecture View generations.
+- 2026-07-18: Removed orchestration-batch fallback and presentation fields so task integration states alone drain execution restarts.

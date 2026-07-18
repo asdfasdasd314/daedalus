@@ -25,3 +25,4 @@ HACKING
 - 2026-07-09: Installed the frontend Supabase client dependency into `node_modules` so the Next.js dashboard can resolve `@supabase/supabase-js` at runtime.
 - 2026-07-13: Added owner-isolated Agent Output Viewer reads, authenticated search and summaries, and a narrow daemon history upsert without browser insert/update/delete access.
 - 2026-07-13: Added authenticated manager control RPCs, owner-only manager reads, and narrow publishable-key manager lifecycle RPCs without direct browser table mutations.
+- 2026-07-18: Added owner-scoped task integration polling, retry, resolver-attempt persistence, and task-only daemon event RPCs for the batch-free cutover.

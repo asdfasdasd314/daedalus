@@ -30,7 +30,6 @@ from daedalus_daemon.communications import (
     record_daemon_event,
     SupabaseUnavailableError,
     open_supabase_request,
-    upsert_orchestration_batch,
     update_current_message,
 )
 
@@ -63,15 +62,16 @@ class UpdateCurrentMessageTests(unittest.TestCase):
 
         self.assertEqual(urlopen.call_count, 1)
 
-    def test_publishes_explicit_batch_completion_event_type(self):
+    def test_publishes_explicit_task_integration_event_type(self):
         with patch("daedalus_daemon.communications.call_daemon_rpc") as rpc:
             record_daemon_event(
                 {"daemonUserId": "user-1"}, "/repo", "info", "Integrated.",
-                batch_id="batch-1", event_type="batch_completed",
+                task_id="task-1", event_type="task_integrated",
             )
-        self.assertEqual(rpc.call_args.args[1], "daemon_record_event")
-        self.assertEqual(rpc.call_args.args[2]["p_batch_id"], "batch-1")
-        self.assertEqual(rpc.call_args.args[2]["p_event_type"], "batch_completed")
+        self.assertEqual(rpc.call_args.args[1], "daemon_record_task_event")
+        self.assertEqual(rpc.call_args.args[2]["p_task_id"], "task-1")
+        self.assertNotIn("p_batch_id", rpc.call_args.args[2])
+        self.assertEqual(rpc.call_args.args[2]["p_event_type"], "task_integrated")
 
     def test_publishes_generation_scoped_architecture_progress(self):
         with patch("daedalus_daemon.communications.call_daemon_rpc", return_value=True) as rpc:
@@ -214,11 +214,10 @@ class UpdateCurrentMessageTests(unittest.TestCase):
 
     def test_normalizes_one_bounded_work_snapshot(self):
         def fake_urlopen(http_request, timeout=None):
-            self.assertTrue(http_request.full_url.endswith("/rpc/daemon_poll_work"))
+            self.assertTrue(http_request.full_url.endswith("/rpc/daemon_poll_task_work"))
             return FakeResponse({
                 "communications": [],
                 "agentTasks": [{"id": "task-1"}],
-                "orchestrationBatches": [{"id": "batch-1", "retry_generation": 1}],
                 "architectureViews": [{"id": "architecture-1"}],
                 "featureRunControls": [{"id": "run-1", "status": "running"}],
                 "claimedFeatureRun": None,
@@ -232,29 +231,9 @@ class UpdateCurrentMessageTests(unittest.TestCase):
             })
 
         self.assertEqual(snapshot["agentTasks"], [{"id": "task-1"}])
-        self.assertEqual(snapshot["orchestrationBatches"][0]["verification_output"], "")
-        self.assertEqual(snapshot["orchestrationBatches"][0]["retry_generation"], 1)
+        self.assertNotIn("orchestrationBatches", snapshot)
         self.assertEqual(snapshot["architectureViews"], [{"id": "architecture-1"}])
         self.assertIsNone(snapshot["claimedFeatureRun"])
-
-    def test_terminal_batch_overrides_stale_daemon_review_state(self):
-        request_bodies: list[dict] = []
-
-        def fake_urlopen(http_request, timeout=None):
-            request_bodies.append(json.loads(http_request.data.decode("utf-8")))
-            return FakeResponse({})
-
-        with patch("daedalus_daemon.communications.request.urlopen", side_effect=fake_urlopen):
-            upsert_orchestration_batch(
-                {
-                    "supabaseUrl": "https://example.supabase.co",
-                    "supabasePublishableKey": "publishable-key",
-                    "daemonUserId": "user-1",
-                },
-                {"id": "batch-1", "status": "completed", "message": DAEMON_REVIEW},
-            )
-
-        self.assertEqual(request_bodies[0]["p_batch"]["message"], DAEMON_COMPLETE)
 
     def test_posts_feature_files_to_daemon_payload_rpc(self):
         request_bodies: list[dict] = []

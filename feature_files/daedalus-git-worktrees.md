@@ -1,31 +1,31 @@
 # Daedalus Git Worktrees
 
 ## Summary
-Daedalus Git Worktrees isolates agent-mode prompts on task branches and uses a durable daemon orchestrator to verify, batch, resolve, and fast-forward successful work into local `main`.
+Daedalus Git Worktrees isolates agent-mode prompts on task branches and uses a durable daemon orchestrator to verify, integrate, resolve, and fast-forward each successful task into local `main`.
 
 ## Key Points
-- **Recoverable Separation**: A blocked integration batch retains completed member branches and its diagnostic integration worktree, while task retries resume their retained worktree instead of creating replacement branches.
+- **Recoverable Separation**: A blocked integration retains its task branch and worktree, while task retries resume that same workspace instead of starting implementation over.
 - **Per-Repository Capacity**: Each repository may run up to four isolated agent worktrees while later submissions remain durably queued.
 - **Central Configuration**: Scheduler, resolver, branch, and verification settings are loaded once from Daedalus's feature-owned parameter file rather than requiring configuration files in managed repositories.
 - **Durable Progress**: Every task insert and lifecycle update atomically projects status, result, error, metadata, and timestamps into Agent Output Viewer history.
 - **Daemon-Owned Commits**: When an agent sandbox cannot reach Git's shared worktree metadata, the daemon stages and commits the completed isolated changes before verification.
 - **Verified Commit Provenance**: Successful tasks persist the final verified task-branch commit after all repair attempts so dependent systems can reconstruct the exact task state after worktree cleanup.
-- **Reclaimable Workspaces**: Completed, cancelled, and clean failed worktrees are removed on later daemon cycles; dirty failures and blocked integrations remain available for recovery.
+- **Reclaimable Workspaces**: Completed and cancelled worktrees are removed; failed and blocked worktrees remain available for implementation or integration recovery.
 - **Task Repair Loop**: Individual verification suites receive up to three total attempts in the same isolated worktree, with later agent repairs informed by the captured failure before a durable terminal error is reported.
-- **Base-State Cohorts**: Tasks admitted from the same `main` commit are verified independently and integrated in submission order after the cohort fills or its quiet window expires.
-- **Safe Promotion**: Combined work is tested on an integration branch and local `main` advances only by a verified fast-forward; no remote push occurs.
+- **Immediate Task Integration**: Each verified task enters a repository-serialized integration queue immediately; blocked tasks do not prevent later ready tasks from integrating.
+- **Safe Promotion**: The latest `main` is merged into the existing task branch, the combined state is tested there, and local `main` advances only by a verified fast-forward; no remote push occurs.
 - **Migration Prefix Reconcile**: After merges (and again after each successful resolver commit), the orchestrator renames duplicate `NNN_*.sql` prefixes in `migrations` folders to the next free integers after the folder max, then commits when anything changed.
-- **Resolver Loop**: Merge conflicts and combined-test failures launch a resolver agent up to three times, with daemon warnings for attempts and a blocking error after exhaustion.
-- **Resolver Provider**: The resolver defaults to the first task's provider and can be pinned to Codex or Cursor in the worktree parameter file, keeping resolver capacity independent of the submission UI.
-- **Integration Notification**: A successful promotion records an info event in `daemon_events` after the batch is completed, allowing the dashboard to report completion instead of leaving the last resolver warning visible.
+- **Resolver Loop**: Merge conflicts and integrated-test failures launch a resolver agent in the task worktree up to three times, with daemon warnings for attempts and a blocking error after exhaustion.
+- **Resolver Provider**: The resolver defaults to the task's provider and can be pinned to Codex or Cursor in the worktree parameter file.
+- **Integration Notification**: A successful promotion records a task-scoped info event in `daemon_events`.
 - **Hard Cancel**: Users can cancel agent-mode durable tasks (`queued` through `resolving`); the daemon kills the tracked process group, marks `cancelled`, force-removes the worktree, and records a durable cancel event. Planning-mode Abandon remains a local-queue-only path.
 - **Planning Bypass**: Planning-mode prompts retain the read-only direct execution path and consume no worktree capacity.
 - **Deferred Controls**: Pruning and post-integration revert controls remain intentionally outside this delivery.
 
 ## Relevant Files
-- `local-daemon/src/daedalus_daemon/orchestrator.py`: Git worktree lifecycle, verification, batching, resolver attempts, hard cancel, and promotion.
-- `local-daemon/src/daedalus_daemon/migration_deployment.py`: Serialized, allowlisted Supabase CLI preflight and deployment stage for verified integration batches.
-- `local-daemon/src/daedalus_daemon/communications.py`: Durable task, batch, and event transport used by the daemon.
+- `local-daemon/src/daedalus_daemon/orchestrator.py`: Git worktree lifecycle, verification, task-scoped integration, resolver attempts, hard cancel, and promotion.
+- `local-daemon/src/daedalus_daemon/migration_deployment.py`: Serialized, allowlisted Supabase CLI preflight and deployment stage for verified tasks.
+- `local-daemon/src/daedalus_daemon/communications.py`: Durable task and event transport used by the daemon.
 - `local-daemon/src/daedalus_daemon/main.py`: Tracked agent subprocess registry and SIGTERM/SIGKILL cancel plumbing.
 - `supabase/migrations/015_agent_task_cancel.sql`: Adds `cancelled` status, `cancel_requested`, cancel RLS, and terminal RPC handling.
 - `supabase/migrations/024_repair_agent_tasks_cancel_requested.sql`: Idempotent repair when live DB skipped 015's `cancel_requested` column.
@@ -64,3 +64,4 @@ HACKING
 - 2026-07-17: Added the final daemon-owned Supabase migration deployment gate, forwarding bounded preflight diagnostics through the existing resolver loop while retaining blocked integration worktrees.
 - 2026-07-17: Prevented a just-finalized batch from being recreated as collecting by deferring admission and collection until the daemon polls fresh durable state, and reclaim orphaned collecting rows whose completed task branches have no integration worktree.
 - 2026-07-17: Prepended TASK_MODE coding on task/repair prompts and TASK_MODE integrating on resolver prompts for AGENTS.md profile routing.
+- 2026-07-18: Replaced cohort batching and separate integration worktrees with immediate, repository-serialized integration in each retained task worktree.

@@ -5466,8 +5466,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_init",
-      "community": 13,
-      "community_name": "communications.py",
+      "community": 12,
+      "community_name": "main.py",
       "norm_label": "__init__.py"
     },
     {
@@ -6181,8 +6181,8 @@
       "source_location": "L201",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_communications_get_agent_task_control",
-      "community": 13,
-      "community_name": "communications.py",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "get_agent_task_control()"
     },
     {
@@ -6192,8 +6192,8 @@
       "source_location": "L208",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_communications_update_agent_task",
-      "community": 58,
-      "community_name": "record_daemon_event",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "update_agent_task()"
     },
     {
@@ -6291,8 +6291,8 @@
       "source_location": "L326",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_communications_record_daemon_event",
-      "community": 58,
-      "community_name": "record_daemon_event",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "record_daemon_event()"
     },
     {
@@ -6907,8 +6907,8 @@
       "source_location": "L564",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_main_apply_parameter_file_update",
-      "community": 68,
-      "community_name": "update_execution_entry_point_in_toml",
+      "community": 12,
+      "community_name": "main.py",
       "norm_label": "apply_parameter_file_update()"
     },
     {
@@ -7072,8 +7072,8 @@
       "source_location": "L944",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_main_build_cursor_prompt",
-      "community": 50,
-      "community_name": "build_codex_prompt",
+      "community": 48,
+      "community_name": "run_agent_prompt_cycle",
       "norm_label": "build_cursor_prompt()"
     },
     {
@@ -7369,8 +7369,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_orchestrator",
-      "community": 20,
-      "community_name": "GitWorktreeOrchestrator",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "orchestrator.py"
     },
     {
@@ -7413,8 +7413,8 @@
       "source_location": "L70",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_gitworktreeorchestrator_handle_task_deletion_requests",
-      "community": 13,
-      "community_name": "communications.py",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "._handle_task_deletion_requests()"
     },
     {
@@ -7424,8 +7424,8 @@
       "source_location": "L82",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_gitworktreeorchestrator_run_cycle",
-      "community": 58,
-      "community_name": "record_daemon_event",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": ".run_cycle()"
     },
     {
@@ -7435,8 +7435,8 @@
       "source_location": "L121",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_gitworktreeorchestrator_cleanup_reclaimable_worktrees",
-      "community": 58,
-      "community_name": "record_daemon_event",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "._cleanup_reclaimable_worktrees()"
     },
     {
@@ -7446,8 +7446,8 @@
       "source_location": "L135",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_gitworktreeorchestrator_recover_interrupted_work",
-      "community": 58,
-      "community_name": "record_daemon_event",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "._recover_interrupted_work()"
     },
     {
@@ -7457,8 +7457,8 @@
       "source_location": "L167",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_gitworktreeorchestrator_handle_cancel_requests",
-      "community": 58,
-      "community_name": "record_daemon_event",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "._handle_cancel_requests()"
     },
     {
@@ -7468,8 +7468,8 @@
       "source_location": "L195",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_gitworktreeorchestrator_mark_task_cancelled",
-      "community": 58,
-      "community_name": "record_daemon_event",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "._mark_task_cancelled()"
     },
     {
@@ -7479,8 +7479,8 @@
       "source_location": "L219",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_gitworktreeorchestrator_refresh_cancel_requested",
-      "community": 20,
-      "community_name": "GitWorktreeOrchestrator",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "._refresh_cancel_requested()"
     },
     {
@@ -7490,8 +7490,8 @@
       "source_location": "L227",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_gitworktreeorchestrator_admit_tasks",
-      "community": 58,
-      "community_name": "record_daemon_event",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "._admit_tasks()"
     },
     {
@@ -7501,8 +7501,8 @@
       "source_location": "L305",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_gitworktreeorchestrator_run_task",
-      "community": 20,
-      "community_name": "GitWorktreeOrchestrator",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "._run_task()"
     },
     {
@@ -7534,8 +7534,8 @@
       "source_location": "L514",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_gitworktreeorchestrator_finish_tasks",
-      "community": 58,
-      "community_name": "record_daemon_event",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "._finish_tasks()"
     },
     {
@@ -7545,8 +7545,8 @@
       "source_location": "L577",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_gitworktreeorchestrator_start_next_integration",
-      "community": 58,
-      "community_name": "record_daemon_event",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "._start_next_integration()"
     },
     {
@@ -7556,8 +7556,8 @@
       "source_location": "L599",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_gitworktreeorchestrator_integration_cancelled",
-      "community": 20,
-      "community_name": "GitWorktreeOrchestrator",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "._integration_cancelled()"
     },
     {
@@ -7567,8 +7567,8 @@
       "source_location": "L603",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_gitworktreeorchestrator_integrate_task",
-      "community": 20,
-      "community_name": "GitWorktreeOrchestrator",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "._integrate_task()"
     },
     {
@@ -7589,8 +7589,8 @@
       "source_location": "L728",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_gitworktreeorchestrator_run_resolver_loop",
-      "community": 20,
-      "community_name": "GitWorktreeOrchestrator",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "._run_resolver_loop()"
     },
     {
@@ -7600,8 +7600,8 @@
       "source_location": "L775",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_gitworktreeorchestrator_finish_integrations",
-      "community": 58,
-      "community_name": "record_daemon_event",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "._finish_integrations()"
     },
     {
@@ -7611,8 +7611,8 @@
       "source_location": "L825",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_load_worktree_settings",
-      "community": 58,
-      "community_name": "record_daemon_event",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "load_worktree_settings()"
     },
     {
@@ -7622,8 +7622,8 @@
       "source_location": "L856",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_verification_commands_for_worktree",
-      "community": 20,
-      "community_name": "GitWorktreeOrchestrator",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "verification_commands_for_worktree()"
     },
     {
@@ -7633,8 +7633,8 @@
       "source_location": "L879",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_package_has_test_script",
-      "community": 20,
-      "community_name": "GitWorktreeOrchestrator",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "package_has_test_script()"
     },
     {
@@ -7644,8 +7644,8 @@
       "source_location": "",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_py_path",
-      "community": 20,
-      "community_name": "GitWorktreeOrchestrator",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "path"
     },
     {
@@ -7655,8 +7655,8 @@
       "source_location": "L890",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_positive_int",
-      "community": 58,
-      "community_name": "record_daemon_event",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "positive_int()"
     },
     {
@@ -7666,8 +7666,8 @@
       "source_location": "L897",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_non_negative_number",
-      "community": 58,
-      "community_name": "record_daemon_event",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "non_negative_number()"
     },
     {
@@ -7677,8 +7677,8 @@
       "source_location": "L906",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_create_task_worktree",
-      "community": 20,
-      "community_name": "GitWorktreeOrchestrator",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "create_task_worktree()"
     },
     {
@@ -7688,8 +7688,8 @@
       "source_location": "L917",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_retained_task_worktree_valid",
-      "community": 20,
-      "community_name": "GitWorktreeOrchestrator",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "retained_task_worktree_valid()"
     },
     {
@@ -7699,8 +7699,8 @@
       "source_location": "L926",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_validate_primary_worktree",
-      "community": 20,
-      "community_name": "GitWorktreeOrchestrator",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "validate_primary_worktree()"
     },
     {
@@ -7710,8 +7710,8 @@
       "source_location": "L935",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_worktree_root",
-      "community": 20,
-      "community_name": "GitWorktreeOrchestrator",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "worktree_root()"
     },
     {
@@ -7721,8 +7721,8 @@
       "source_location": "L941",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_worktree_root_path",
-      "community": 20,
-      "community_name": "GitWorktreeOrchestrator",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "worktree_root_path()"
     },
     {
@@ -7732,8 +7732,8 @@
       "source_location": "L945",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_remove_worktree",
-      "community": 58,
-      "community_name": "record_daemon_event",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "remove_worktree()"
     },
     {
@@ -7743,8 +7743,8 @@
       "source_location": "L955",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_is_clean_worktree",
-      "community": 20,
-      "community_name": "GitWorktreeOrchestrator",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "is_clean_worktree()"
     },
     {
@@ -7754,8 +7754,8 @@
       "source_location": "L961",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_prune_worktrees",
-      "community": 20,
-      "community_name": "GitWorktreeOrchestrator",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "prune_worktrees()"
     },
     {
@@ -7765,8 +7765,8 @@
       "source_location": "L965",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_remove_empty_worktree_directories",
-      "community": 85,
-      "community_name": "WorktreeTests",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "remove_empty_worktree_directories()"
     },
     {
@@ -7776,8 +7776,8 @@
       "source_location": "L974",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_commit_worktree_changes",
-      "community": 20,
-      "community_name": "GitWorktreeOrchestrator",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "commit_worktree_changes()"
     },
     {
@@ -7787,8 +7787,8 @@
       "source_location": "L987",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_find_migration_directories",
-      "community": 20,
-      "community_name": "GitWorktreeOrchestrator",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "find_migration_directories()"
     },
     {
@@ -7798,8 +7798,8 @@
       "source_location": "L997",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_plan_migration_renames",
-      "community": 70,
-      "community_name": "plan_migration_renames",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "plan_migration_renames()"
     },
     {
@@ -7809,8 +7809,8 @@
       "source_location": "L1041",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_reconcile_migration_numbers",
-      "community": 20,
-      "community_name": "GitWorktreeOrchestrator",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "reconcile_migration_numbers()"
     },
     {
@@ -7820,8 +7820,8 @@
       "source_location": "L1052",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_run_verification",
-      "community": 20,
-      "community_name": "GitWorktreeOrchestrator",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "run_verification()"
     },
     {
@@ -7831,8 +7831,8 @@
       "source_location": "L1062",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_run_process",
-      "community": 20,
-      "community_name": "GitWorktreeOrchestrator",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "run_process()"
     },
     {
@@ -7842,8 +7842,8 @@
       "source_location": "L1066",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_git_output",
-      "community": 20,
-      "community_name": "GitWorktreeOrchestrator",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "git_output()"
     },
     {
@@ -7853,8 +7853,8 @@
       "source_location": "L1073",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_format_process_failure",
-      "community": 20,
-      "community_name": "GitWorktreeOrchestrator",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "format_process_failure()"
     },
     {
@@ -7864,8 +7864,8 @@
       "source_location": "L1078",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_build_task_prompt",
-      "community": 20,
-      "community_name": "GitWorktreeOrchestrator",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "build_task_prompt()"
     },
     {
@@ -7875,8 +7875,8 @@
       "source_location": "L1090",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_build_task_repair_prompt",
-      "community": 20,
-      "community_name": "GitWorktreeOrchestrator",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "build_task_repair_prompt()"
     },
     {
@@ -7886,8 +7886,8 @@
       "source_location": "L1105",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_build_resolver_prompt",
-      "community": 20,
-      "community_name": "GitWorktreeOrchestrator",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "build_resolver_prompt()"
     },
     {
@@ -7897,8 +7897,8 @@
       "source_location": "L1117",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_utc_now",
-      "community": 58,
-      "community_name": "record_daemon_event",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "utc_now()"
     },
     {
@@ -7908,8 +7908,8 @@
       "source_location": "L1121",
       "_origin": "ast",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_reply_indicates_failure",
-      "community": 20,
-      "community_name": "GitWorktreeOrchestrator",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "reply_indicates_failure()"
     },
     {
@@ -8315,8 +8315,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "local_daemon_tests_test_communications",
-      "community": 18,
-      "community_name": "FakeResponse",
+      "community": 13,
+      "community_name": "communications.py",
       "norm_label": "test_communications.py"
     },
     {
@@ -8392,8 +8392,8 @@
       "source_location": "L52",
       "_origin": "ast",
       "id": "local_daemon_tests_test_communications_updatecurrentmessagetests_test_does_not_retry_a_non_retryable_supabase_conflict",
-      "community": 0,
-      "community_name": "orchestrator.py",
+      "community": 13,
+      "community_name": "communications.py",
       "norm_label": ".test_does_not_retry_a_non_retryable_supabase_conflict()"
     },
     {
@@ -8535,8 +8535,8 @@
       "source_location": "L421",
       "_origin": "ast",
       "id": "local_daemon_tests_test_communications_postgitsyncresulttests",
-      "community": 18,
-      "community_name": "FakeResponse",
+      "community": 13,
+      "community_name": "communications.py",
       "norm_label": "postgitsyncresulttests"
     },
     {
@@ -8546,8 +8546,8 @@
       "source_location": "L422",
       "_origin": "ast",
       "id": "local_daemon_tests_test_communications_postgitsyncresulttests_test_posts_git_sync_result_to_daemon_payload_rpc",
-      "community": 18,
-      "community_name": "FakeResponse",
+      "community": 13,
+      "community_name": "communications.py",
       "norm_label": ".test_posts_git_sync_result_to_daemon_payload_rpc()"
     },
     {
@@ -9250,8 +9250,8 @@
       "source_location": "L1152",
       "_origin": "ast",
       "id": "local_daemon_tests_test_main_runcursorexectests_test_builds_cursor_plan_prompt_from_shared_prefix_with_file_restriction",
-      "community": 50,
-      "community_name": "build_codex_prompt",
+      "community": 48,
+      "community_name": "run_agent_prompt_cycle",
       "norm_label": ".test_builds_cursor_plan_prompt_from_shared_prefix_with_file_restriction()"
     },
     {
@@ -9580,8 +9580,8 @@
       "source_location": "L72",
       "_origin": "ast",
       "id": "local_daemon_tests_test_orchestrator_worktreetests",
-      "community": 85,
-      "community_name": "WorktreeTests",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "worktreetests"
     },
     {
@@ -9591,8 +9591,8 @@
       "source_location": "L77",
       "_origin": "ast",
       "id": "local_daemon_tests_test_orchestrator_worktreetests_test_creates_unique_task_branch_from_primary_sha",
-      "community": 85,
-      "community_name": "WorktreeTests",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": ".test_creates_unique_task_branch_from_primary_sha()"
     },
     {
@@ -9602,8 +9602,8 @@
       "source_location": "L97",
       "_origin": "ast",
       "id": "local_daemon_tests_test_orchestrator_worktreetests_test_daemon_commits_agent_changes_when_the_worktree_is_dirty",
-      "community": 85,
-      "community_name": "WorktreeTests",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": ".test_daemon_commits_agent_changes_when_the_worktree_is_dirty()"
     },
     {
@@ -9613,8 +9613,8 @@
       "source_location": "L110",
       "_origin": "ast",
       "id": "local_daemon_tests_test_orchestrator_worktreetests_test_clean_failed_worktree_is_reclaimable",
-      "community": 85,
-      "community_name": "WorktreeTests",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": ".test_clean_failed_worktree_is_reclaimable()"
     },
     {
@@ -9624,8 +9624,8 @@
       "source_location": "L114",
       "_origin": "ast",
       "id": "local_daemon_tests_test_orchestrator_worktreetests_test_removes_empty_daedalus_worktree_directories",
-      "community": 85,
-      "community_name": "WorktreeTests",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": ".test_removes_empty_daedalus_worktree_directories()"
     },
     {
@@ -9855,8 +9855,8 @@
       "source_location": "L440",
       "_origin": "ast",
       "id": "local_daemon_tests_test_orchestrator_migrationreconciletests",
-      "community": 70,
-      "community_name": "plan_migration_renames",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": "migrationreconciletests"
     },
     {
@@ -9866,8 +9866,8 @@
       "source_location": "L441",
       "_origin": "ast",
       "id": "local_daemon_tests_test_orchestrator_migrationreconciletests_test_no_duplicates_yields_empty_plan",
-      "community": 70,
-      "community_name": "plan_migration_renames",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": ".test_no_duplicates_yields_empty_plan()"
     },
     {
@@ -9877,8 +9877,8 @@
       "source_location": "L449",
       "_origin": "ast",
       "id": "local_daemon_tests_test_orchestrator_migrationreconciletests_test_triple_prefix_uses_next_free_after_max",
-      "community": 70,
-      "community_name": "plan_migration_renames",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": ".test_triple_prefix_uses_next_free_after_max()"
     },
     {
@@ -9888,8 +9888,8 @@
       "source_location": "L469",
       "_origin": "ast",
       "id": "local_daemon_tests_test_orchestrator_migrationreconciletests_test_collision_skips_already_used_neighbors",
-      "community": 70,
-      "community_name": "plan_migration_renames",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": ".test_collision_skips_already_used_neighbors()"
     },
     {
@@ -9899,8 +9899,8 @@
       "source_location": "L484",
       "_origin": "ast",
       "id": "local_daemon_tests_test_orchestrator_migrationreconciletests_test_padding_matches_folder_width",
-      "community": 70,
-      "community_name": "plan_migration_renames",
+      "community": 0,
+      "community_name": "orchestrator.py",
       "norm_label": ".test_padding_matches_folder_width()"
     },
     {
@@ -10251,8 +10251,8 @@
       "source_location": "L18",
       "_origin": "ast",
       "id": "shared_schemas_software_architecture_v1_schema_properties_summary",
-      "community": 17,
-      "community_name": "SupabaseUnavailableError",
+      "community": 60,
+      "community_name": "properties",
       "norm_label": "summary"
     },
     {
@@ -10262,8 +10262,8 @@
       "source_location": "L19",
       "_origin": "ast",
       "id": "shared_schemas_software_architecture_v1_schema_summary_ref",
-      "community": 17,
-      "community_name": "SupabaseUnavailableError",
+      "community": 60,
+      "community_name": "properties",
       "norm_label": "$ref"
     },
     {
@@ -10438,8 +10438,8 @@
       "source_location": "L44",
       "_origin": "ast",
       "id": "shared_schemas_software_architecture_v1_schema_defs_system_definition",
-      "community": 17,
-      "community_name": "SupabaseUnavailableError",
+      "community": 59,
+      "community_name": "$defs",
       "norm_label": "system_definition"
     },
     {
@@ -10449,8 +10449,8 @@
       "source_location": "L45",
       "_origin": "ast",
       "id": "shared_schemas_software_architecture_v1_schema_system_definition_type",
-      "community": 17,
-      "community_name": "SupabaseUnavailableError",
+      "community": 59,
+      "community_name": "$defs",
       "norm_label": "type"
     },
     {
@@ -10460,8 +10460,8 @@
       "source_location": "L46",
       "_origin": "ast",
       "id": "shared_schemas_software_architecture_v1_schema_system_definition_additionalproperties",
-      "community": 17,
-      "community_name": "SupabaseUnavailableError",
+      "community": 59,
+      "community_name": "$defs",
       "norm_label": "additionalproperties"
     },
     {
@@ -10548,8 +10548,8 @@
       "source_location": "L57",
       "_origin": "ast",
       "id": "shared_schemas_software_architecture_v1_schema_properties_name",
-      "community": 17,
-      "community_name": "SupabaseUnavailableError",
+      "community": 60,
+      "community_name": "properties",
       "norm_label": "name"
     },
     {
@@ -10559,8 +10559,8 @@
       "source_location": "L58",
       "_origin": "ast",
       "id": "shared_schemas_software_architecture_v1_schema_name_ref",
-      "community": 17,
-      "community_name": "SupabaseUnavailableError",
+      "community": 60,
+      "community_name": "properties",
       "norm_label": "$ref"
     },
     {
@@ -10570,8 +10570,8 @@
       "source_location": "L63",
       "_origin": "ast",
       "id": "shared_schemas_software_architecture_v1_schema_properties_files",
-      "community": 61,
-      "community_name": "$ref",
+      "community": 17,
+      "community_name": "SupabaseUnavailableError",
       "norm_label": "files"
     },
     {
@@ -10581,8 +10581,8 @@
       "source_location": "L64",
       "_origin": "ast",
       "id": "shared_schemas_software_architecture_v1_schema_files_type",
-      "community": 61,
-      "community_name": "$ref",
+      "community": 17,
+      "community_name": "SupabaseUnavailableError",
       "norm_label": "type"
     },
     {
@@ -10592,8 +10592,8 @@
       "source_location": "L65",
       "_origin": "ast",
       "id": "shared_schemas_software_architecture_v1_schema_files_uniqueitems",
-      "community": 61,
-      "community_name": "$ref",
+      "community": 17,
+      "community_name": "SupabaseUnavailableError",
       "norm_label": "uniqueitems"
     },
     {
@@ -10603,8 +10603,8 @@
       "source_location": "L66",
       "_origin": "ast",
       "id": "shared_schemas_software_architecture_v1_schema_files_items",
-      "community": 61,
-      "community_name": "$ref",
+      "community": 17,
+      "community_name": "SupabaseUnavailableError",
       "norm_label": "items"
     },
     {
@@ -10614,8 +10614,8 @@
       "source_location": "L72",
       "_origin": "ast",
       "id": "shared_schemas_software_architecture_v1_schema_defs_channel_definition",
-      "community": 59,
-      "community_name": "$defs",
+      "community": 17,
+      "community_name": "SupabaseUnavailableError",
       "norm_label": "channel_definition"
     },
     {
@@ -10625,8 +10625,8 @@
       "source_location": "L73",
       "_origin": "ast",
       "id": "shared_schemas_software_architecture_v1_schema_channel_definition_type",
-      "community": 59,
-      "community_name": "$defs",
+      "community": 17,
+      "community_name": "SupabaseUnavailableError",
       "norm_label": "type"
     },
     {
@@ -10636,8 +10636,8 @@
       "source_location": "L74",
       "_origin": "ast",
       "id": "shared_schemas_software_architecture_v1_schema_channel_definition_additionalproperties",
-      "community": 59,
-      "community_name": "$defs",
+      "community": 17,
+      "community_name": "SupabaseUnavailableError",
       "norm_label": "additionalproperties"
     },
     {
@@ -10746,8 +10746,8 @@
       "source_location": "L99",
       "_origin": "ast",
       "id": "shared_schemas_software_architecture_v1_schema_properties_fields",
-      "community": 69,
-      "community_name": "properties",
+      "community": 61,
+      "community_name": "$ref",
       "norm_label": "fields"
     },
     {
@@ -10757,8 +10757,8 @@
       "source_location": "L100",
       "_origin": "ast",
       "id": "shared_schemas_software_architecture_v1_schema_fields_type",
-      "community": 69,
-      "community_name": "properties",
+      "community": 61,
+      "community_name": "$ref",
       "norm_label": "type"
     },
     {
@@ -10768,8 +10768,8 @@
       "source_location": "L101",
       "_origin": "ast",
       "id": "shared_schemas_software_architecture_v1_schema_fields_items",
-      "community": 69,
-      "community_name": "properties",
+      "community": 61,
+      "community_name": "$ref",
       "norm_label": "items"
     },
     {
@@ -10878,8 +10878,8 @@
       "source_location": "L136",
       "_origin": "ast",
       "id": "shared_schemas_software_architecture_v1_schema_type_enum",
-      "community": 60,
-      "community_name": "properties",
+      "community": 20,
+      "community_name": "GitWorktreeOrchestrator",
       "norm_label": "enum"
     },
     {
@@ -10889,8 +10889,8 @@
       "source_location": "L136",
       "_origin": "ast",
       "id": "ref_string",
-      "community": 60,
-      "community_name": "properties",
+      "community": 20,
+      "community_name": "GitWorktreeOrchestrator",
       "norm_label": "string"
     },
     {
@@ -10900,8 +10900,8 @@
       "source_location": "L136",
       "_origin": "ast",
       "id": "ref_number",
-      "community": 60,
-      "community_name": "properties",
+      "community": 20,
+      "community_name": "GitWorktreeOrchestrator",
       "norm_label": "number"
     },
     {
@@ -10911,8 +10911,8 @@
       "source_location": "L136",
       "_origin": "ast",
       "id": "ref_integer",
-      "community": 60,
-      "community_name": "properties",
+      "community": 20,
+      "community_name": "GitWorktreeOrchestrator",
       "norm_label": "integer"
     },
     {
@@ -10922,8 +10922,8 @@
       "source_location": "L136",
       "_origin": "ast",
       "id": "ref_boolean",
-      "community": 60,
-      "community_name": "properties",
+      "community": 20,
+      "community_name": "GitWorktreeOrchestrator",
       "norm_label": "boolean"
     },
     {
@@ -10933,8 +10933,8 @@
       "source_location": "L136",
       "_origin": "ast",
       "id": "ref_null",
-      "community": 60,
-      "community_name": "properties",
+      "community": 20,
+      "community_name": "GitWorktreeOrchestrator",
       "norm_label": "null"
     },
     {
@@ -11065,7 +11065,7 @@
       "source_location": "L178",
       "_origin": "ast",
       "id": "shared_schemas_software_architecture_v1_schema_defs_object_field_definition",
-      "community": 69,
+      "community": 60,
       "community_name": "properties",
       "norm_label": "object_field_definition"
     },
@@ -11076,7 +11076,7 @@
       "source_location": "L179",
       "_origin": "ast",
       "id": "shared_schemas_software_architecture_v1_schema_object_field_definition_type",
-      "community": 69,
+      "community": 60,
       "community_name": "properties",
       "norm_label": "type"
     },
@@ -11087,7 +11087,7 @@
       "source_location": "L180",
       "_origin": "ast",
       "id": "shared_schemas_software_architecture_v1_schema_object_field_definition_additionalproperties",
-      "community": 69,
+      "community": 60,
       "community_name": "properties",
       "norm_label": "additionalproperties"
     },
@@ -11109,7 +11109,7 @@
       "source_location": "L187",
       "_origin": "ast",
       "id": "shared_schemas_software_architecture_v1_schema_object_field_definition_properties",
-      "community": 69,
+      "community": 60,
       "community_name": "properties",
       "norm_label": "properties"
     },
@@ -13433,17 +13433,6 @@
       "community": 57,
       "community_name": "README.md",
       "norm_label": "automated deployment bootstrap"
-    },
-    {
-      "label": "Task-integration cutover",
-      "file_type": "document",
-      "source_file": "shared/database/README.md",
-      "source_location": "L38",
-      "_origin": "ast",
-      "id": "shared_database_readme_task_integration_cutover",
-      "community": 57,
-      "community_name": "README.md",
-      "norm_label": "task-integration cutover"
     },
     {
       "label": "Daedalus Workspace",
@@ -39170,17 +39159,6 @@
       "_origin": "ast",
       "source": "shared_database_readme_shared_database_artifacts",
       "target": "shared_database_readme_automated_deployment_bootstrap",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "shared/database/README.md",
-      "source_location": "L38",
-      "weight": 1.0,
-      "_origin": "ast",
-      "source": "shared_database_readme_shared_database_artifacts",
-      "target": "shared_database_readme_task_integration_cutover",
       "confidence_score": 1.0
     },
     {

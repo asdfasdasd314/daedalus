@@ -6,21 +6,15 @@ import os
 import re
 import subprocess
 import tomllib
-import uuid
 
 from .communications import (
     SupabaseUnavailableError,
     get_agent_task_control,
-    complete_batch_deletion,
     complete_task_deletion,
-    delete_orchestration_batch,
     list_agent_tasks,
-    list_batch_deletion_requests,
-    list_orchestration_batches,
     list_task_deletion_requests,
     record_daemon_event,
     update_agent_task,
-    upsert_orchestration_batch,
 )
 from .migration_deployment import (
     deploy_pending_migrations,
@@ -35,7 +29,6 @@ WORKTREE_PARAMETER_FILE = (
 
 
 TASK_TERMINAL_STATES = {"completed", "failed", "blocked", "cancelled"}
-BATCH_ACTIVE_STATES = {"collecting", "integrating", "resolving"}
 CANCEL_REPLY_PREFIXES = (
     "Codex failed",
     "Codex was cancelled",
@@ -49,13 +42,13 @@ MIGRATION_WALK_SKIP_DIRS = {".git", "node_modules", ".daedalus-worktrees"}
 
 def record_migration_deployment_event(
     config: dict, repository: str, severity: str, message: str,
-    batch_id: str, event_type: str,
+    task_id: str, event_type: str,
 ) -> None:
     """Publish optional deployment telemetry without blocking a database repair."""
     try:
         record_daemon_event(
             config, repository, severity, message,
-            batch_id=batch_id, event_type=event_type,
+            task_id=task_id, event_type=event_type,
         )
     except SupabaseUnavailableError as error:
         print(f"Supabase migration deployment telemetry could not be published: {error}")
@@ -69,8 +62,9 @@ class GitWorktreeOrchestrator:
         self.kill_agent = kill_agent or (lambda _task_id, grace_seconds=2.0: False)
         self.executor = ThreadPoolExecutor(max_workers=32)
         self.task_futures: dict[str, Future] = {}
-        self.batch_futures: dict[str, Future] = {}
-        self.cancelled_batch_ids: set[str] = set()
+        self.integration_futures: dict[str, Future] = {}
+        self.integrating_repositories: dict[str, str] = {}
+        self.cancelled_task_ids: set[str] = set()
         self.recovered_persisted_work = False
 
     def _handle_task_deletion_requests(self, tasks: list[dict]) -> None:
@@ -85,65 +79,24 @@ class GitWorktreeOrchestrator:
                 remove_worktree(str(task["repository"]), worktree_path, force=True)
             complete_task_deletion(self.config, str(request["id"]))
 
-    def _handle_batch_deletion_requests(self) -> None:
-        for request in list_batch_deletion_requests(self.config):
-            batch = request.get("batch") or {}
-            if not batch:
-                complete_batch_deletion(
-                    self.config, str(request["id"]), "Integration batch is no longer available for deletion."
-                )
-                continue
-            try:
-                worktree_path = str(batch.get("integration_worktree_path") or "")
-                if worktree_path and Path(worktree_path).is_dir():
-                    remove_worktree(str(batch["repository"]), worktree_path, force=True)
-                for task in request.get("tasks") or []:
-                    task_worktree = str(task.get("worktree_path") or "")
-                    if task_worktree and Path(task_worktree).is_dir():
-                        remove_worktree(str(task["repository"]), task_worktree, force=True)
-                complete_batch_deletion(self.config, str(request["id"]))
-                record_daemon_event(
-                    self.config, str(batch["repository"]), "warning",
-                    f"Blocked integration batch {batch['id']} deleted by user.",
-                )
-            except Exception as error:
-                complete_batch_deletion(self.config, str(request["id"]), str(error))
-
     def run_cycle(self, snapshot: dict | None = None) -> None:
         tasks = snapshot.get("agentTasks", []) if snapshot is not None else list_agent_tasks(self.config)
-        batches = snapshot.get("orchestrationBatches", []) if snapshot is not None else list_orchestration_batches(self.config)
         self._handle_task_deletion_requests(tasks)
-        self._handle_batch_deletion_requests()
         if not self.recovered_persisted_work:
-            self._recover_interrupted_work(tasks, batches)
+            self._recover_interrupted_work(tasks)
             self.recovered_persisted_work = True
-        self._handle_cancel_requests(tasks, batches)
+        self._handle_cancel_requests(tasks)
         self._finish_tasks(tasks)
-        finished_batch = self._finish_batches(tasks, batches)
-        self._remove_orphaned_collecting_batches(tasks, batches)
-        self._resume_requested_batch_retries(tasks, batches)
-
-        self._cleanup_reclaimable_worktrees(tasks, batches)
-        # Batch completion changes durable task and batch state. Do not admit or
-        # collect from this pre-completion snapshot; the next poll is authoritative.
-        if finished_batch:
+        if self._finish_integrations(tasks):
             return
+        self._cleanup_reclaimable_worktrees(tasks)
         repositories = sorted({str(task["repository"]) for task in tasks})
 
         for repository in repositories:
             repository_tasks = [task for task in tasks if task["repository"] == repository]
-            repository_batches = [
-                batch for batch in batches if batch["repository"] == repository
-            ]
-            if any(
-                batch["status"] in {"integrating", "resolving"}
-                for batch in repository_batches
-            ):
-                continue
-
             try:
                 self._admit_tasks(repository, repository_tasks)
-                self._collect_and_maybe_integrate(repository, repository_tasks, repository_batches)
+                self._start_next_integration(repository, repository_tasks)
             except Exception as error:
                 queued = [
                     task
@@ -165,25 +118,8 @@ class GitWorktreeOrchestrator:
                         task_id=str(first["id"]),
                     )
 
-    def _resume_requested_batch_retries(self, tasks: list[dict], batches: list[dict]) -> None:
-        tasks_by_id = {str(task["id"]): task for task in tasks}
-        settings = load_worktree_settings()
-        for batch in batches:
-            batch_id = str(batch["id"])
-            if batch["status"] != "integrating" or batch_id in self.batch_futures:
-                continue
-            members = [tasks_by_id.get(str(task_id)) for task_id in batch.get("task_ids") or []]
-            if not members or any(task is None or task.get("status") not in {"ready", "completed"} for task in members):
-                continue
-            self.batch_futures[batch_id] = self.executor.submit(
-                self._integrate_batch, batch, [task for task in members if task is not None], settings,
-            )
-
-    def _cleanup_reclaimable_worktrees(
-        self, tasks: list[dict], batches: list[dict]
-    ) -> None:
+    def _cleanup_reclaimable_worktrees(self, tasks: list[dict]) -> None:
         repositories = {str(task["repository"]) for task in tasks}
-        repositories.update(str(batch["repository"]) for batch in batches)
 
         for task in tasks:
             worktree_path = str(task.get("worktree_path") or "")
@@ -192,42 +128,21 @@ class GitWorktreeOrchestrator:
             if task["status"] in {"completed", "cancelled"} and Path(worktree_path).is_dir():
                 remove_worktree(str(task["repository"]), worktree_path, force=True)
 
-        for batch in batches:
-            worktree_path = str(batch.get("integration_worktree_path") or "")
-            if (
-                batch["status"] == "completed"
-                and worktree_path
-                and Path(worktree_path).is_dir()
-            ):
-                remove_worktree(str(batch["repository"]), worktree_path)
-
         for repository in repositories:
             prune_worktrees(repository)
             remove_empty_worktree_directories(repository)
 
-    def _recover_interrupted_work(self, tasks: list[dict], batches: list[dict]) -> None:
-        interrupted_task_ids: set[str] = set()
-        for batch in batches:
-            if batch["status"] not in {"integrating", "resolving"}:
-                continue
-            batch["status"] = "blocked"
-            batch["verification_output"] = (
-                "Daemon restarted during integration; preserved state requires inspection."
-            )
-            upsert_orchestration_batch(self.config, batch)
-            interrupted_task_ids.update(str(task_id) for task_id in batch["task_ids"])
-            record_daemon_event(
-                self.config,
-                str(batch["repository"]),
-                "error",
-                batch["verification_output"],
-                batch_id=str(batch["id"]),
-            )
-
+    def _recover_interrupted_work(self, tasks: list[dict]) -> None:
         for task in tasks:
             task_id = str(task["id"])
-            if task_id in interrupted_task_ids and task["status"] == "integrating":
-                update_agent_task(self.config, task_id, "integrating", {"status": "ready"})
+            if task["status"] in {"integrating", "resolving"}:
+                error = "Daemon restarted during integration; task worktree preserved."
+                update_agent_task(self.config, task_id, str(task["status"]), {
+                    "status": "blocked", "error": error, "completed_at": utc_now(),
+                })
+                record_daemon_event(
+                    self.config, str(task["repository"]), "error", error, task_id=task_id,
+                )
             elif task["status"] in {"running", "verifying"}:
                 if task.get("cancel_requested"):
                     self._mark_task_cancelled(task, str(task["status"]), force_remove=True)
@@ -249,7 +164,7 @@ class GitWorktreeOrchestrator:
             elif task["status"] == "ready" and task.get("cancel_requested"):
                 self._mark_task_cancelled(task, "ready", force_remove=True)
 
-    def _handle_cancel_requests(self, tasks: list[dict], batches: list[dict]) -> None:
+    def _handle_cancel_requests(self, tasks: list[dict]) -> None:
         pending = [
             task
             for task in tasks
@@ -260,7 +175,6 @@ class GitWorktreeOrchestrator:
             return
         settings = load_worktree_settings()
         grace = settings["cancelKillGraceSeconds"]
-        batches_by_id = {str(batch["id"]): batch for batch in batches}
 
         for task in pending:
             status = str(task["status"])
@@ -272,68 +186,11 @@ class GitWorktreeOrchestrator:
                 if task_id not in self.task_futures:
                     self._mark_task_cancelled(task, status, force_remove=True)
             elif status == "ready":
-                batch = batches_by_id.get(str(task.get("batch_id") or ""))
-                if batch and batch["status"] in {"integrating", "resolving"}:
-                    self._cancel_batch_task(task, batches_by_id, grace)
-                else:
-                    self._cancel_ready_task(task, batches_by_id)
+                self._mark_task_cancelled(task, "ready", force_remove=True)
             elif status in {"integrating", "resolving"}:
-                self._cancel_batch_task(task, batches_by_id, grace)
-
-    def _cancel_ready_task(self, task: dict, batches_by_id: dict[str, dict]) -> None:
-        batch_id = str(task.get("batch_id") or "")
-        batch = batches_by_id.get(batch_id)
-        if batch and batch["status"] == "collecting":
-            remaining = [
-                str(task_id)
-                for task_id in batch.get("task_ids") or []
-                if str(task_id) != str(task["id"])
-            ]
-            batch["task_ids"] = remaining
-            if not remaining:
-                batch["status"] = "completed"
-                batch["completed_at"] = utc_now()
-            upsert_orchestration_batch(self.config, batch)
-        self._mark_task_cancelled(task, "ready", force_remove=True)
-
-    def _cancel_batch_task(
-        self, task: dict, batches_by_id: dict[str, dict], grace: float
-    ) -> None:
-        batch_id = str(task.get("batch_id") or "")
-        batch = batches_by_id.get(batch_id)
-        self.cancelled_batch_ids.add(batch_id)
-        if batch_id in self.batch_futures:
-            # In-flight integration is not separable; abort the whole batch.
-            pass
-        self.kill_agent(str(task["id"]), grace)
-        expected = str(task["status"])
-        self._mark_task_cancelled(task, expected, force_remove=True)
-        if batch is None:
-            return
-        sibling_ids = [
-            str(task_id)
-            for task_id in batch.get("task_ids") or []
-            if str(task_id) != str(task["id"])
-        ]
-        for sibling_id in sibling_ids:
-            update_agent_task(self.config, sibling_id, expected, {
-                "status": "blocked",
-                "error": "Sibling task cancelled; integration batch aborted.",
-            })
-        batch["status"] = "blocked"
-        batch["verification_output"] = CANCELLED_BY_USER
-        upsert_orchestration_batch(self.config, batch)
-        worktree_path = str(batch.get("integration_worktree_path") or "")
-        if worktree_path:
-            remove_worktree(str(batch["repository"]), worktree_path, force=True)
-        record_daemon_event(
-            self.config,
-            str(batch["repository"]),
-            "warning",
-            "Integration batch aborted after user cancel.",
-            batch_id=batch_id,
-            task_id=str(task["id"]),
-        )
+                self.cancelled_task_ids.add(str(task["id"]))
+                self.kill_agent(str(task["id"]), grace)
+                self._mark_task_cancelled(task, status, force_remove=True)
 
     def _mark_task_cancelled(
         self, task: dict, expected_status: str, force_remove: bool = False
@@ -369,9 +226,11 @@ class GitWorktreeOrchestrator:
 
     def _admit_tasks(self, repository: str, tasks: list[dict]) -> None:
         settings = load_worktree_settings()
-        active = [task for task in tasks if task["status"] in {"running", "verifying"}]
-        ready = [task for task in tasks if task["status"] == "ready"]
-        capacity = settings["maxAgentsPerRepository"] - len(active) - len(ready)
+        occupied = [
+            task for task in tasks
+            if task["status"] in {"running", "verifying", "ready", "integrating", "resolving"}
+        ]
+        capacity = settings["maxAgentsPerRepository"] - len(occupied)
         if capacity <= 0:
             return
 
@@ -635,22 +494,22 @@ class GitWorktreeOrchestrator:
         )
 
     def _run_resolver_agent(
-        self, worktree_path: str, tasks: list[dict], settings: dict, prompt: str
+        self, worktree_path: str, task: dict, settings: dict, prompt: str
     ) -> str:
         provider = settings["resolverProvider"]
         if provider == "auto":
-            provider = str(tasks[0]["provider"])
+            provider = str(task["provider"])
 
         if provider == "cursor":
-            return self.run_cursor(worktree_path, prompt, False)
+            return self.run_cursor(worktree_path, prompt, False, str(task["id"]))
 
         if settings["resolverProvider"] == "auto":
-            model = str(tasks[0]["model"])
-            reasoning = str(tasks[0]["reasoning"])
+            model = str(task["model"])
+            reasoning = str(task["reasoning"])
         else:
             model = settings["resolverModel"]
             reasoning = settings["resolverReasoning"]
-        return self.run_codex(worktree_path, prompt, model, reasoning)
+        return self.run_codex(worktree_path, prompt, model, reasoning, str(task["id"]))
 
     def _finish_tasks(self, tasks: list[dict]) -> None:
         tasks_by_id = {str(task["id"]): task for task in tasks}
@@ -715,174 +574,68 @@ class GitWorktreeOrchestrator:
                     task_id=task_id,
                 )
 
-    def _collect_and_maybe_integrate(
-        self, repository: str, tasks: list[dict], batches: list[dict]
-    ) -> None:
-        # A blocked batch owns its completed branches until the user retries or deletes it.
-        if any(batch["status"] == "blocked" for batch in batches):
+    def _start_next_integration(self, repository: str, tasks: list[dict]) -> None:
+        if repository in self.integrating_repositories:
             return
-        settings = load_worktree_settings()
-        collecting = next((batch for batch in batches if batch["status"] == "collecting"), None)
         ready = sorted(
-            [
-                task
-                for task in tasks
-                if task["status"] == "ready" and not task.get("cancel_requested")
-            ],
+            [task for task in tasks if task["status"] == "ready" and not task.get("cancel_requested")],
             key=lambda task: task["queue_sequence"],
         )
         if not ready:
             return
-
-        base_commit = str(ready[0]["base_commit"])
-        same_base = [task for task in ready if task["base_commit"] == base_commit]
-        if collecting is None:
-            batch_id = str(uuid.uuid4())
-            collecting = {
-                "id": batch_id,
-                "repository": repository,
-                "base_commit": base_commit,
-                "task_ids": [],
-                "integration_branch": f"integration/batch-{batch_id}",
-                "integration_worktree_path": "",
-                "status": "collecting",
-                "resolver_attempts": 0,
-                "verification_output": "",
-                "quiet_since": None,
-            }
-
-        selected = same_base[: settings["maxAgentsPerRepository"]]
-        task_ids = [str(task["id"]) for task in selected]
-        collecting["task_ids"] = task_ids
-        running_same_base = any(
-            task["status"] in {"running", "verifying"}
-            and task.get("base_commit") == base_commit
-            for task in tasks
+        task = ready[0]
+        task_id = str(task["id"])
+        claimed = update_agent_task(self.config, task_id, "ready", {
+            "status": "integrating", "completed_at": None,
+        })
+        if not claimed:
+            return
+        task = {**task, "status": "integrating"}
+        self.integrating_repositories[repository] = task_id
+        self.integration_futures[task_id] = self.executor.submit(
+            self._integrate_task, task, load_worktree_settings()
         )
-        queued_exists = any(task["status"] == "queued" for task in tasks)
-        full = len(task_ids) >= settings["maxAgentsPerRepository"]
-        if full:
-            should_integrate = True
-        elif running_same_base or queued_exists:
-            collecting["quiet_since"] = None
-            should_integrate = False
+
+    def _integration_cancelled(self, task: dict) -> bool:
+        task_id = str(task["id"])
+        return task_id in self.cancelled_task_ids or self._refresh_cancel_requested(task)
+
+    def _integrate_task(self, task: dict, settings: dict) -> dict:
+        task_id = str(task["id"])
+        repository = str(task["repository"])
+        worktree_path = str(task.get("worktree_path") or "")
+        branch_name = str(task.get("branch_name") or "")
+        attempts = int(task.get("resolver_attempts") or 0)
+        if not retained_task_worktree_valid(repository, worktree_path, branch_name):
+            return self._integration_failure(task, "Retained task worktree or branch is unavailable.", attempts)
+        try:
+            validate_primary_worktree(repository, settings["primaryBranch"])
+            integration_base = git_output(repository, ["rev-parse", settings["primaryBranch"]])
+        except RuntimeError as error:
+            return self._integration_failure(task, str(error), attempts)
+        if self._integration_cancelled(task):
+            return self._integration_failure(task, CANCELLED_BY_USER, attempts, cancelled=True)
+
+        failure = ""
+        if git_output(worktree_path, ["status", "--porcelain"]):
+            failure = str(task.get("error") or "Retained integration worktree contains unresolved changes.")
         else:
-            quiet_since = collecting.get("quiet_since")
-            if quiet_since is None:
-                collecting["quiet_since"] = utc_now()
-                should_integrate = False
-            else:
-                elapsed = datetime.now(timezone.utc) - datetime.fromisoformat(
-                    str(quiet_since).replace("Z", "+00:00")
-                )
-                should_integrate = elapsed.total_seconds() >= settings["cohortIdleWindowSeconds"]
-
-        upsert_orchestration_batch(self.config, collecting)
-        for task in selected:
-            if not task.get("batch_id"):
-                update_agent_task(self.config, str(task["id"]), "ready", {
-                    "status": "ready", "batch_id": str(collecting["id"])
-                })
-        if should_integrate and str(collecting["id"]) not in self.batch_futures:
-            collecting["status"] = "integrating"
-            upsert_orchestration_batch(self.config, collecting)
-            self.batch_futures[str(collecting["id"])] = self.executor.submit(
-                self._integrate_batch, collecting, selected, settings
-            )
-
-    def _remove_orphaned_collecting_batches(
-        self, tasks: list[dict], batches: list[dict]
-    ) -> None:
-        tasks_by_id = {str(task["id"]): task for task in tasks}
-        for batch in batches:
-            if batch["status"] != "collecting" or batch.get("integration_worktree_path"):
-                continue
-            members = [tasks_by_id.get(str(task_id)) for task_id in batch["task_ids"]]
-            if not members:
-                continue
-            all_members_completed = all(
-                task is not None and task["status"] == "completed"
-                for task in members
-            )
-            if not all_members_completed:
-                continue
-            batch.update({"status": "completed", "completed_at": utc_now()})
-            upsert_orchestration_batch(self.config, batch)
-            delete_orchestration_batch(self.config, str(batch["id"]))
-
-    def _integrate_batch(self, batch: dict, tasks: list[dict], settings: dict) -> dict:
-        repository = str(batch["repository"])
-        batch_id = str(batch["id"])
-        if batch_id in self.cancelled_batch_ids:
-            return {
-                "ok": False,
-                "error": CANCELLED_BY_USER,
-                "cancelled": True,
-                "attempts": 0,
-                "worktree": "",
-            }
-        existing_path = str(batch.get("integration_worktree_path") or "")
-        is_manual_retry = int(batch.get("retry_generation") or 0) > 0
-        if existing_path and retained_integration_worktree_valid(
-            repository, existing_path, str(batch["integration_branch"])
-        ):
-            worktree_path = existing_path
-            if not is_manual_retry:
-                run_process(worktree_path, ["git", "reset", "--hard", str(batch["base_commit"])])
-                run_process(worktree_path, ["git", "clean", "-fd"])
-        elif is_manual_retry:
-            return {
-                "ok": False,
-                "error": "Retry cannot resume because its retained integration worktree is unavailable.",
-                "attempts": 0,
-                "worktree": existing_path,
-            }
-        else:
-            worktree_path = create_integration_worktree(
-                repository, batch_id, str(batch["base_commit"]), str(batch["integration_branch"]),
-            )
-        batch["integration_worktree_path"] = worktree_path
-        upsert_orchestration_batch(self.config, batch)
-
-        attempts = 0
-        for task in tasks:
-            if batch_id in self.cancelled_batch_ids:
-                return {
-                    "ok": False,
-                    "error": CANCELLED_BY_USER,
-                    "cancelled": True,
-                    "attempts": attempts,
-                    "worktree": worktree_path,
-                }
             merge = run_process(
                 worktree_path,
-                ["git", "merge", "--no-ff", "--no-edit", str(task["branch_name"])],
+                ["git", "merge", "--no-ff", "--no-edit", settings["primaryBranch"]],
             )
             if merge.returncode != 0:
                 failure = format_process_failure(merge.args, merge.stdout, merge.stderr)
-                failure, attempts = self._run_resolver_loop(
-                    batch, tasks, settings, worktree_path, failure, attempts
+        if failure:
+            failure, attempts = self._run_resolver_loop(
+                task, settings, worktree_path, failure, attempts
+            )
+            if failure:
+                return self._integration_failure(
+                    task, failure, attempts, cancelled=self._integration_cancelled(task)
                 )
-                if failure:
-                    return {
-                        "ok": False,
-                        "error": failure,
-                        "attempts": attempts,
-                        "worktree": worktree_path,
-                        "cancelled": batch_id in self.cancelled_batch_ids,
-                    }
-
-        if batch_id in self.cancelled_batch_ids:
-            return {
-                "ok": False,
-                "error": CANCELLED_BY_USER,
-                "cancelled": True,
-                "attempts": attempts,
-                "worktree": worktree_path,
-            }
 
         reconcile_migration_numbers(worktree_path)
-
         commands = verification_commands_for_worktree(
             worktree_path, settings["verificationCommands"]
         )
@@ -890,104 +643,91 @@ class GitWorktreeOrchestrator:
         failure = "" if verification["ok"] else verification["output"]
         if failure:
             failure, attempts = self._run_resolver_loop(
-                batch, tasks, settings, worktree_path, failure, attempts
+                task, settings, worktree_path, failure, attempts
             )
             if failure:
-                return {
-                    "ok": False,
-                    "error": failure,
-                    "attempts": attempts,
-                    "worktree": worktree_path,
-                    "cancelled": batch_id in self.cancelled_batch_ids,
-                }
+                return self._integration_failure(
+                    task, failure, attempts, cancelled=self._integration_cancelled(task)
+                )
 
         deployment_settings = load_deployment_settings()
         deployment_retryable = False
 
         def deploy() -> str:
             nonlocal deployment_retryable
-            if batch_id in self.cancelled_batch_ids:
+            if self._integration_cancelled(task):
                 return CANCELLED_BY_USER
             record_migration_deployment_event(
                 self.config, repository, "info", "Supabase migration deployment started.",
-                batch_id=batch_id, event_type="migration_deployment_started",
+                task_id=task_id, event_type="migration_deployment_started",
             )
             result = deploy_pending_migrations(
-                worktree_path, repository, str(batch["base_commit"]), deployment_settings,
-                cancelled=lambda: batch_id in self.cancelled_batch_ids,
+                worktree_path, repository, integration_base, deployment_settings,
+                cancelled=lambda: self._integration_cancelled(task),
             )
             deployment_retryable = result.get("retryable", False)
             diagnostics = result.get("diagnostics", [])
             if result["ok"]:
-                if result["state"] == "no_pending":
-                    record_migration_deployment_event(
-                        self.config, repository, "info", "No pending Supabase migrations.",
-                        batch_id=batch_id, event_type="migration_deployment_no_pending",
-                    )
-                else:
-                    record_migration_deployment_event(
-                        self.config, repository, "info", "Supabase migration deployment succeeded.",
-                        batch_id=batch_id, event_type="migration_deployment_succeeded",
-                    )
+                state = result["state"]
+                message = "No pending Supabase migrations." if state == "no_pending" else "Supabase migration deployment succeeded."
+                event_type = "migration_deployment_no_pending" if state == "no_pending" else "migration_deployment_succeeded"
+                record_migration_deployment_event(
+                    self.config, repository, "info", message,
+                    task_id=task_id, event_type=event_type,
+                )
                 return ""
-            failure_details = result["error"]
+            details = result["error"]
             if diagnostics:
-                failure_details += "\n\nDeployment diagnostics:\n" + json.dumps(diagnostics, indent=2)
+                details += "\n\nDeployment diagnostics:\n" + json.dumps(diagnostics, indent=2)
             record_migration_deployment_event(
-                self.config, repository, "error", "Supabase migration deployment blocked: " + failure_details,
-                batch_id=batch_id, event_type="migration_deployment_blocked",
+                self.config, repository, "error", "Supabase migration deployment blocked: " + details,
+                task_id=task_id, event_type="migration_deployment_blocked",
             )
-            return failure_details
+            return details
 
         failure = deploy()
-        if failure:
-            if not deployment_retryable:
-                return {
-                    "ok": False,
-                    "error": failure,
-                    "attempts": attempts,
-                    "worktree": worktree_path,
-                    "cancelled": False,
-                }
+        if failure and deployment_retryable:
             failure, attempts = self._run_resolver_loop(
-                batch, tasks, settings, worktree_path, failure, attempts,
+                task, settings, worktree_path, failure, attempts,
                 post_validation=deploy,
                 limit=deployment_settings["resolverAttemptLimit"],
             )
-            if failure:
-                return {
-                    "ok": False,
-                    "error": failure,
-                    "attempts": attempts,
-                    "worktree": worktree_path,
-                    "cancelled": False,
-                }
-
-        if batch_id in self.cancelled_batch_ids:
-            return {
-                "ok": False,
-                "error": CANCELLED_BY_USER,
-                "cancelled": True,
-                "attempts": attempts,
-                "worktree": worktree_path,
-            }
+        if failure:
+            return self._integration_failure(
+                task, failure, attempts, cancelled=self._integration_cancelled(task)
+            )
+        if self._integration_cancelled(task):
+            return self._integration_failure(task, CANCELLED_BY_USER, attempts, cancelled=True)
 
         primary = settings["primaryBranch"]
         if git_output(repository, ["status", "--porcelain"]):
-            return {"ok": False, "error": "Primary worktree became dirty before promotion.", "attempts": attempts, "worktree": worktree_path}
+            return self._integration_failure(task, "Primary worktree became dirty before promotion.", attempts)
         if git_output(repository, ["branch", "--show-current"]) != primary:
-            return {"ok": False, "error": f"Primary worktree is no longer on {primary}.", "attempts": attempts, "worktree": worktree_path}
-        if git_output(repository, ["rev-parse", primary]) != batch["base_commit"]:
-            return {"ok": False, "error": "Primary branch advanced outside the orchestrator.", "attempts": attempts, "worktree": worktree_path}
-        promotion = run_process(repository, ["git", "merge", "--ff-only", str(batch["integration_branch"])])
+            return self._integration_failure(task, f"Primary worktree is no longer on {primary}.", attempts)
+        if git_output(repository, ["rev-parse", primary]) != integration_base:
+            return self._integration_failure(task, "Primary branch advanced outside the integrator.", attempts)
+        promotion = run_process(repository, ["git", "merge", "--ff-only", branch_name])
         if promotion.returncode != 0:
-            return {"ok": False, "error": format_process_failure(promotion.args, promotion.stdout, promotion.stderr), "attempts": attempts, "worktree": worktree_path}
-        return {"ok": True, "attempts": attempts, "worktree": worktree_path}
+            return self._integration_failure(
+                task, format_process_failure(promotion.args, promotion.stdout, promotion.stderr), attempts
+            )
+        return {
+            "ok": True, "attempts": attempts, "expected_status": task["status"],
+            "worktree": worktree_path,
+        }
+
+    def _integration_failure(
+        self, task: dict, error: str, attempts: int, cancelled: bool = False,
+    ) -> dict:
+        return {
+            "ok": False, "error": error, "attempts": attempts,
+            "cancelled": cancelled, "expected_status": task["status"],
+            "worktree": str(task.get("worktree_path") or ""),
+        }
 
     def _run_resolver_loop(
         self,
-        batch: dict,
-        tasks: list[dict],
+        task: dict,
         settings: dict,
         worktree_path: str,
         failure: str,
@@ -997,35 +737,28 @@ class GitWorktreeOrchestrator:
     ) -> tuple[str, int]:
         limit = limit or settings["resolverAttemptLimit"]
         while failure and attempts < limit:
-            if str(batch["id"]) in self.cancelled_batch_ids:
+            if self._integration_cancelled(task):
                 return CANCELLED_BY_USER, attempts
             attempts += 1
-            batch["status"] = "resolving"
-            batch["resolver_attempts"] = attempts
-            batch["verification_output"] = failure
-            upsert_orchestration_batch(self.config, batch)
+            update_agent_task(self.config, str(task["id"]), str(task["status"]), {
+                "status": "resolving", "resolver_attempts": attempts, "error": failure,
+            })
+            task["status"] = "resolving"
             record_daemon_event(
-                self.config,
-                str(batch["repository"]),
-                "warning",
-                f"Resolver attempt {attempts}/{limit} for batch {batch['id']}.",
-                batch_id=str(batch["id"]),
+                self.config, str(task["repository"]), "warning",
+                f"Resolver attempt {attempts}/{limit} for task {task['id']}.",
+                task_id=str(task["id"]),
             )
             resolver_reply = self._run_resolver_agent(
-                worktree_path,
-                tasks,
-                settings,
-                build_resolver_prompt(batch, tasks, failure),
+                worktree_path, task, settings, build_resolver_prompt(task, failure)
             )
             if reply_indicates_failure(resolver_reply):
                 failure = resolver_reply
                 continue
-            if str(batch["id"]) in self.cancelled_batch_ids:
+            if self._integration_cancelled(task):
                 return CANCELLED_BY_USER, attempts
             try:
-                commit_worktree_changes(
-                    worktree_path, f"Daedalus resolver attempt {attempts}"
-                )
+                commit_worktree_changes(worktree_path, f"Daedalus resolver attempt {attempts}")
             except RuntimeError as error:
                 failure = f"Daemon could not commit resolver changes.\n\n{error}"
                 continue
@@ -1039,73 +772,54 @@ class GitWorktreeOrchestrator:
                 failure = post_validation()
         return failure, attempts
 
-    def _finish_batches(self, tasks: list[dict], batches: list[dict]) -> bool:
-        batches_by_id = {str(batch["id"]): batch for batch in batches}
-        finished_batch = False
-        for batch_id, future in list(self.batch_futures.items()):
+    def _finish_integrations(self, tasks: list[dict]) -> bool:
+        tasks_by_id = {str(task["id"]): task for task in tasks}
+        finished = False
+        for task_id, future in list(self.integration_futures.items()):
             if not future.done():
                 continue
-            finished_batch = True
-            del self.batch_futures[batch_id]
-            batch = batches_by_id.get(batch_id)
-            if batch is None:
-                self.cancelled_batch_ids.discard(batch_id)
-                continue
+            finished = True
+            del self.integration_futures[task_id]
+            task = tasks_by_id.get(task_id)
+            repository = next(
+                (name for name, active_task_id in self.integrating_repositories.items()
+                 if active_task_id == task_id),
+                str(task["repository"]) if task else "",
+            )
+            if repository:
+                self.integrating_repositories.pop(repository, None)
             try:
                 outcome = future.result()
             except Exception as error:
-                outcome = {"ok": False, "error": str(error), "attempts": batch["resolver_attempts"]}
-            task_ids = [str(task_id) for task_id in batch["task_ids"]]
-            if outcome.get("cancelled") or batch_id in self.cancelled_batch_ids:
-                self.cancelled_batch_ids.discard(batch_id)
-                if batch.get("status") not in {"blocked", "completed"}:
-                    batch.update({
-                        "status": "blocked",
-                        "resolver_attempts": outcome.get("attempts", 0),
-                        "verification_output": CANCELLED_BY_USER,
-                    })
-                    upsert_orchestration_batch(self.config, batch)
-                worktree = str(
-                    outcome.get("worktree")
-                    or batch.get("integration_worktree_path")
-                    or ""
-                )
-                if worktree:
-                    remove_worktree(str(batch["repository"]), worktree, force=True)
+                outcome = {"ok": False, "error": str(error), "attempts": 0, "expected_status": "integrating"}
+            if task is None:
+                self.cancelled_task_ids.discard(task_id)
                 continue
+            if outcome.get("cancelled") or task_id in self.cancelled_task_ids:
+                self.cancelled_task_ids.discard(task_id)
+                continue
+            expected = str(outcome.get("expected_status") or task["status"])
             if not outcome["ok"]:
-                batch.update({
-                    "status": "blocked",
-                    "resolver_attempts": outcome.get("attempts", 0),
-                    "verification_output": outcome["error"],
+                update_agent_task(self.config, task_id, expected, {
+                    "status": "blocked", "resolver_attempts": outcome.get("attempts", 0),
+                    "error": outcome["error"], "completed_at": utc_now(),
                 })
-                upsert_orchestration_batch(self.config, batch)
                 record_daemon_event(
-                    self.config, str(batch["repository"]), "error",
-                    f"Batch {batch_id} blocked: {outcome['error']}", batch_id=batch_id
+                    self.config, repository, "error",
+                    f"Task integration blocked: {outcome['error']}", task_id=task_id,
                 )
                 continue
-
-            batch.update({"status": "completed", "completed_at": utc_now()})
-            upsert_orchestration_batch(self.config, batch)
+            update_agent_task(self.config, task_id, expected, {
+                "status": "completed", "resolver_attempts": outcome.get("attempts", 0),
+                "error": "", "completed_at": utc_now(),
+            })
             record_daemon_event(
-                self.config,
-                str(batch["repository"]),
-                "info",
-                f"Batch {batch_id} integrated successfully into the repository.",
-                batch_id=batch_id,
-                event_type="batch_completed",
+                self.config, repository, "info",
+                "Task integrated successfully into the repository.", task_id=task_id,
+                event_type="task_integrated",
             )
-            for task in tasks:
-                if str(task["id"]) not in task_ids:
-                    continue
-                update_agent_task(self.config, str(task["id"]), "ready", {
-                    "status": "completed", "completed_at": utc_now()
-                })
-                remove_worktree(str(task["repository"]), str(task["worktree_path"]))
-            remove_worktree(str(batch["repository"]), outcome["worktree"])
-            delete_orchestration_batch(self.config, batch_id)
-        return finished_batch
+            remove_worktree(repository, str(task.get("worktree_path") or ""))
+        return finished
 
 
 def load_worktree_settings() -> dict:
@@ -1124,7 +838,6 @@ def load_worktree_settings() -> dict:
         raise RuntimeError("verification_commands must contain non-empty argument arrays.")
     return {
         "maxAgentsPerRepository": positive_int(values, "max_agents_per_repository"),
-        "cohortIdleWindowSeconds": positive_int(values, "cohort_idle_window_seconds"),
         "resolverAttemptLimit": positive_int(values, "resolver_attempt_limit"),
         "resolverProvider": str(values.get("resolver_provider", "auto")),
         "resolverModel": str(values.get("resolver_model", "gpt-5.6-terra")),
@@ -1208,18 +921,6 @@ def retained_task_worktree_valid(repository: str, worktree_path: str, branch_nam
         and git_output(worktree_path, ["branch", "--show-current"]) == branch_name
         and git_output(repository, ["show-ref", "--verify", f"refs/heads/{branch_name}"]) != ""
     )
-
-
-def retained_integration_worktree_valid(repository: str, worktree_path: str, branch_name: str) -> bool:
-    return retained_task_worktree_valid(repository, worktree_path, branch_name)
-
-
-def create_integration_worktree(repository: str, batch_id: str, base_commit: str, branch_name: str) -> str:
-    path = str(worktree_root(repository) / f"batch-{batch_id}")
-    process = run_process(repository, ["git", "worktree", "add", "-b", branch_name, path, base_commit])
-    if process.returncode != 0:
-        raise RuntimeError(format_process_failure(process.args, process.stdout, process.stderr))
-    return path
 
 
 def validate_primary_worktree(repository: str, primary_branch: str) -> None:
@@ -1401,16 +1102,15 @@ def build_task_repair_prompt(
     )
 
 
-def build_resolver_prompt(batch: dict, tasks: list[dict], failure: str) -> str:
-    goals = "\n".join(f"- {task['prompt']}" for task in tasks)
+def build_resolver_prompt(task: dict, failure: str) -> str:
     return (
         "TASK_MODE: integrating\n\n"
-        "Resolve the current integration failure while preserving every task's intent. "
+        "Resolve the current integration failure while preserving the task's intent. "
         "Inspect the existing worktree state, make the smallest compatible fix, run relevant checks, "
         "and commit the resolution. If your sandbox cannot commit, leave the completed resolution for Daedalus to commit. "
         "Do not switch branches or push. For Supabase deployment failures, modify only migrations confirmed unapplied "
         "or add a corrective migration; never edit an applied migration or invoke migration-history repair.\n\n"
-        f"Batch goals:\n{goals}\n\nFailure details:\n{failure}"
+        f"Task goal:\n{task['prompt']}\n\nFailure details:\n{failure}"
     )
 
 

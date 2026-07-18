@@ -1,7 +1,7 @@
 # Supabase Migration Deployment
 
 ## Summary
-The local daemon owns the final, serialized Supabase CLI deployment stage for verified Daedalus integration batches. Canonical migrations live in `supabase/migrations/`; `shared/database/schema.sql` remains the readable schema snapshot.
+The local daemon owns the final, serialized Supabase CLI deployment stage for verified Daedalus tasks during integration. Canonical migrations live in `supabase/migrations/`; `shared/database/schema.sql` remains the readable schema snapshot.
 
 ## Key Points
 - **Explicit enablement**: Deployment is disabled until an operator verifies the existing remote schema and migration history, records the accepted baseline, and configures the exact repository/project mapping.
@@ -11,7 +11,7 @@ The local daemon owns the final, serialized Supabase CLI deployment stage for ve
 
 ## Relevant Files
 - `local-daemon/src/daedalus_daemon/migration_deployment.py`: Validation, CLI execution, redaction, diagnostics, and project locking.
-- `local-daemon/src/daedalus_daemon/orchestrator.py`: Verified-batch deployment and resolver retry integration.
+- `local-daemon/src/daedalus_daemon/orchestrator.py`: Verified-task deployment and resolver retry integration.
 - `supabase/migrations/`: Canonical ordered Supabase migration history.
 - `supabase/config.toml`: Supabase CLI project structure; local link state is ignored.
 - `shared/database/README.md`: Bootstrap and operational migration procedure.
@@ -24,3 +24,5 @@ TESTING
 - 2026-07-17: Implemented allowlisted, per-project serialized CLI preflight/push behavior with redacted diagnostics and integration-resolver retries.
 - 2026-07-17: Added a forward-only daemon-event RPC allowlist repair and made migration telemetry non-blocking so it cannot prevent deployment of the repair.
 - 2026-07-17: Added an operator-confirmed baseline script for manually applied migrations 001–036 before pushing migration 037.
+- 2026-07-18: Moved deployment telemetry and retry ownership from integration batches to the task being integrated and diffed migrations from the latest primary commit.
+- 2026-07-18: Restored the legacy cohort timing setting temporarily during Stage 1 because the running batch daemon validates it on every cycle; migration deployment also requires the daemon process to be launched with its allowlisted project reference.

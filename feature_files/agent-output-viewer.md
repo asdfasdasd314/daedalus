@@ -4,14 +4,14 @@
 The Agent Output Viewer is the durable, authenticated history and live-status surface for standard, planning, and ask prompts. It composes transient direct-prompt queue state, authoritative durable-task lifecycle state, and the `agent_output_history` archive into one feature-centric workspace drawer without becoming a general daemon-log viewer.
 
 ## Key Points
-- **Separate Integration Lifecycle**: Blocked integration batches are rendered independently from completed task implementation output, so a merge failure never overwrites the task's verified outcome.
-- **In-Place Recovery**: Retried tasks and integrations retain their original worktree and durable record whenever that worktree remains available; a blocked batch reserves its member tasks so recovery never creates a competing integration batch or duplicate workspace.
+- **Task Integration Lifecycle**: Ready, integrating, resolving, and blocked states are rendered directly on each durable task.
+- **In-Place Recovery**: Retried implementation and integration work resumes from the task's retained worktree and durable record.
 - **Durable Projection**: One `agent_output_history` row is stored per user and prompt ID, preserving prompt metadata, raw output, terminal error, concise outcome, and lifecycle timestamps after transient task rows are cleared.
 - **Unified Read Model**: Active direct prompts and durable tasks supply current lifecycle state while history supplies archived content; records merge by prompt ID.
 - **Deterministic Request Generations**: Initial load, manual refresh, search, active snapshots, and selected-conversation detail each reject late generations; refresh keeps visible history and reports archive, live-state, and detail failures independently.
-- **Snapshot and Event Reconciliation**: User-triggered active task/batch hydration uses replacement semantics, while generation-scoped `batch_completed` daemon events remove successful integrations without allowing an old event to remove a retried batch.
+- **Snapshot and Event Reconciliation**: User-triggered active task hydration uses replacement semantics, while task-scoped integration events report successful promotion.
 - **Single Browser Review Owner**: The completion-scheduled client-review inbox is the only recurrent owner of terminal task and daemon-event rows; it applies transitions before conditionally acknowledging the exact `updated_at` generation.
-- **Terminal Invariant**: Completed, failed, blocked, and cancelled durable tasks receive `completed_at` and archive projection before transient cleanup, while blocked integration batches remain separate from implementation output.
+- **Terminal Invariant**: Completed, failed, blocked, and cancelled durable tasks receive `completed_at` and archive projection before transient cleanup.
 - **Feature Discovery**: A multi-feature prompt remains one database record and is presented beneath every repository-qualified targeted feature, with separate All activity and Unscoped groups.
 - **Planning Conversation**: A planning conversation ID links the initial request, every refinement, and the implementation task so the viewer presents one chronological transcript: initial prompt, planning questions and plan, then the implementation response or terminal error.
 - **Compact Plan Review**: Planning conversations initially limit their original prompt and agent plan to a small preview, with a per-card control to reveal the complete content before implementation.
@@ -80,3 +80,4 @@ TESTING
 - 2026-07-17: Implemented deterministic viewer request generations, snapshot/event reconciliation, single-owner terminal review consumption, durable batch-completion tombstones, terminal timestamp repair, and focused regression coverage.
 - 2026-07-17: Made blocked-batch deletion notifications independent of deleted batch rows and stopped retrying deterministic Supabase conflicts, preventing misleading three-attempt 409 reports after successful cleanup.
 - 2026-07-17: Preserved manual integration retries on their existing batch worktree, rejected missing retained worktrees instead of creating replacements, and reset the new retry's three-attempt resolver budget.
+- 2026-07-18: Removed batch cards, hydration, tombstones, and recovery controls so integration progress and recovery are owned by each durable task.

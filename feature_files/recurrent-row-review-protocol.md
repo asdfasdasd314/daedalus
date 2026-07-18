@@ -8,7 +8,7 @@ The recurrent row review protocol prevents the client, daemon, and manager from 
 - **Bounded Column Selection**: Never use `select=*` in a recurrent read. Select only required columns, apply a bounded limit, and transfer large payload fields only from rows explicitly marked for recipient review.
 - **One-Time Payload Delivery**: Daemon payloads are marked `client_review` on write and become `client_complete` only after the browser consumes the payload.
 - **Communications Content**: `communications.message` is protocol state; nullable `content` carries agent prompts, parameter edits, and git-sync requests. Feature and parameter load requests need no content.
-- **Durable Work**: Active orchestrator tasks and batches remain `daemon_review` until terminal work is ready for the client or fully complete.
+- **Durable Work**: Active orchestrator tasks remain `daemon_review` until terminal work is ready for the client or fully complete.
 - **Safe Acknowledgements**: After consuming a review row, acknowledge it conditionally using both the expected review state and the row generation (`updated_at` or an equivalent monotonic version); a stale response must not complete newer work.
 - **No Recurrent Archives**: Historical task, feature-run, and agent-output data loads only during hydration or explicit user requests; idle polling is recipient-filtered and bounded.
 - **Selected Archive Detail**: Archive lists and searches remain summary-only, while selecting an agent-output conversation makes one bounded, on-demand request for its full prompt, output, and error bodies.
@@ -16,8 +16,8 @@ The recurrent row review protocol prevents the client, daemon, and manager from 
 - **Schema and Test Gate**: New recurrent reads require migration and schema-snapshot updates plus lifecycle, idle-transfer, and stale-acknowledgement tests.
 - **Measured Budget**: The pre-remediation baseline was approximately 4,320 browser, 5,040 daemon, and 3,600 manager recurrent requests per hour; acceptance is at most 720 per component and 2,160 combined for one visible idle browser, daemon, and manager.
 - **Consolidated Browser Inbox**: `get_client_review_inbox()` returns explicitly projected, deterministically ordered, fixed-bound client-review collections, and `acknowledge_client_reviews()` guards every mutable receipt by review state and `updated_at` (plus monotonic generation where applicable).
-- **Durable Batch Tombstones**: Successful integration events retain `batch_id`, retry generation, and their own review timestamp after the transient batch row is deleted, allowing the browser to remove only the completed generation.
-- **Consolidated Daemon Snapshot**: `daemon_poll_work()` returns communications, scheduling-only task and batch records, bounded Architecture View requests, active run controls, and one atomic feature-run claim without unreviewed large result fields.
+- **Task Integration Events**: Successful integration events carry task identity and their own review timestamp without transient batch tombstones.
+- **Consolidated Daemon Snapshot**: `daemon_poll_task_work()` returns communications, task records, bounded Architecture View requests, active run controls, and one atomic feature-run claim without unreviewed large result fields.
 - **Architecture Document Delivery**: Architecture generation metadata enters the daemon snapshot without document bodies; validated `architecture_document` JSON transfers only from an explicit bounded `client_review` row and acknowledgements match both `updated_at` and the monotonic generation.
 - **Empty-Poll Contract**: Empty inboxes return arrays or `null`, produce no acknowledgement request, and are measured with aggregate request-count and response-byte logging rather than per-poll messages.
 - **Visibility and Cadence**: Visible browser polling is completion-scheduled every five seconds, hidden-page polling backs off to at least thirty seconds, visibility restoration refreshes immediately, and manager database cadence matches its five-second heartbeat.
@@ -64,3 +64,4 @@ TESTING
 - 2026-07-17: Consolidated terminal task and daemon-event delivery under the single browser inbox and added durable, generation-scoped batch completion acknowledgements.
 - 2026-07-17: Projected batch retry generations through the bounded daemon snapshot so retained manual retries are distinguishable from new integrations without adding a recurrent transport.
 - 2026-07-17: Folded project-wide recurrent Supabase read requirements from `AGENTS.md` into this feature's Summary and Key Points.
+- 2026-07-18: Added task-only daemon polling and event contracts as an additive compatibility cutover away from orchestration batches.

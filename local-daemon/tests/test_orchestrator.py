@@ -37,7 +37,7 @@ class MigrationDeploymentEventTests(unittest.TestCase):
         ) as record_event:
             record_migration_deployment_event(
                 {"daemonUserId": "user-1"}, "/repo", "info", "Starting.",
-                "batch-1", "migration_deployment_started",
+                "task-1", "migration_deployment_started",
             )
         record_event.assert_called_once()
 
@@ -49,7 +49,6 @@ class WorktreeSettingsTests(unittest.TestCase):
             parameter_directory.mkdir()
             (parameter_directory / "daedalus-git-worktrees.toml").write_text(
                 'max_agents_per_repository = 4\n'
-                'cohort_idle_window_seconds = 30\n'
                 'resolver_attempt_limit = 3\n'
                 'task_verification_attempt_limit = 3\n'
                 'cancel_kill_grace_seconds = 2\n'
@@ -125,28 +124,6 @@ class WorktreeTests(unittest.TestCase):
             self.assertFalse(root.parent.exists())
 
 
-class BatchDeletionTests(unittest.TestCase):
-    def test_deletion_event_does_not_reference_the_deleted_batch(self):
-        orchestrator = GitWorktreeOrchestrator({}, lambda *_args: {}, lambda *_args: {})
-        request = {
-            "id": "request-1",
-            "batch": {"id": "batch-1", "repository": "/repo", "integration_worktree_path": ""},
-            "tasks": [],
-        }
-
-        with (
-            patch("daedalus_daemon.orchestrator.list_batch_deletion_requests", return_value=[request]),
-            patch("daedalus_daemon.orchestrator.complete_batch_deletion", return_value=True),
-            patch("daedalus_daemon.orchestrator.record_daemon_event") as record_event,
-        ):
-            orchestrator._handle_batch_deletion_requests()
-
-        self.assertEqual(record_event.call_args.args, (
-            {}, "/repo", "warning", "Blocked integration batch batch-1 deleted by user.",
-        ))
-        self.assertEqual(record_event.call_args.kwargs, {})
-
-
 class VerificationTests(unittest.TestCase):
     def test_discovers_root_pytest_suite_when_no_commands_are_configured(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -200,71 +177,74 @@ class VerificationTests(unittest.TestCase):
         self.assertEqual(outcome["completed_commit"], "final789")
 
 
-class BatchCompletionDeliveryTests(unittest.TestCase):
-    def test_manual_batch_retry_preserves_its_existing_worktree(self):
-        orchestrator = GitWorktreeOrchestrator({}, lambda *a: "ok", lambda *a: "ok")
-        batch = {
-            "id": "batch-1", "repository": "/repo", "base_commit": "base", "task_ids": [],
-            "integration_branch": "integration/batch-1", "integration_worktree_path": "/tmp/integration",
-            "retry_generation": 1,
-        }
-        settings = {"verificationCommands": [], "resolverAttemptLimit": 0, "primaryBranch": "main"}
-
-        with (
-            patch("daedalus_daemon.orchestrator.retained_integration_worktree_valid", return_value=True),
-            patch("daedalus_daemon.orchestrator.run_process") as run_process,
-            patch("daedalus_daemon.orchestrator.upsert_orchestration_batch"),
-            patch("daedalus_daemon.orchestrator.reconcile_migration_numbers"),
-            patch("daedalus_daemon.orchestrator.verification_commands_for_worktree", return_value=[]),
-            patch("daedalus_daemon.orchestrator.run_verification", return_value={"ok": False, "output": "failed"}),
-        ):
-            outcome = orchestrator._integrate_batch(batch, [], settings)
-
-        self.assertFalse(outcome["ok"])
-        self.assertEqual(outcome["worktree"], "/tmp/integration")
-        run_process.assert_not_called()
-
-    def test_manual_batch_retry_never_creates_a_replacement_worktree(self):
-        orchestrator = GitWorktreeOrchestrator({}, lambda *a: "ok", lambda *a: "ok")
-        batch = {
-            "id": "batch-1", "repository": "/repo", "base_commit": "base", "task_ids": [],
-            "integration_branch": "integration/batch-1", "integration_worktree_path": "/missing/integration",
-            "retry_generation": 1,
-        }
-
-        with (
-            patch("daedalus_daemon.orchestrator.retained_integration_worktree_valid", return_value=False),
-            patch("daedalus_daemon.orchestrator.create_integration_worktree") as create_worktree,
-        ):
-            outcome = orchestrator._integrate_batch(batch, [], {})
-
-        self.assertFalse(outcome["ok"])
-        self.assertIn("retained integration worktree is unavailable", outcome["error"])
-        create_worktree.assert_not_called()
-
-    def test_success_event_is_published_before_batch_cleanup(self):
+class PerTaskIntegrationTests(unittest.TestCase):
+    @patch("daedalus_daemon.orchestrator.load_worktree_settings", return_value={})
+    @patch("daedalus_daemon.orchestrator.update_agent_task", return_value=True)
+    def test_ready_task_starts_without_waiting_for_a_cohort(self, _update, _settings):
         orchestrator = GitWorktreeOrchestrator({}, lambda *a: "ok", lambda *a: "ok")
         future = Future()
-        future.set_result({"ok": True, "worktree": "/tmp/integration", "attempts": 0})
-        orchestrator.batch_futures["batch-1"] = future
-        batch = {
-            "id": "batch-1", "repository": "/repo", "status": "integrating",
-            "task_ids": ["task-1"], "resolver_attempts": 0, "retry_generation": 2,
+        with patch.object(orchestrator.executor, "submit", return_value=future) as submit:
+            orchestrator._start_next_integration("/repo", [{
+                "id": "task-1", "repository": "/repo", "status": "ready",
+                "queue_sequence": 1, "cancel_requested": False,
+            }])
+        self.assertEqual(orchestrator.integrating_repositories["/repo"], "task-1")
+        submit.assert_called_once()
+
+    def test_integrates_in_the_task_worktree_and_fast_forwards_primary(self):
+        orchestrator = GitWorktreeOrchestrator({}, lambda *a: "ok", lambda *a: "ok")
+        task = {
+            "id": "task-1", "repository": "/repo", "status": "integrating",
+            "queue_sequence": 1, "worktree_path": "/tmp/task",
+            "branch_name": "agent/task-1", "resolver_attempts": 0,
         }
-        task = {"id": "task-1", "repository": "/repo", "worktree_path": "/tmp/task"}
+        success = unittest.mock.Mock(returncode=0, stdout="", stderr="")
+        settings = {
+            "primaryBranch": "main", "verificationCommands": [],
+            "resolverAttemptLimit": 3,
+        }
+        with (
+            patch("daedalus_daemon.orchestrator.retained_task_worktree_valid", return_value=True),
+            patch("daedalus_daemon.orchestrator.validate_primary_worktree"),
+            patch.object(orchestrator, "_integration_cancelled", return_value=False),
+            patch("daedalus_daemon.orchestrator.git_output", side_effect=["main123", "", "", "main", "main123"]),
+            patch("daedalus_daemon.orchestrator.run_process", return_value=success) as run_process,
+            patch("daedalus_daemon.orchestrator.reconcile_migration_numbers"),
+            patch("daedalus_daemon.orchestrator.verification_commands_for_worktree", return_value=[]),
+            patch("daedalus_daemon.orchestrator.run_verification", return_value={"ok": True, "output": ""}),
+            patch("daedalus_daemon.orchestrator.load_deployment_settings", return_value={}),
+            patch("daedalus_daemon.orchestrator.deploy_pending_migrations", return_value={"ok": True, "state": "no_pending", "diagnostics": []}) as deploy,
+            patch("daedalus_daemon.orchestrator.record_migration_deployment_event"),
+        ):
+            outcome = orchestrator._integrate_task(task, settings)
+
+        self.assertTrue(outcome["ok"])
+        self.assertEqual(run_process.call_args_list[0].args, (
+            "/tmp/task", ["git", "merge", "--no-ff", "--no-edit", "main"],
+        ))
+        self.assertEqual(run_process.call_args_list[-1].args, (
+            "/repo", ["git", "merge", "--ff-only", "agent/task-1"],
+        ))
+        self.assertEqual(deploy.call_args.args[2], "main123")
+
+    def test_success_event_is_published_before_worktree_cleanup(self):
+        orchestrator = GitWorktreeOrchestrator({}, lambda *a: "ok", lambda *a: "ok")
+        future = Future()
+        future.set_result({"ok": True, "worktree": "/tmp/task", "attempts": 0, "expected_status": "integrating"})
+        orchestrator.integration_futures["task-1"] = future
+        orchestrator.integrating_repositories["/repo"] = "task-1"
+        task = {"id": "task-1", "repository": "/repo", "status": "integrating", "worktree_path": "/tmp/task"}
         calls = []
         with (
-            patch("daedalus_daemon.orchestrator.upsert_orchestration_batch", side_effect=lambda *args: calls.append("upsert")),
             patch("daedalus_daemon.orchestrator.record_daemon_event", side_effect=lambda *args, **kwargs: calls.append(("event", kwargs))),
             patch("daedalus_daemon.orchestrator.update_agent_task", side_effect=lambda *args: calls.append("task")),
             patch("daedalus_daemon.orchestrator.remove_worktree", side_effect=lambda *args, **kwargs: calls.append("worktree")),
-            patch("daedalus_daemon.orchestrator.delete_orchestration_batch", side_effect=lambda *args: calls.append("delete")),
         ):
-            orchestrator._finish_batches([task], [batch])
+            orchestrator._finish_integrations([task])
 
         event_index = next(index for index, call in enumerate(calls) if isinstance(call, tuple))
-        self.assertLess(event_index, calls.index("delete"))
-        self.assertEqual(calls[event_index][1]["event_type"], "batch_completed")
+        self.assertLess(event_index, calls.index("worktree"))
+        self.assertEqual(calls[event_index][1]["event_type"], "task_integrated")
 
 
 class PromptTests(unittest.TestCase):
@@ -287,15 +267,13 @@ class PromptTests(unittest.TestCase):
         self.assertIn("COMMAND: pytest", prompt)
         self.assertIn("2/3", prompt)
 
-    def test_resolver_prompt_contains_all_goals_and_failure(self):
+    def test_resolver_prompt_contains_task_goal_and_failure(self):
         prompt = build_resolver_prompt(
-            {"id": "batch"},
-            [{"prompt": "First goal"}, {"prompt": "Second goal"}],
+            {"id": "task", "prompt": "First goal"},
             "merge conflict",
         )
         self.assertTrue(prompt.startswith("TASK_MODE: integrating"))
         self.assertIn("First goal", prompt)
-        self.assertIn("Second goal", prompt)
         self.assertIn("merge conflict", prompt)
 
 
@@ -322,7 +300,7 @@ class CancelOrchestratorTests(unittest.TestCase):
             "worktree_path": "",
         }
 
-        orchestrator._handle_cancel_requests([task], [])
+        orchestrator._handle_cancel_requests([task])
 
         self.assertEqual(mock_update.call_args[0][1], "task-1")
         self.assertEqual(mock_update.call_args[0][2], "queued")
@@ -356,7 +334,7 @@ class CancelOrchestratorTests(unittest.TestCase):
             "worktree_path": "/tmp/worktree",
         }
 
-        orchestrator._handle_cancel_requests([task], [])
+        orchestrator._handle_cancel_requests([task])
 
         self.assertEqual(killed, [("task-2", 1.5)])
         mock_update.assert_called_once()
@@ -405,13 +383,12 @@ class CancelOrchestratorTests(unittest.TestCase):
         self.assertTrue(outcome["cancelled"])
         self.assertEqual(outcome["error"], CANCELLED_BY_USER)
 
-    @patch("daedalus_daemon.orchestrator.upsert_orchestration_batch")
     @patch("daedalus_daemon.orchestrator.remove_worktree")
     @patch("daedalus_daemon.orchestrator.record_daemon_event")
     @patch("daedalus_daemon.orchestrator.update_agent_task", return_value=True)
     @patch("daedalus_daemon.orchestrator.load_worktree_settings")
-    def test_ready_cancel_excludes_task_from_collecting_batch(
-        self, mock_settings, mock_update, mock_event, mock_remove, mock_upsert
+    def test_ready_cancel_removes_only_the_task_worktree(
+        self, mock_settings, mock_update, mock_event, mock_remove
     ):
         mock_settings.return_value = {"cancelKillGraceSeconds": 2}
         orchestrator = GitWorktreeOrchestrator({}, lambda *a: "", lambda *a: "")
@@ -421,19 +398,10 @@ class CancelOrchestratorTests(unittest.TestCase):
             "status": "ready",
             "cancel_requested": True,
             "worktree_path": "/tmp/worktree",
-            "batch_id": "batch-1",
-        }
-        batch = {
-            "id": "batch-1",
-            "repository": "/repo",
-            "status": "collecting",
-            "task_ids": ["task-4", "task-5"],
         }
 
-        orchestrator._handle_cancel_requests([task], [batch])
+        orchestrator._handle_cancel_requests([task])
 
-        self.assertEqual(batch["task_ids"], ["task-5"])
-        mock_upsert.assert_called_once()
         self.assertEqual(mock_update.call_args[0][3]["status"], "cancelled")
         mock_remove.assert_called_once_with("/repo", "/tmp/worktree", force=True)
         mock_event.assert_called_once()
@@ -453,7 +421,7 @@ class CancelOrchestratorTests(unittest.TestCase):
             "worktree_path": "/tmp/worktree",
         }
 
-        orchestrator._recover_interrupted_work([task], [])
+        orchestrator._recover_interrupted_work([task])
 
         self.assertEqual(mock_update.call_args[0][3]["status"], "cancelled")
         mock_remove.assert_called_once_with("/repo", "/tmp/worktree", force=True)

@@ -8,7 +8,6 @@ export type DaemonManagerRequest = {
   blockers: {
     total?: number;
     agentTasks?: number;
-    orchestrationBatches?: number;
     featureExecutions?: number;
     architectureViews?: number;
     communications?: Record<string, number>;
@@ -95,7 +94,6 @@ export default function DaemonManagerPanel({
   const canCancel = request?.status === "requested" || request?.status === "draining";
   const blockerRows = blockers ? [
     ["Agent tasks", blockers.agentTasks ?? 0],
-    ["Orchestration batches", blockers.orchestrationBatches ?? 0],
     ["Feature executions", blockers.featureExecutions ?? 0],
     ["Architecture views", blockers.architectureViews ?? 0],
     ...Object.entries(blockers.communications ?? {}).map(([purpose, count]) => [purpose, count] as [string, number]),

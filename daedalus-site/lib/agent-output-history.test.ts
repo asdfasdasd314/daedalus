@@ -7,7 +7,6 @@ import {
   groupAgentOutputsByFeature,
   mergeAgentOutputRecords,
   reconcileRecentAgentOutputHistory,
-  removeCompletedOrchestrationBatches,
   rerankAgentOutputSearch,
   type AgentOutputExchange,
 } from "./agent-output-history";
@@ -217,20 +216,4 @@ test("recent archive refresh retains hydrated older history and replaces matchin
   assert.equal(result.find((item) => item.promptId === "older")?.output, "Full older output");
   assert.equal(result.find((item) => item.promptId === "prompt-1")?.status, "failed");
   assert.equal(result.find((item) => item.promptId === "prompt-1")?.output, "Done");
-});
-
-test("successful batch events remove only the completed retry generation", () => {
-  const batch = {
-    id: "batch-1", repository: "/projects/one", base_commit: "abc", task_ids: ["task-1"],
-    integration_branch: "integration", integration_worktree_path: "/tmp/integration",
-    status: "integrating" as const, resolver_attempts: 0, verification_output: "",
-    retry_generation: 2, created_at: "2026-01-01T00:00:00Z", completed_at: null,
-    updated_at: "2026-01-01T00:02:00Z",
-  };
-  assert.equal(removeCompletedOrchestrationBatches(
-    [batch], [{ batch_id: batch.id, batch_generation: 1 }],
-  ).length, 1);
-  assert.equal(removeCompletedOrchestrationBatches(
-    [batch], [{ batch_id: batch.id, batch_generation: 2 }],
-  ).length, 0);
 });

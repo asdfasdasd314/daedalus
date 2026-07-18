@@ -151,7 +151,7 @@ def process_requested_restart(
             break
 
         blockers = current_tick.get("drainSummary") or {
-            "total": 0, "agentTasks": 0, "orchestrationBatches": 0,
+            "total": 0, "agentTasks": 0,
             "featureExecutions": 0, "architectureViews": 0,
             "communications": {},
         }

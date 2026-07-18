@@ -60,27 +60,6 @@ export type AgentOutputExchange = {
   localOnly?: boolean;
 };
 
-export type OrchestrationBatchSummary = {
-  id: string;
-  repository: string;
-  base_commit: string;
-  task_ids: string[];
-  integration_branch: string;
-  integration_worktree_path: string;
-  status: "collecting" | "integrating" | "resolving" | "blocked";
-  resolver_attempts: number;
-  verification_output: string;
-  retry_generation: number;
-  created_at: string;
-  completed_at: string | null;
-  updated_at: string;
-};
-
-export type OrchestrationBatchCompletionEvent = {
-  batch_id: string | null;
-  batch_generation: number | null;
-};
-
 export type AgentOutputCursor = { completedAt: string; id: string };
 export type AgentOutputPage = {
   exchanges: AgentOutputExchange[];
@@ -271,24 +250,6 @@ export function reconcileRecentAgentOutputHistory(
     (exchange) => exchange.completedAt && !recentPromptIds.has(exchange.promptId),
   );
   return dedupeAgentOutputs([...recent, ...durableOlderArchive]);
-}
-
-export function removeCompletedOrchestrationBatches(
-  batches: OrchestrationBatchSummary[],
-  events: OrchestrationBatchCompletionEvent[],
-) {
-  const completedGenerations = new Map<string, number>();
-  for (const event of events) {
-    if (!event.batch_id || event.batch_generation === null) continue;
-    completedGenerations.set(
-      event.batch_id,
-      Math.max(completedGenerations.get(event.batch_id) ?? -1, event.batch_generation),
-    );
-  }
-  return batches.filter((batch) => {
-    const completedGeneration = completedGenerations.get(batch.id);
-    return completedGeneration === undefined || batch.retry_generation > completedGeneration;
-  });
 }
 
 function featureLookup(projects: FeatureFileProjects) {

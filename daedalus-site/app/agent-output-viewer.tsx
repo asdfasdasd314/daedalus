@@ -30,7 +30,6 @@ import {
   searchAgentOutputArchive,
   type AgentOutputCursor,
   type AgentOutputExchange,
-  type OrchestrationBatchSummary,
 } from "@/lib/agent-output-history";
 import AgentOutputDetail from "./agent-output-detail";
 import { getProjectLabel } from "./feature-workspace-utils";
@@ -39,7 +38,6 @@ type AgentOutputViewerProps = {
   accessToken: string;
   activitySummary: string;
   architectureViews: Record<string, ArchitectureView>;
-  batches: OrchestrationBatchSummary[];
   deletedPromptIds?: string[];
   isOpen: boolean;
   liveExchanges: AgentOutputExchange[];
@@ -55,9 +53,7 @@ type AgentOutputViewerProps = {
   onImplementPlan: () => void;
   onPlanningReply: (exchange: AgentOutputExchange) => void;
   onRefreshLiveTasks?: () => Promise<void>;
-  onDeleteBatch: (batch: OrchestrationBatchSummary) => Promise<void>;
   onRetryDirectPrompt: (exchange: AgentOutputExchange) => void;
-  onRetryBatch: (batch: OrchestrationBatchSummary) => Promise<void>;
   onRetryDurableTask: (exchange: AgentOutputExchange) => Promise<void>;
   onSelectedPromptIdChange: (promptId: string) => void;
   planningSession: PlanningSession | null;
@@ -72,10 +68,10 @@ type AgentOutputViewerProps = {
 export type AgentOutputViewerPresentation = "drawer" | "architecture-rail";
 
 export default function AgentOutputViewer({
-  accessToken, activitySummary, architectureViews, batches, deletedPromptIds: synchronizedDeletedPromptIds = [], isOpen, liveExchanges, onAbandonDirectPrompt,
+  accessToken, activitySummary, architectureViews, deletedPromptIds: synchronizedDeletedPromptIds = [], isOpen, liveExchanges, onAbandonDirectPrompt,
   onAnswerPlanningQuestion, onArchitectureCanvasPromptChange, onArchitectureViewChange, onCancelDurableTask, onClearFinalizedTasks,
-  onClose, onDeletedExchange, onDeleteDurableTask, onDeleteBatch, onImplementPlan, onPlanningReply, onRefreshLiveTasks,
-  onRetryBatch, onRetryDirectPrompt, onRetryDurableTask, onSelectedPromptIdChange, planningSession, presentation, projects,
+  onClose, onDeletedExchange, onDeleteDurableTask, onImplementPlan, onPlanningReply, onRefreshLiveTasks,
+  onRetryDirectPrompt, onRetryDurableTask, onSelectedPromptIdChange, planningSession, presentation, projects,
   selectedPromptId, supabasePublishableKey, supabaseUrl,
 }: AgentOutputViewerProps) {
   const [archive, setArchive] = useState<AgentOutputExchange[]>([]);
@@ -104,7 +100,6 @@ export default function AgentOutputViewer({
   const [architectureLoadingPromptId, setArchitectureLoadingPromptId] = useState("");
   const [architectureError, setArchitectureError] = useState("");
   const [retryingPromptId, setRetryingPromptId] = useState("");
-  const [deletingBatchId, setDeletingBatchId] = useState("");
   const [checkedArchitecturePromptIds, setCheckedArchitecturePromptIds] = useState<string[]>([]);
   const publishedPlanningPromptRef = useRef("");
   const historyOpenLoadKeyRef = useRef("");
@@ -167,7 +162,7 @@ export default function AgentOutputViewer({
       if (liveResult.status === "fulfilled") {
         setLiveStateSynchronizedAt(synchronizedAt);
       } else {
-        setLiveStateError(liveResult.reason instanceof Error ? liveResult.reason.message : "Unable to refresh active tasks and batches.");
+        setLiveStateError(liveResult.reason instanceof Error ? liveResult.reason.message : "Unable to refresh active tasks.");
       }
       if (summaryResult.status === "fulfilled") {
         setFeatureSummaryCounts(Object.fromEntries(
@@ -406,7 +401,7 @@ export default function AgentOutputViewer({
       if (liveResult.status === "fulfilled") {
         setLiveStateSynchronizedAt(synchronizedAt);
       } else {
-        setLiveStateError(liveResult.reason instanceof Error ? liveResult.reason.message : "Unable to refresh active tasks and batches.");
+        setLiveStateError(liveResult.reason instanceof Error ? liveResult.reason.message : "Unable to refresh active tasks.");
       }
       if (summaryResult.status === "fulfilled") {
         setFeatureSummaryCounts(Object.fromEntries(
@@ -515,15 +510,6 @@ export default function AgentOutputViewer({
               <GroupButton key={group.key} label={group.featureName} detail={`${getProjectLabel(group.repository, projectDirectories)}${group.unavailable ? " · Unavailable" : ""}`} count={activeSearchResults ? group.exchanges.length : featureSummaryCounts[group.key] ?? group.exchanges.length} active={selectedGroupKey === group.key} onClick={() => setSelectedGroupKey(group.key)} />
             ))}
           </div>
-          {batches.length ? <section className="mb-3 grid gap-2 border-t border-white/10 pt-3" aria-label="Integration batches">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-violet-200">Integration batches</p>
-            {batches.map((batch) => <article key={batch.id} className={`rounded-xl border p-3 text-xs ${batch.status === "blocked" ? "border-amber-300/35 bg-amber-300/[0.08]" : "border-violet-300/20 bg-violet-300/[0.05]"}`}>
-              <p className="font-semibold text-slate-100">{integrationBatchStatusLabel(batch)}</p>
-              <p className="mt-1 break-all text-slate-400">{batch.task_ids.length} task branch{batch.task_ids.length === 1 ? "" : "es"} · {batch.integration_branch}</p>
-              {batch.verification_output ? <p className="mt-2 line-clamp-3 whitespace-pre-wrap text-amber-100">{batch.verification_output}</p> : null}
-              {batch.status === "blocked" ? <div className="mt-2 flex flex-wrap gap-2"><button type="button" onClick={() => void onRetryBatch(batch)} className="rounded-full border border-amber-300/30 px-3 py-1.5 font-semibold text-amber-100">Retry this integration</button><button type="button" disabled={deletingBatchId === batch.id} onClick={() => void (async () => { setDeletingBatchId(batch.id); try { await onDeleteBatch(batch); } catch (error) { setFetchError(error instanceof Error ? error.message : "Unable to delete integration batch."); } finally { setDeletingBatchId(""); } })()} className="rounded-full border border-rose-400/30 px-3 py-1.5 font-semibold text-rose-100 disabled:cursor-wait disabled:opacity-50">{deletingBatchId === batch.id ? "Deleting…" : "Delete integration"}</button></div> : null}
-            </article>)}
-          </section> : null}
           <div className="grid gap-2 border-t border-white/10 pt-3">
             {loading && archive.length === 0 ? <p className="p-3 text-sm text-slate-400">Loading history...</p> : null}
             {!loading && visibleExchanges.length === 0 ? <p className="p-3 text-sm text-slate-400">{search.trim() ? "No archived prompts match this search." : "No agent output has been archived yet."}</p> : null}
@@ -663,12 +649,6 @@ function architectureActionLabel(view: ArchitectureView | null, checked: boolean
   return "View Architecture";
 }
 
-function integrationBatchStatusLabel(batch: OrchestrationBatchSummary) {
-  if (batch.status === "collecting") return "Collecting task branches";
-  if (batch.status === "integrating") return "Integrating";
-  if (batch.status === "resolving") return "Resolving integration";
-  return "Integration blocked — task implementation remains complete";
-}
 
 function architectureProgressLabel(view: ArchitectureView) {
   const progress = view.progress_events?.at(-1);
