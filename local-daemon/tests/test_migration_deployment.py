@@ -60,7 +60,7 @@ class MigrationDeploymentTests(unittest.TestCase):
         self.assertIs(project_lock("project-a"), project_lock("project-a"))
         self.assertIsNot(project_lock("project-a"), project_lock("project-b"))
 
-    def test_task_worktree_reaches_preflight_from_primary_repository_mapping_without_project_ref_environment(self):
+    def test_task_worktree_uses_cli_session_without_daemon_credential_environment(self):
         commands = []
 
         def runner(_directory, command, _timeout):
@@ -71,10 +71,7 @@ class MigrationDeploymentTests(unittest.TestCase):
                 return {"command": command, "returncode": 0, "stdout": "Would apply migration 037_new.sql", "stderr": ""}
             return {"command": command, "returncode": 0, "stdout": "", "stderr": ""}
 
-        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {
-            "SUPABASE_ACCESS_TOKEN": "token",
-            "SUPABASE_DB_PASSWORD": "password",
-        }, clear=True):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {}, clear=True):
             primary_repository = Path(directory) / "primary"
             worktree = Path(directory) / "task-worktree"
             (worktree / "supabase/migrations").mkdir(parents=True)
@@ -145,20 +142,6 @@ class MigrationDeploymentTests(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertIn("Ambiguous", result["error"])
         self.assertEqual(commands, [["git", "diff", "--name-only", "base..HEAD"]])
-
-    def test_missing_daemon_local_credentials_is_blocked_after_mapping_selection(self):
-        def runner(_directory, command, _timeout):
-            return {"command": command, "returncode": 0, "stdout": "supabase/migrations/037_new.sql\n", "stderr": ""}
-
-        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {}, clear=True):
-            Path(directory, "supabase/migrations").mkdir(parents=True)
-            Path(directory, "supabase/migrations/037_new.sql").write_text("-- new", encoding="utf-8")
-            repository = str(Path(directory).resolve())
-            settings = {"enabled": True, "allowedMappings": [repository + "::project-a"], "commandTimeoutSeconds": 1, "requireDryRun": True, "resolverAttemptLimit": 3}
-            result = deploy_pending_migrations(directory, directory, "base", settings, runner)
-
-        self.assertFalse(result["ok"])
-        self.assertEqual(result["error"], "Missing daemon-local Supabase credentials: SUPABASE_ACCESS_TOKEN, SUPABASE_DB_PASSWORD.")
 
     def test_cancellation_before_deployment_never_runs_cli(self):
         commands = []

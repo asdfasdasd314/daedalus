@@ -27,3 +27,4 @@ TESTING
 - 2026-07-18: Moved deployment telemetry and retry ownership from integration batches to the task being integrated and diffed migrations from the latest primary commit.
 - 2026-07-18: Restored the legacy cohort timing setting temporarily during Stage 1 because the running batch daemon validates it on every cycle; migration deployment also requires the daemon process to be launched with its allowlisted project reference.
 - 2026-07-18: Made the exact repository-to-project parameter mapping the deployment source of truth, with separate unlisted, ambiguous, and missing-credential blocked states.
+- 2026-07-18: Removed the daemon-only credential precheck so migration deployment uses the operator's existing local Supabase CLI session while retaining the exact repository-to-project guard.
