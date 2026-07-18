@@ -36,7 +36,7 @@ export function placeSystems(document: SoftwareArchitecture): SystemPlacement[] 
 
 export function canvasBounds(placements: SystemPlacement[], channels: ChannelLayout[] = []) {
   if (placements.length === 0) {
-    return { width: CANVAS_PADDING * 2, height: CANVAS_PADDING * 2, viewBox: `0 0 ${CANVAS_PADDING * 2} ${CANVAS_PADDING * 2}` };
+    return { x: 0, y: 0, width: CANVAS_PADDING * 2, height: CANVAS_PADDING * 2, viewBox: `0 0 ${CANVAS_PADDING * 2} ${CANVAS_PADDING * 2}` };
   }
   const labelPoints = channels.filter((channel) => !channel.unknownEndpoint).map((channel) => channel.label);
   const minX = Math.min(0, ...labelPoints.map((point) => point.x - 120));
@@ -45,7 +45,7 @@ export function canvasBounds(placements: SystemPlacement[], channels: ChannelLay
   const maxY = Math.max(...placements.map((item) => item.y + item.height), ...labelPoints.map((point) => point.y + 48)) + CANVAS_PADDING;
   const width = maxX - minX;
   const height = maxY - minY;
-  return { width, height, viewBox: `${minX} ${minY} ${width} ${height}` };
+  return { x: minX, y: minY, width, height, viewBox: `${minX} ${minY} ${width} ${height}` };
 }
 
 export function boxEdgeConnectionPoints(source: SystemPlacement, target: SystemPlacement) {
