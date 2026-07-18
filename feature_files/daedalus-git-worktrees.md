@@ -16,7 +16,7 @@ Daedalus Git Worktrees isolates agent-mode prompts on task branches and uses a d
 - **Safe Promotion**: The latest `main` is merged into the existing task branch, the combined state is tested there, and local `main` advances only by a verified fast-forward; no remote push occurs.
 - **Migration Prefix Reconcile**: After merges (and again after each successful resolver commit), the orchestrator renames duplicate `NNN_*.sql` prefixes in `migrations` folders to the next free integers after the folder max, then commits when anything changed.
 - **Resolver Loop**: Merge conflicts and integrated-test failures launch a resolver agent in the task worktree up to three times, with daemon warnings for attempts and a blocking error after exhaustion.
-- **Resolver Provider**: The resolver defaults to the task's provider and can be pinned to Codex or Cursor in the worktree parameter file.
+- **Resolver Provider and Model**: With `resolver_provider = "auto"`, the resolver inherits the task's provider and (for Codex) the exact model and reasoning level used for implementation; it can instead be pinned to Codex or Cursor in the worktree parameter file.
 - **Integration Notification**: A successful promotion records a task-scoped info event in `daemon_events`.
 - **Hard Cancel**: Users can cancel agent-mode durable tasks (`queued` through `resolving`); the daemon kills the tracked process group, marks `cancelled`, force-removes the worktree, and records a durable cancel event. Planning-mode Abandon remains a local-queue-only path.
 - **Planning Bypass**: Planning-mode prompts retain the read-only direct execution path and consume no worktree capacity.
@@ -67,3 +67,4 @@ HACKING
 - 2026-07-17: Prepended TASK_MODE coding on task/repair prompts and TASK_MODE integrating on resolver prompts for AGENTS.md profile routing.
 - 2026-07-18: Replaced cohort batching and separate integration worktrees with immediate, repository-serialized integration in each retained task worktree.
 - 2026-07-18: Made successful task cleanup remove the merged task branch after its worktree, including restart recovery, and added a manually whitelisted local-branch pruning script for retired task and integration worktrees.
+- 2026-07-18: Documented and regression-tested automatic inheritance of each Codex task's model and reasoning settings by its per-task integration resolver.

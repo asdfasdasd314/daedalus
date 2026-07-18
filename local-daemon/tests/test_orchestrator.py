@@ -179,6 +179,31 @@ class VerificationTests(unittest.TestCase):
 
 
 class PerTaskIntegrationTests(unittest.TestCase):
+    def test_auto_resolver_inherits_the_integrated_codex_task_model(self):
+        run_codex = unittest.mock.Mock(return_value="resolved")
+        orchestrator = GitWorktreeOrchestrator({}, run_codex, lambda *a: "ok")
+
+        reply = orchestrator._run_resolver_agent(
+            "/tmp/task",
+            {
+                "id": "task-1",
+                "provider": "codex",
+                "model": "gpt-5.6-terra",
+                "reasoning": "high",
+            },
+            {
+                "resolverProvider": "auto",
+                "resolverModel": "fallback-model",
+                "resolverReasoning": "medium",
+            },
+            "Resolve it",
+        )
+
+        self.assertEqual(reply, "resolved")
+        run_codex.assert_called_once_with(
+            "/tmp/task", "Resolve it", "gpt-5.6-terra", "high", "task-1"
+        )
+
     @patch("daedalus_daemon.orchestrator.load_worktree_settings", return_value={})
     @patch("daedalus_daemon.orchestrator.update_agent_task", return_value=True)
     def test_ready_task_starts_without_waiting_for_a_cohort(self, _update, _settings):
