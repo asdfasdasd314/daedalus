@@ -1,8 +1,4 @@
 max_agents_per_repository = 4
-# Temporary rollout compatibility: the currently running legacy batch daemon
-# validates this setting on every cycle. Remove it after Stage 1 is promoted
-# and the task-scoped daemon has replaced that process.
-cohort_idle_window_seconds = 30
 resolver_attempt_limit = 3
 # "auto" uses the provider selected for the task being integrated. Set to
 # "codex" or "cursor" to reserve the resolver for that provider.

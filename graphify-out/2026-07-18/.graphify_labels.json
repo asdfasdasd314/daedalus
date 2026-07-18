@@ -57,6 +57,7 @@
   "55": "Ventures",
   "56": "Daedalus Workspace",
   "57": "README.md",
+  "58": "record_daemon_event",
   "59": "$defs",
   "60": "properties",
   "61": "$ref",
@@ -67,6 +68,8 @@
   "66": "entry-point-picker.tsx",
   "67": "integrating.md",
   "68": "update_execution_entry_point_in_toml",
+  "69": "properties",
+  "70": "plan_migration_renames",
   "71": "Agent Task Notifications",
   "72": "Auth-Scoped Supabase Access",
   "73": "Cursor Agent",
@@ -81,5 +84,6 @@
   "82": "Local Daemon Manager",
   "83": "System Architecture Communication Engine",
   "84": "System Architecture Visualization Engine",
+  "85": "WorktreeTests",
   "87": "README.md"
 }

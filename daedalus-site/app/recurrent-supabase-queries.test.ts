@@ -38,6 +38,14 @@ const taskIntegrationMigrationSource = readFileSync(
   new URL("../../supabase/migrations/038_task_scoped_integration_compatibility.sql", import.meta.url),
   "utf8",
 );
+const batchCleanupMigrationSource = readFileSync(
+  new URL("../../supabase/migrations/039_remove_legacy_batch_persistence.sql", import.meta.url),
+  "utf8",
+);
+const canonicalSchemaSource = readFileSync(
+  new URL("../../shared/database/schema.sql", import.meta.url),
+  "utf8",
+);
 const migrationDeploymentEventsSource = readFileSync(
   new URL("../../supabase/migrations/037_allow_migration_deployment_events.sql", import.meta.url),
   "utf8",
@@ -73,13 +81,78 @@ test("task integration events contain no batch identity", () => {
   assert.doesNotMatch(historySource, /Integration batches/);
 });
 
+test("cleanup migration safely retires every batch persistence dependency", () => {
+  const guard = batchCleanupMigrationSource.indexOf("if exists (select 1 from orchestration_batches limit 1)");
+  const tableDrop = batchCleanupMigrationSource.indexOf("drop table orchestration_batches");
+  assert.ok(guard > -1 && guard < tableDrop);
+  for (const rpc of [
+    "daemon_upsert_orchestration_batch",
+    "daemon_list_orchestration_batches",
+    "request_orchestration_batch_retry",
+    "daemon_delete_orchestration_batch",
+    "request_orchestration_batch_deletion",
+    "daemon_list_batch_deletion_requests",
+    "daemon_complete_batch_deletion",
+  ]) assert.match(batchCleanupMigrationSource, new RegExp(`drop function ${rpc}`));
+  assert.match(batchCleanupMigrationSource, /drop column batch_id/);
+  assert.match(batchCleanupMigrationSource, /drop column batch_generation/);
+  assert.match(batchCleanupMigrationSource, /drop table orchestration_batch_deletion_requests/);
+  assert.doesNotMatch(batchCleanupMigrationSource, /cascade/i);
+});
+
+test("canonical database contract is task-only", () => {
+  for (const retired of [
+    /create table (?:if not exists )?orchestration_batches/i,
+    /create table (?:if not exists )?orchestration_batch_deletion_requests/i,
+    /\bbatch_id\b/i,
+    /\bbatch_generation\b/i,
+    /\bbatch_completed\b/i,
+    /daemon_upsert_orchestration_batch/i,
+    /daemon_list_orchestration_batches/i,
+    /request_orchestration_batch_retry/i,
+    /daemon_delete_orchestration_batch/i,
+    /request_orchestration_batch_deletion/i,
+    /daemon_list_batch_deletion_requests/i,
+    /daemon_complete_batch_deletion/i,
+    /orchestrationBatches/,
+    /batchDeletionRequests/,
+  ]) assert.doesNotMatch(canonicalSchemaSource, retired);
+  assert.match(canonicalSchemaSource, /resolver_attempts integer not null default 0/);
+  assert.match(canonicalSchemaSource, /retry_generation integer not null default 0/);
+  assert.match(canonicalSchemaSource, /daemon_poll_task_work/);
+  assert.match(canonicalSchemaSource, /daemon_record_task_event/);
+  assert.match(canonicalSchemaSource, /task_integrated/);
+  assert.match(canonicalSchemaSource, /when'blocked'then'ready'/);
+  assert.doesNotMatch(canonicalSchemaSource, /agent_count\s*\+\s*batch_count/i);
+});
+
+test("task-only shared RPC replacements retain reviewed non-task subsystems", () => {
+  const inbox = batchCleanupMigrationSource.slice(
+    batchCleanupMigrationSource.indexOf("create or replace function get_client_review_inbox"),
+    batchCleanupMigrationSource.indexOf("create or replace function acknowledge_client_reviews"),
+  );
+  assert.doesNotMatch(inbox, /orchestrationBatches|batchDeletionRequests|batch_id|batch_generation/);
+  for (const field of ["taskDeletionRequests", "architectureViews", "architectureProgressEvents", "featureExecutionRuns", "daemonEvents"]) {
+    assert.match(inbox, new RegExp(field));
+  }
+  const manager = batchCleanupMigrationSource.slice(
+    batchCleanupMigrationSource.indexOf("create or replace function daemon_manager_get_drain_summary"),
+    batchCleanupMigrationSource.indexOf("create or replace function daemon_manager_update_blockers"),
+  );
+  assert.doesNotMatch(manager, /orchestrationBatches|batch_count|orchestration_batches/);
+  assert.match(manager, /agentTasks/);
+  assert.match(manager, /architectureViews/);
+});
+
 test("daemon publishes durable task completion evidence before worktree cleanup", () => {
   const finish = orchestratorSource.slice(
     orchestratorSource.indexOf("def _finish_integrations"),
     orchestratorSource.indexOf("def load_worktree_settings"),
   );
-  assert.ok(finish.indexOf('event_type="task_integrated"') > -1);
-  assert.ok(finish.indexOf('event_type="task_integrated"') < finish.indexOf("remove_worktree"));
+  const eventIndex = finish.indexOf('event_type="task_integrated"');
+  const cleanupIndex = finish.indexOf("remove_task_worktree_and_branch", eventIndex);
+  assert.ok(eventIndex > -1);
+  assert.ok(cleanupIndex > eventIndex);
 });
 
 test("migration deployment telemetry is supported by the daemon event RPC", () => {

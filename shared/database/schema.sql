@@ -4,7 +4,7 @@ create table daemon_manager_requests (
   action text not null default 'restart_execution' check (action = 'restart_execution'),
   status text not null default 'requested' check (status in ('requested', 'draining', 'restarting', 'completed', 'failed', 'cancelled')),
   message text not null default 'daemon_complete' check (message in ('daemon_review', 'client_review', 'client_complete', 'daemon_complete')),
-  blockers jsonb not null default '{"total":0,"agentTasks":0,"orchestrationBatches":0,"featureExecutions":0,"architectureViews":0,"communications":{}}'::jsonb,
+  blockers jsonb not null default '{"total":0,"agentTasks":0,"featureExecutions":0,"architectureViews":0,"communications":{},"identifiers":{}}'::jsonb,
   requested_at timestamptz not null default now(),
   claimed_at timestamptz,
   restart_started_at timestamptz,
@@ -192,7 +192,6 @@ create table agent_tasks (
   completed_commit text,
   branch_name text,
   worktree_path text,
-  batch_id uuid,
   result text not null default '',
   error text not null default '',
   verification_attempts integer not null default 0,
@@ -205,40 +204,15 @@ create table agent_tasks (
   updated_at timestamptz not null default now()
 );
 
-create table orchestration_batches (
-  id uuid primary key,
-  user_id uuid not null references auth.users(id) on delete cascade,
-  repository text not null,
-  base_commit text not null,
-  task_ids jsonb not null default '[]'::jsonb,
-  integration_branch text not null,
-  integration_worktree_path text not null default '',
-  status text not null default 'collecting' check (status in ('collecting', 'integrating', 'resolving', 'completed', 'blocked')),
-  message text not null default 'daemon_complete' check (message in ('daemon_review', 'client_review', 'client_complete', 'daemon_complete')),
-  resolver_attempts integer not null default 0,
-  verification_output text not null default '',
-  retry_generation integer not null default 0,
-  quiet_since timestamptz,
-  created_at timestamptz not null default now(),
-  completed_at timestamptz,
-  updated_at timestamptz not null default now()
-);
-
-alter table agent_tasks add constraint agent_tasks_batch_id_fkey
-foreign key (batch_id) references orchestration_batches(id) on delete set null;
-
 create table daemon_events (
   id bigint generated always as identity primary key,
   user_id uuid not null references auth.users(id) on delete cascade,
   repository text not null,
   task_id uuid references agent_tasks(id) on delete set null,
   conversation_id text,
-  -- Retained after transient batch deletion so completion tombstones remain usable.
-  batch_id uuid,
-  batch_generation integer,
   severity text not null check (severity in ('info', 'warning', 'error')),
   event_type text not null default 'status' check (event_type in (
-    'status', 'batch_completed', 'task_integrated', 'migration_deployment_started',
+    'status', 'task_integrated', 'migration_deployment_started',
     'migration_deployment_no_pending', 'migration_deployment_succeeded',
     'migration_deployment_blocked'
   )),
@@ -304,7 +278,6 @@ create table architecture_views (
 
 alter table daemon_payloads enable row level security;
 alter table agent_tasks enable row level security;
-alter table orchestration_batches enable row level security;
 alter table daemon_events enable row level security;
 alter table agent_output_history enable row level security;
 alter table architecture_views enable row level security;
@@ -346,8 +319,6 @@ with check (
 );
 create policy "authenticated users can delete own agent tasks"
 on agent_tasks for delete to authenticated using (user_id = auth.uid());
-create policy "authenticated users can read own orchestration batches"
-on orchestration_batches for select to authenticated using (user_id = auth.uid());
 create policy "authenticated users can read own daemon events"
 on daemon_events for select to authenticated using (user_id = auth.uid());
 create policy "authenticated users can acknowledge own daemon events"
@@ -396,7 +367,6 @@ create index daemon_payloads_review_idx on daemon_payloads (user_id, kind, messa
 create index agent_tasks_review_idx on agent_tasks (user_id, message, queue_sequence);
 create index agent_tasks_client_review_idx on agent_tasks (user_id, updated_at, id)
 where message = 'client_review';
-create index orchestration_batches_review_idx on orchestration_batches (user_id, message, created_at);
 create index daemon_events_review_idx on daemon_events (user_id, updated_at, id)
 where message = 'client_review';
 create index agent_output_history_archive_idx on agent_output_history (user_id, completed_at desc, id desc);
@@ -608,7 +578,6 @@ begin
     completed_commit = coalesce(p_updates->>'completed_commit', completed_commit),
     branch_name = coalesce(p_updates->>'branch_name', branch_name),
     worktree_path = coalesce(p_updates->>'worktree_path', worktree_path),
-    batch_id = coalesce((p_updates->>'batch_id')::uuid, batch_id),
     result = coalesce(p_updates->>'result', result),
     error = coalesce(p_updates->>'error', error),
     verification_attempts = coalesce((p_updates->>'verification_attempts')::integer, verification_attempts),
@@ -621,44 +590,8 @@ begin
 end;
 $$;
 
-create or replace function daemon_upsert_orchestration_batch(p_user_id uuid, p_batch jsonb)
-returns void language sql security definer set search_path = public as $$
-  insert into orchestration_batches (id,user_id,repository,base_commit,task_ids,integration_branch,integration_worktree_path,status,message,resolver_attempts,verification_output,quiet_since,completed_at,retry_generation)
-  values ((p_batch->>'id')::uuid,p_user_id,p_batch->>'repository',p_batch->>'base_commit',coalesce(p_batch->'task_ids','[]'::jsonb),p_batch->>'integration_branch',coalesce(p_batch->>'integration_worktree_path',''),coalesce(p_batch->>'status','collecting'),case when p_batch->>'status'='blocked' then 'client_review' when p_batch->>'status'='completed' then 'daemon_complete' else 'daemon_review' end,coalesce((p_batch->>'resolver_attempts')::integer,0),coalesce(p_batch->>'verification_output',''),(p_batch->>'quiet_since')::timestamptz,(p_batch->>'completed_at')::timestamptz,coalesce((p_batch->>'retry_generation')::integer,0))
-  on conflict (id) do update set integration_worktree_path=excluded.integration_worktree_path,status=excluded.status,message=excluded.message,resolver_attempts=excluded.resolver_attempts,verification_output=excluded.verification_output,quiet_since=excluded.quiet_since,completed_at=excluded.completed_at,retry_generation=case when p_batch ? 'retry_generation' then excluded.retry_generation else orchestration_batches.retry_generation end,updated_at=now();
-$$;
-
-create or replace function daemon_list_orchestration_batches(p_user_id uuid)
-returns setof orchestration_batches language sql security definer set search_path = public as $$
-  select * from orchestration_batches where user_id = p_user_id and message = 'daemon_review'
-  order by created_at limit 100;
-$$;
-
-create or replace function daemon_record_event(
-  p_user_id uuid, p_repository text, p_task_id uuid, p_batch_id uuid,
-  p_severity text, p_message text, p_event_type text default 'status'
-)
-returns void language plpgsql security definer set search_path = public as $$
-declare event_generation integer;
-begin
-  if p_event_type not in (
-    'status', 'batch_completed', 'migration_deployment_started',
-    'migration_deployment_no_pending', 'migration_deployment_succeeded',
-    'migration_deployment_blocked'
-  ) then raise exception 'Unsupported daemon event type: %', p_event_type; end if;
-  if p_batch_id is not null then
-    select retry_generation into event_generation from orchestration_batches where id=p_batch_id and user_id=p_user_id;
-  end if;
-  insert into daemon_events (user_id,repository,task_id,batch_id,batch_generation,severity,event_type,message,content)
-  values (p_user_id,p_repository,p_task_id,p_batch_id,event_generation,p_severity,p_event_type,'client_review',p_message);
-end;
-$$;
-
 grant execute on function daemon_list_agent_tasks(uuid) to anon;
 grant execute on function daemon_update_agent_task(uuid, uuid, text, jsonb) to anon;
-grant execute on function daemon_upsert_orchestration_batch(uuid, jsonb) to anon;
-grant execute on function daemon_list_orchestration_batches(uuid) to anon;
-grant execute on function daemon_record_event(uuid, text, uuid, uuid, text, text, text) to anon;
 
 create table feature_execution_runs (
   id uuid primary key default gen_random_uuid(),
@@ -878,18 +811,16 @@ declare result jsonb;
 begin
   if not exists (select 1 from daemon_manager_state where user_id = p_user_id and manager_instance_id = p_manager_instance_id)
     then raise exception 'Manager lease is not owned'; end if;
-  select jsonb_build_object('total', agent_count + batch_count + feature_count + communication_count,
-    'agentTasks', agent_count, 'orchestrationBatches', batch_count, 'featureExecutions', feature_count,
+  select jsonb_build_object('total', agent_count + feature_count + communication_count,
+    'agentTasks', agent_count, 'featureExecutions', feature_count,
     'communications', communication_counts,
     'identifiers', jsonb_build_object(
       'agentTasks', coalesce((select jsonb_agg(id order by queue_sequence) from (select id, queue_sequence from agent_tasks where user_id = p_user_id and message = 'daemon_review' and status in ('queued','running','verifying','ready','integrating','resolving') order by queue_sequence limit 100) task_rows), '[]'::jsonb),
-      'orchestrationBatches', coalesce((select jsonb_agg(id order by created_at) from (select id, created_at from orchestration_batches where user_id = p_user_id and message = 'daemon_review' and status in ('collecting','integrating','resolving') order by created_at limit 100) batch_rows), '[]'::jsonb),
       'featureExecutions', coalesce((select jsonb_agg(id order by created_at) from (select id, created_at from feature_execution_runs where user_id = p_user_id and message = 'daemon_review' and status in ('queued','running') order by created_at limit 100) run_rows), '[]'::jsonb),
       'communications', coalesce((select jsonb_agg(jsonb_build_object('purpose', purpose, 'updatedAt', updated_at) order by purpose) from communications where user_id = p_user_id and message = 'daemon_review' and purpose in ('agent_prompt','git_sync_request','feature_file_load','parameter_file_load','parameter_file_update','entry_point_update')), '[]'::jsonb)
     )) into result
   from (select
     (select count(*) from agent_tasks where user_id = p_user_id and message = 'daemon_review' and status in ('queued','running','verifying','ready','integrating','resolving')) agent_count,
-    (select count(*) from orchestration_batches where user_id = p_user_id and message = 'daemon_review' and status in ('collecting','integrating','resolving')) batch_count,
     (select count(*) from feature_execution_runs where user_id = p_user_id and message = 'daemon_review' and status in ('queued','running')) feature_count,
     (select count(*) from communications where user_id = p_user_id and message = 'daemon_review' and purpose in ('agent_prompt','git_sync_request','feature_file_load','parameter_file_load','parameter_file_update','entry_point_update')) communication_count,
     coalesce((select jsonb_object_agg(purpose, purpose_count) from (
@@ -901,8 +832,20 @@ end;
 $$;
 create function daemon_manager_update_blockers(p_user_id uuid, p_manager_instance_id uuid, p_request_id uuid, p_blockers jsonb)
 returns boolean language plpgsql security definer set search_path = public as $$
+declare normalized jsonb;
 begin
-  update daemon_manager_requests manager_request set blockers = p_blockers, updated_at = now()
+  normalized := jsonb_build_object(
+    'total',coalesce((p_blockers->>'agentTasks')::integer,0)
+      +coalesce((p_blockers->>'featureExecutions')::integer,0)
+      +coalesce((p_blockers->>'architectureViews')::integer,0)
+      +coalesce((select sum(value::integer) from jsonb_each_text(coalesce(p_blockers->'communications','{}'))),0),
+    'agentTasks',coalesce((p_blockers->>'agentTasks')::integer,0),
+    'featureExecutions',coalesce((p_blockers->>'featureExecutions')::integer,0),
+    'architectureViews',coalesce((p_blockers->>'architectureViews')::integer,0),
+    'communications',coalesce(p_blockers->'communications','{}'),
+    'identifiers',coalesce(p_blockers->'identifiers','{}')
+  );
+  update daemon_manager_requests manager_request set blockers = normalized, updated_at = now()
   from daemon_manager_state manager_state where manager_request.id = p_request_id and manager_request.user_id = p_user_id
     and manager_request.status = 'draining' and manager_state.user_id = p_user_id
     and manager_state.manager_instance_id = p_manager_instance_id and manager_state.active_request_id = p_request_id;
@@ -997,9 +940,8 @@ grant execute on function daemon_manager_complete_recovery(uuid, uuid) to anon;
 grant execute on function daemon_manager_complete_restart(uuid, uuid, uuid) to anon;
 grant execute on function daemon_manager_complete_control_request(uuid, uuid, uuid, timestamptz) to anon;
 
--- Task and batch failure recovery (migration 030).
+-- Task failure recovery.
 alter table agent_tasks add column if not exists retry_generation integer not null default 0;
-alter table orchestration_batches add column if not exists retry_generation integer not null default 0;
 create table if not exists agent_task_deletion_requests (
   id uuid primary key default gen_random_uuid(), user_id uuid not null references auth.users(id) on delete cascade,
   task_id uuid not null, prompt_id text not null,
@@ -1011,50 +953,6 @@ create table if not exists agent_task_deletion_requests (
 alter table agent_task_deletion_requests enable row level security;
 create policy "authenticated users can read own task deletion requests" on agent_task_deletion_requests for select to authenticated using (user_id = auth.uid());
 create index if not exists agent_task_deletion_requests_daemon_review_idx on agent_task_deletion_requests (user_id, created_at, id) where message='daemon_review';
-create table if not exists orchestration_batch_deletion_requests (
-  id uuid primary key default gen_random_uuid(), user_id uuid not null references auth.users(id) on delete cascade,
-  batch_id uuid not null, expected_updated_at timestamptz not null,
-  message text not null default 'daemon_review' check (message in ('daemon_review', 'client_review', 'client_complete', 'daemon_complete')),
-  status text not null default 'requested' check (status in ('requested', 'completed', 'rejected')),
-  error text not null default '', created_at timestamptz not null default now(), updated_at timestamptz not null default now(),
-  unique (user_id, batch_id, expected_updated_at)
-);
-alter table orchestration_batch_deletion_requests enable row level security;
-create policy "authenticated users can read own batch deletion requests" on orchestration_batch_deletion_requests for select to authenticated using (user_id = auth.uid());
-create index if not exists orchestration_batch_deletion_requests_daemon_review_idx on orchestration_batch_deletion_requests (user_id, created_at, id) where message='daemon_review';
-
-create or replace function request_orchestration_batch_retry(p_batch_id uuid, p_expected_updated_at timestamptz)
-returns boolean language plpgsql security definer set search_path = public as $$
-begin
-  update orchestration_batches set status = 'integrating', message = 'daemon_review',
-    retry_generation = retry_generation + 1, resolver_attempts = 0, verification_output = '',
-    completed_at = null, updated_at = now()
-  where id = p_batch_id and user_id = auth.uid() and updated_at = p_expected_updated_at
-    and status = 'blocked'
-    and not exists (
-      select 1 from jsonb_array_elements_text(orchestration_batches.task_ids) member(id)
-      left join agent_tasks task on task.id = member.id::uuid
-      where task.id is null or task.user_id <> auth.uid() or task.branch_name is null
-        or task.status not in ('ready', 'integrating', 'completed')
-    );
-  return found;
-end; $$;
-
-create or replace function request_orchestration_batch_deletion(p_batch_id uuid, p_expected_updated_at timestamptz)
-returns uuid language plpgsql security definer set search_path = public as $$
-declare request_id uuid;
-begin
-  insert into orchestration_batch_deletion_requests (user_id, batch_id, expected_updated_at)
-  select auth.uid(), batch.id, p_expected_updated_at from orchestration_batches batch
-  where batch.id = p_batch_id and batch.user_id = auth.uid()
-    and batch.updated_at = p_expected_updated_at and batch.status = 'blocked'
-  on conflict (user_id, batch_id, expected_updated_at) do update
-    set message = 'daemon_review', status = 'requested', error = '', updated_at = now()
-  returning id into request_id;
-  if request_id is null then raise exception 'Integration batch is no longer eligible for deletion'; end if;
-  return request_id;
-end; $$;
-
 -- Final Architecture View progress inbox/acknowledgement overrides.
 alter function get_client_review_inbox() rename to get_client_review_inbox_032_previous;
 create function get_client_review_inbox() returns jsonb language sql stable security definer set search_path=public as $$
@@ -1067,51 +965,6 @@ declare owner_id uuid:=auth.uid();r jsonb;rid text;ok jsonb:='[]'::jsonb;stale j
  if owner_id is null then raise exception 'Authentication required';end if;if jsonb_typeof(receipts)<>'array'then raise exception 'Receipts must be an array';end if;
  for r in select value from jsonb_array_elements(receipts)loop rid:=coalesce(r->>'receiptId','');if r->>'transport'='architectureProgressEvents'then update architecture_view_progress_events set message='client_complete'where user_id=owner_id and id=(r->>'key')::uuid and generation=(r->>'generation')::integer and message='client_review' and updated_at=(r->>'updatedAt')::timestamptz;else perform 1 from acknowledge_client_reviews_032_previous(jsonb_build_array(r));if found then ok:=ok||jsonb_build_array(rid);else stale:=stale||jsonb_build_array(rid);end if;continue;end if;if found then ok:=ok||jsonb_build_array(rid);else stale:=stale||jsonb_build_array(rid);end if;end loop;return jsonb_build_object('acknowledged',ok,'rejected',stale);end;$$;
 revoke all on function acknowledge_client_reviews(jsonb)from public;grant execute on function acknowledge_client_reviews(jsonb)to authenticated;
-
-create or replace function daemon_list_batch_deletion_requests(p_user_id uuid)
-returns table (id uuid, batch jsonb, tasks jsonb) language sql security definer set search_path = public as $$
-  select request.id, to_jsonb(batch), coalesce((
-    select jsonb_agg(to_jsonb(task)) from agent_tasks task
-    where task.user_id = p_user_id and batch.task_ids ? task.id::text
-  ), '[]'::jsonb)
-  from orchestration_batch_deletion_requests request
-  left join orchestration_batches batch on batch.id = request.batch_id and batch.user_id = request.user_id
-  where request.user_id = p_user_id and request.message = 'daemon_review'
-  order by request.created_at, request.id limit 50;
-$$;
-
-create or replace function daemon_complete_batch_deletion(p_user_id uuid, p_request_id uuid, p_error text default '')
-returns boolean language plpgsql security definer set search_path = public as $$
-declare request_row orchestration_batch_deletion_requests%rowtype; batch_row orchestration_batches%rowtype;
-begin
-  select * into request_row from orchestration_batch_deletion_requests
-  where id = p_request_id and user_id = p_user_id and message = 'daemon_review' for update;
-  if not found then return false; end if;
-  if p_error <> '' then
-    update orchestration_batch_deletion_requests set status = 'rejected', error = p_error, message = 'client_review', updated_at = now() where id = p_request_id;
-    return true;
-  end if;
-  select * into batch_row from orchestration_batches
-  where id = request_row.batch_id and user_id = p_user_id and status = 'blocked'
-    and updated_at = request_row.expected_updated_at for update;
-  if not found then
-    update orchestration_batch_deletion_requests set status = 'rejected', error = 'Integration batch changed before deletion could be completed.', message = 'client_review', updated_at = now() where id = p_request_id;
-    return true;
-  end if;
-  update agent_tasks set status = 'completed', message = 'client_review', completed_at = coalesce(completed_at, now()), updated_at = now()
-  where user_id = p_user_id and batch_row.task_ids ? id::text and status in ('ready', 'integrating', 'resolving');
-  delete from orchestration_batches where id = batch_row.id and user_id = p_user_id and status = 'blocked' and updated_at = request_row.expected_updated_at;
-  if not found then
-    update orchestration_batch_deletion_requests set status = 'rejected', error = 'Integration batch changed before deletion could be completed.', message = 'client_review', updated_at = now() where id = p_request_id;
-    return true;
-  end if;
-  update orchestration_batch_deletion_requests set status = 'completed', message = 'client_review', updated_at = now() where id = p_request_id;
-  return true;
-end; $$;
-
-grant execute on function request_orchestration_batch_retry(uuid, timestamptz), request_orchestration_batch_deletion(uuid, timestamptz) to authenticated;
-grant execute on function daemon_list_batch_deletion_requests(uuid), daemon_complete_batch_deletion(uuid, uuid, text) to anon;
-create index if not exists orchestration_batches_client_review_idx on orchestration_batches (user_id, updated_at, id) where message='client_review';
 
 -- The authoritative recovery RPC, inbox, acknowledgement, and daemon helpers are
 -- intentionally defined in the ordered migration so deployed schemas receive one atomic replacement.
@@ -1160,7 +1013,6 @@ declare claimed_id uuid;result jsonb;begin
  select jsonb_build_object(
  'communications',coalesce((select jsonb_agg(to_jsonb(r) order by purpose)from(select purpose,content,updated_at from communications where user_id=p_user_id and message='daemon_review' and purpose in('agent_prompt','git_sync_request','feature_file_load','parameter_file_load','parameter_file_update','entry_point_update')order by purpose limit 6)r),'[]'),
  'agentTasks',coalesce((select jsonb_agg(to_jsonb(task) order by task.queue_sequence) from daemon_list_agent_tasks(p_user_id) task),'[]'),
- 'orchestrationBatches',coalesce((select jsonb_agg(to_jsonb(r)order by created_at)from(select id,repository,base_commit,task_ids,integration_branch,integration_worktree_path,status,message,resolver_attempts,verification_output,retry_generation,quiet_since,created_at,completed_at,updated_at from orchestration_batches where user_id=p_user_id and message='daemon_review' order by created_at limit 100)r),'[]'),
  'architectureViews',coalesce((select jsonb_agg(to_jsonb(r)order by requested_at,id)from(select id,prompt_id,repository,base_commit,final_commit,targeted_feature_paths,generation,status,requested_at,updated_at from architecture_views where user_id=p_user_id and message='daemon_review' and status in('queued','running')order by requested_at,id limit 10)r),'[]'),
  'featureRunControls',coalesce((select jsonb_agg(to_jsonb(r)order by created_at,id)from(select id,status,cancel_requested,created_at from feature_execution_runs where user_id=p_user_id and message='daemon_review' and status in('queued','running')and id is distinct from claimed_id order by created_at,id limit 100)r),'[]'),
  'claimedFeatureRun',(select case when r.id is null then null else to_jsonb(r)end from(select id,project_directory,feature_file_path,status,cancel_requested from feature_execution_runs where id=claimed_id)r))into result;return result;
@@ -1170,13 +1022,12 @@ create or replace function daemon_manager_get_drain_summary(p_user_id uuid,p_man
 returns jsonb language plpgsql security definer set search_path=public as $$
 declare result jsonb;begin
  if not exists(select 1 from daemon_manager_state where user_id=p_user_id and manager_instance_id=p_manager_instance_id)then raise exception 'Manager lease is not owned';end if;
- select jsonb_build_object('total',agent_count+batch_count+feature_count+architecture_count+communication_count,'agentTasks',agent_count,'orchestrationBatches',batch_count,'featureExecutions',feature_count,'architectureViews',architecture_count,'communications',communication_counts,'identifiers',jsonb_build_object(
+ select jsonb_build_object('total',agent_count+feature_count+architecture_count+communication_count,'agentTasks',agent_count,'featureExecutions',feature_count,'architectureViews',architecture_count,'communications',communication_counts,'identifiers',jsonb_build_object(
  'agentTasks',coalesce((select jsonb_agg(id order by queue_sequence)from(select id,queue_sequence from agent_tasks where user_id=p_user_id and message='daemon_review' and status in('queued','running','verifying','ready','integrating','resolving')order by queue_sequence limit 100)r),'[]'),
- 'orchestrationBatches',coalesce((select jsonb_agg(id order by created_at)from(select id,created_at from orchestration_batches where user_id=p_user_id and message='daemon_review' and status in('collecting','integrating','resolving')order by created_at limit 100)r),'[]'),
  'featureExecutions',coalesce((select jsonb_agg(id order by created_at)from(select id,created_at from feature_execution_runs where user_id=p_user_id and message='daemon_review' and status in('queued','running')order by created_at limit 100)r),'[]'),
  'architectureViews',coalesce((select jsonb_agg(id order by requested_at,id)from(select id,requested_at from architecture_views where user_id=p_user_id and message='daemon_review' and status in('queued','running')order by requested_at,id limit 10)r),'[]'),
  'communications',coalesce((select jsonb_agg(jsonb_build_object('purpose',purpose,'updatedAt',updated_at)order by purpose)from communications where user_id=p_user_id and message='daemon_review' and purpose in('agent_prompt','git_sync_request','feature_file_load','parameter_file_load','parameter_file_update','entry_point_update')),'[]')))into result
- from(select(select count(*)from agent_tasks where user_id=p_user_id and message='daemon_review' and status in('queued','running','verifying','ready','integrating','resolving'))agent_count,(select count(*)from orchestration_batches where user_id=p_user_id and message='daemon_review' and status in('collecting','integrating','resolving'))batch_count,(select count(*)from feature_execution_runs where user_id=p_user_id and message='daemon_review' and status in('queued','running'))feature_count,(select count(*)from architecture_views where user_id=p_user_id and message='daemon_review' and status in('queued','running'))architecture_count,(select count(*)from communications where user_id=p_user_id and message='daemon_review' and purpose in('agent_prompt','git_sync_request','feature_file_load','parameter_file_load','parameter_file_update','entry_point_update'))communication_count,coalesce((select jsonb_object_agg(purpose,purpose_count)from(select purpose,count(*)purpose_count from communications where user_id=p_user_id and message='daemon_review' and purpose in('agent_prompt','git_sync_request','feature_file_load','parameter_file_load','parameter_file_update','entry_point_update')group by purpose)groups),'{}')communication_counts)counts;return result;
+ from(select(select count(*)from agent_tasks where user_id=p_user_id and message='daemon_review' and status in('queued','running','verifying','ready','integrating','resolving'))agent_count,(select count(*)from feature_execution_runs where user_id=p_user_id and message='daemon_review' and status in('queued','running'))feature_count,(select count(*)from architecture_views where user_id=p_user_id and message='daemon_review' and status in('queued','running'))architecture_count,(select count(*)from communications where user_id=p_user_id and message='daemon_review' and purpose in('agent_prompt','git_sync_request','feature_file_load','parameter_file_load','parameter_file_update','entry_point_update'))communication_count,coalesce((select jsonb_object_agg(purpose,purpose_count)from(select purpose,count(*)purpose_count from communications where user_id=p_user_id and message='daemon_review' and purpose in('agent_prompt','git_sync_request','feature_file_load','parameter_file_load','parameter_file_update','entry_point_update')group by purpose)groups),'{}')communication_counts)counts;return result;
 end; $$;
 
 -- Final Architecture View progress inbox/acknowledgement overrides.
@@ -1211,14 +1062,14 @@ create or replace function daemon_manager_tick(p_user_id uuid,p_manager_instance
 returns jsonb language plpgsql security definer set search_path=public as $$
 declare result jsonb;begin
  update daemon_manager_state set manager_heartbeat_at=now(),execution_process_id=p_execution_process_id,execution_started_at=p_execution_started_at,status_detail=coalesce(p_status_detail,status_detail),message='client_review',updated_at=now()where user_id=p_user_id and manager_instance_id=p_manager_instance_id;if not found then raise exception 'Manager lease ownership was lost';end if;
- select jsonb_build_object('activeRequest',case when q.id is null then null else jsonb_build_object('id',q.id,'status',q.status,'updated_at',q.updated_at)end,'drainSummary',case when q.status<>'draining' then null else jsonb_build_object('total',(select count(*)from agent_tasks where user_id=p_user_id and message='daemon_review')+(select count(*)from orchestration_batches where user_id=p_user_id and message='daemon_review')+(select count(*)from feature_execution_runs where user_id=p_user_id and message='daemon_review' and status in('queued','running'))+(select count(*)from architecture_views where user_id=p_user_id and message='daemon_review' and status in('queued','running'))+(select count(*)from communications where user_id=p_user_id and message='daemon_review'),'agentTasks',(select count(*)from agent_tasks where user_id=p_user_id and message='daemon_review'),'orchestrationBatches',(select count(*)from orchestration_batches where user_id=p_user_id and message='daemon_review'),'featureExecutions',(select count(*)from feature_execution_runs where user_id=p_user_id and message='daemon_review' and status in('queued','running')),'architectureViews',(select count(*)from architecture_views where user_id=p_user_id and message='daemon_review' and status in('queued','running')),'communications',coalesce((select jsonb_object_agg(purpose,count)from(select purpose,count(*)count from communications where user_id=p_user_id and message='daemon_review' group by purpose order by purpose limit 10)counts),'{}'))end)into result from daemon_manager_state s left join daemon_manager_requests q on q.id=s.active_request_id and q.message='daemon_review' where s.user_id=p_user_id and s.manager_instance_id=p_manager_instance_id;return result;
+ select jsonb_build_object('activeRequest',case when q.id is null then null else jsonb_build_object('id',q.id,'status',q.status,'updated_at',q.updated_at)end,'drainSummary',case when q.status<>'draining' then null else daemon_manager_get_drain_summary(p_user_id,p_manager_instance_id)end)into result from daemon_manager_state s left join daemon_manager_requests q on q.id=s.active_request_id and q.message='daemon_review' where s.user_id=p_user_id and s.manager_instance_id=p_manager_instance_id;return result;
 end; $$;
 
 -- Task-scoped integration compatibility contract (migration 038 snapshot).
 create or replace function daemon_update_agent_task(p_user_id uuid,p_task_id uuid,p_expected_status text,p_updates jsonb)
 returns boolean language plpgsql security definer set search_path=public as $$
 begin
- update agent_tasks set status=coalesce(p_updates->>'status',status),message=coalesce(p_updates->>'message',case when p_updates->>'status'in('completed','failed','blocked','cancelled')then'client_review'else message end),base_commit=coalesce(p_updates->>'base_commit',base_commit),completed_commit=coalesce(p_updates->>'completed_commit',completed_commit),branch_name=coalesce(p_updates->>'branch_name',branch_name),worktree_path=coalesce(p_updates->>'worktree_path',worktree_path),batch_id=coalesce((p_updates->>'batch_id')::uuid,batch_id),result=coalesce(p_updates->>'result',result),error=coalesce(p_updates->>'error',error),verification_attempts=coalesce((p_updates->>'verification_attempts')::integer,verification_attempts),resolver_attempts=coalesce((p_updates->>'resolver_attempts')::integer,resolver_attempts),cancel_requested=coalesce((p_updates->>'cancel_requested')::boolean,cancel_requested),started_at=case when p_updates?'started_at'then(p_updates->>'started_at')::timestamptz else started_at end,completed_at=case when p_updates?'completed_at'then(p_updates->>'completed_at')::timestamptz else completed_at end,updated_at=now()
+ update agent_tasks set status=coalesce(p_updates->>'status',status),message=coalesce(p_updates->>'message',case when p_updates->>'status'in('completed','failed','blocked','cancelled')then'client_review'else message end),base_commit=coalesce(p_updates->>'base_commit',base_commit),completed_commit=coalesce(p_updates->>'completed_commit',completed_commit),branch_name=coalesce(p_updates->>'branch_name',branch_name),worktree_path=coalesce(p_updates->>'worktree_path',worktree_path),result=coalesce(p_updates->>'result',result),error=coalesce(p_updates->>'error',error),verification_attempts=coalesce((p_updates->>'verification_attempts')::integer,verification_attempts),resolver_attempts=coalesce((p_updates->>'resolver_attempts')::integer,resolver_attempts),cancel_requested=coalesce((p_updates->>'cancel_requested')::boolean,cancel_requested),started_at=case when p_updates?'started_at'then(p_updates->>'started_at')::timestamptz else started_at end,completed_at=case when p_updates?'completed_at'then(p_updates->>'completed_at')::timestamptz else completed_at end,updated_at=now()
  where id=p_task_id and user_id=p_user_id and status=p_expected_status;return found;
 end; $$;
 
@@ -1275,9 +1126,7 @@ declare owner_id uuid:=auth.uid();r jsonb;rid text;ok jsonb:='[]';stale jsonb:='
  when 'communications'then update communications set message='client_complete'where user_id=owner_id and purpose=r->>'key'and message='client_review'and updated_at=(r->>'updatedAt')::timestamptz;
  when 'daemonPayloads'then update daemon_payloads set message='client_complete'where user_id=owner_id and kind=r->>'key'and message='client_review'and updated_at=(r->>'updatedAt')::timestamptz;
  when 'agentTasks'then update agent_tasks set message='client_complete'where user_id=owner_id and id=(r->>'key')::uuid and message='client_review'and updated_at=(r->>'updatedAt')::timestamptz;
- when 'orchestrationBatches'then update orchestration_batches set message='client_complete'where user_id=owner_id and id=(r->>'key')::uuid and message='client_review'and updated_at=(r->>'updatedAt')::timestamptz;
  when 'taskDeletionRequests'then update agent_task_deletion_requests set message='client_complete'where user_id=owner_id and id=(r->>'key')::uuid and message='client_review'and updated_at=(r->>'updatedAt')::timestamptz;
- when 'batchDeletionRequests'then update orchestration_batch_deletion_requests set message='client_complete'where user_id=owner_id and id=(r->>'key')::uuid and message='client_review'and updated_at=(r->>'updatedAt')::timestamptz;
  when 'architectureViews'then update architecture_views set message='client_complete'where user_id=owner_id and id=(r->>'key')::uuid and generation=(r->>'generation')::integer and message='client_review'and updated_at=(r->>'updatedAt')::timestamptz;
  when 'architectureProgressEvents'then update architecture_view_progress_events set message='client_complete'where user_id=owner_id and id=(r->>'key')::uuid and generation=(r->>'generation')::integer and message='client_review'and updated_at=(r->>'updatedAt')::timestamptz;
  when 'featureExecutionRuns'then update feature_execution_runs set message='client_complete'where user_id=owner_id and id=(r->>'key')::uuid and message='client_review'and updated_at=(r->>'updatedAt')::timestamptz;
@@ -1286,22 +1135,10 @@ declare owner_id uuid:=auth.uid();r jsonb;rid text;ok jsonb:='[]';stale jsonb:='
  else continue;end case;if found then ok:=ok||jsonb_build_array(rid);else stale:=stale||jsonb_build_array(rid);end if;end loop;return jsonb_build_object('acknowledged',ok,'rejected',stale);end;$$;
 revoke all on function acknowledge_client_reviews(jsonb)from public;grant execute on function acknowledge_client_reviews(jsonb)to authenticated;
 
--- Blocked batches reserve their ready task branches until the same batch is retried or deleted.
 create or replace function daemon_list_agent_tasks(p_user_id uuid)
 returns setof agent_tasks language sql security definer set search_path = public as $$
   select task.* from agent_tasks task
-  where task.user_id = p_user_id and (
-    task.message = 'daemon_review' or exists (
-      select 1 from orchestration_batches batch
-      where batch.user_id = p_user_id and batch.message = 'daemon_review'
-        and batch.task_ids ? task.id::text
-    )
-  )
-  and not exists (
-    select 1 from orchestration_batches blocked_batch
-    where blocked_batch.user_id = p_user_id and blocked_batch.status = 'blocked'
-      and blocked_batch.task_ids ? task.id::text
-  )
+  where task.user_id = p_user_id and task.message = 'daemon_review'
   order by task.queue_sequence limit 100;
 $$;
 
@@ -1359,8 +1196,7 @@ begin
   if claimed_id is not null then update feature_execution_runs set status='running',started_at=now(),updated_at=now() where id=claimed_id; end if;
   select jsonb_build_object(
     'communications',coalesce((select jsonb_agg(to_jsonb(r) order by purpose) from (select purpose,content,updated_at from communications where user_id=p_user_id and message='daemon_review' and purpose in('agent_prompt','git_sync_request','feature_file_load','parameter_file_load','parameter_file_update','entry_point_update') order by purpose limit 6) r),'[]'),
-    'agentTasks',coalesce((select jsonb_agg(to_jsonb(r) order by queue_sequence) from (select id,repository,prompt,provider,model,reasoning,planning_mode,targeted_feature_paths,status,queue_sequence,base_commit,branch_name,worktree_path,batch_id,error,verification_attempts,cancel_requested,created_at,started_at,completed_at,updated_at from agent_tasks where user_id=p_user_id and message='daemon_review' order by queue_sequence limit 100) r),'[]'),
-    'orchestrationBatches',coalesce((select jsonb_agg(to_jsonb(r) order by created_at) from (select id,repository,base_commit,task_ids,integration_branch,integration_worktree_path,status,message,resolver_attempts,quiet_since,created_at,completed_at,updated_at from orchestration_batches where user_id=p_user_id and message='daemon_review' order by created_at limit 100) r),'[]'),
+    'agentTasks',coalesce((select jsonb_agg(to_jsonb(r) order by queue_sequence) from (select id,repository,prompt,provider,model,reasoning,planning_mode,targeted_feature_paths,status,queue_sequence,base_commit,branch_name,worktree_path,error,verification_attempts,resolver_attempts,cancel_requested,created_at,started_at,completed_at,updated_at from agent_tasks where user_id=p_user_id and message='daemon_review' order by queue_sequence limit 100) r),'[]'),
     'featureRunControls',coalesce((select jsonb_agg(to_jsonb(r) order by created_at,id) from (select id,status,cancel_requested,created_at from feature_execution_runs where user_id=p_user_id and message='daemon_review' and status in('queued','running') and id is distinct from claimed_id order by created_at,id limit 100) r),'[]'),
     'claimedFeatureRun',(select case when r.id is null then null else to_jsonb(r) end from (select id,project_directory,feature_file_path,status,cancel_requested from feature_execution_runs where id=claimed_id) r)
   ) into result; return result;
@@ -1380,7 +1216,7 @@ returns jsonb language plpgsql security definer set search_path=public as $$
 declare result jsonb; begin
  update daemon_manager_state set manager_heartbeat_at=now(),execution_process_id=p_execution_process_id,execution_started_at=p_execution_started_at,status_detail=coalesce(p_status_detail,status_detail),message='client_review',updated_at=now() where user_id=p_user_id and manager_instance_id=p_manager_instance_id;
  if not found then raise exception 'Manager lease ownership was lost'; end if;
- select jsonb_build_object('activeRequest',case when q.id is null then null else jsonb_build_object('id',q.id,'status',q.status,'updated_at',q.updated_at) end,'drainSummary',case when q.status<>'draining' then null else jsonb_build_object('total',(select count(*) from agent_tasks where user_id=p_user_id and message='daemon_review')+(select count(*) from orchestration_batches where user_id=p_user_id and message='daemon_review')+(select count(*) from feature_execution_runs where user_id=p_user_id and message='daemon_review' and status in('queued','running'))+(select count(*) from communications where user_id=p_user_id and message='daemon_review'),'agentTasks',(select count(*) from agent_tasks where user_id=p_user_id and message='daemon_review'),'orchestrationBatches',(select count(*) from orchestration_batches where user_id=p_user_id and message='daemon_review'),'featureExecutions',(select count(*) from feature_execution_runs where user_id=p_user_id and message='daemon_review' and status in('queued','running')),'communications',coalesce((select jsonb_object_agg(purpose,count) from (select purpose,count(*) count from communications where user_id=p_user_id and message='daemon_review' group by purpose order by purpose limit 10) counts),'{}'::jsonb)) end) into result from daemon_manager_state s left join daemon_manager_requests q on q.id=s.active_request_id and q.message='daemon_review' where s.user_id=p_user_id and s.manager_instance_id=p_manager_instance_id; return result;
+ select jsonb_build_object('activeRequest',case when q.id is null then null else jsonb_build_object('id',q.id,'status',q.status,'updated_at',q.updated_at) end,'drainSummary',case when q.status<>'draining' then null else daemon_manager_get_drain_summary(p_user_id,p_manager_instance_id) end) into result from daemon_manager_state s left join daemon_manager_requests q on q.id=s.active_request_id and q.message='daemon_review' where s.user_id=p_user_id and s.manager_instance_id=p_manager_instance_id; return result;
 end; $$;
 revoke all on function daemon_manager_tick(uuid,uuid,integer,timestamptz,text) from public;
 grant execute on function daemon_manager_tick(uuid,uuid,integer,timestamptz,text) to anon;
@@ -1451,14 +1287,12 @@ returns jsonb language sql stable security definer set search_path=public as $$
   select jsonb_build_object(
     'communications',coalesce((select jsonb_agg(to_jsonb(r) order by purpose) from (select purpose,content,updated_at from communications,owner where communications.user_id=owner.user_id and communications.message='client_review' order by purpose limit 10) r),'[]'),
     'daemonPayloads',coalesce((select jsonb_agg(to_jsonb(r) order by kind) from (select kind,payload,updated_at from daemon_payloads,owner where daemon_payloads.user_id=owner.user_id and daemon_payloads.message='client_review' order by kind limit 3) r),'[]'),
-    'agentTasks',coalesce((select jsonb_agg(to_jsonb(r) order by updated_at,id) from (select id,repository,prompt,provider,model,reasoning,planning_mode,targeted_feature_paths,status,queue_sequence,created_at,started_at,completed_at,error,verification_attempts,cancel_requested,retry_generation,updated_at from agent_tasks,owner where agent_tasks.user_id=owner.user_id and agent_tasks.message='client_review' order by updated_at,id limit 50) r),'[]'),
-    'orchestrationBatches',coalesce((select jsonb_agg(to_jsonb(r) order by updated_at,id) from (select id,repository,base_commit,task_ids,integration_branch,integration_worktree_path,status,resolver_attempts,verification_output,retry_generation,created_at,completed_at,updated_at from orchestration_batches,owner where orchestration_batches.user_id=owner.user_id and orchestration_batches.message='client_review' order by updated_at,id limit 30) r),'[]'),
+    'agentTasks',coalesce((select jsonb_agg(to_jsonb(r) order by updated_at,id) from (select id,repository,prompt,provider,model,reasoning,planning_mode,targeted_feature_paths,status,queue_sequence,created_at,started_at,completed_at,error,verification_attempts,resolver_attempts,cancel_requested,retry_generation,updated_at from agent_tasks,owner where agent_tasks.user_id=owner.user_id and agent_tasks.message='client_review' order by updated_at,id limit 50) r),'[]'),
     'taskDeletionRequests',coalesce((select jsonb_agg(to_jsonb(r) order by updated_at,id) from (select id,task_id,prompt_id,status,error,updated_at from agent_task_deletion_requests,owner where agent_task_deletion_requests.user_id=owner.user_id and agent_task_deletion_requests.message='client_review' order by updated_at,id limit 50) r),'[]'),
-    'batchDeletionRequests',coalesce((select jsonb_agg(to_jsonb(r) order by updated_at,id) from (select id,batch_id,status,error,updated_at from orchestration_batch_deletion_requests,owner where orchestration_batch_deletion_requests.user_id=owner.user_id and orchestration_batch_deletion_requests.message='client_review' order by updated_at,id limit 50) r),'[]'),
     'architectureViews',coalesce((select jsonb_agg(to_jsonb(r) order by updated_at,id) from (select id,prompt_id,repository,base_commit,final_commit,targeted_feature_paths,generation,status,changed_files,architecture_document,error,failure_details,provider,model,reasoning,requested_at,started_at,completed_at,created_at,updated_at from architecture_views,owner where architecture_views.user_id=owner.user_id and architecture_views.message='client_review' order by updated_at,id limit 20) r),'[]'),
     'architectureProgressEvents',coalesce((select jsonb_agg(to_jsonb(r) order by created_at,id) from (select id,architecture_view_id,generation,stage,stage_order,attempt,total_attempts,detail,created_at,updated_at from architecture_view_progress_events,owner where architecture_view_progress_events.user_id=owner.user_id and architecture_view_progress_events.message='client_review' order by created_at,id limit 50) r),'[]'),
     'featureExecutionRuns',coalesce((select jsonb_agg(to_jsonb(r) order by updated_at,id) from (select id,project_directory,feature_file_path,status,cancel_requested,command,parameter_file_path,entry_point_path,started_at,completed_at,exit_code,stdout_tail,stderr_tail,error,updated_at from feature_execution_runs,owner where feature_execution_runs.user_id=owner.user_id and feature_execution_runs.message='client_review' order by updated_at,id limit 50) r),'[]'),
-    'daemonEvents',coalesce((select jsonb_agg(to_jsonb(r) order by created_at,id) from (select id,event_type,batch_id,batch_generation,severity,content,created_at,updated_at from daemon_events,owner where daemon_events.user_id=owner.user_id and daemon_events.message='client_review' order by created_at,id limit 50) r),'[]'),
+    'daemonEvents',coalesce((select jsonb_agg(to_jsonb(r) order by created_at,id) from (select id,event_type,task_id,conversation_id,severity,content,created_at,updated_at from daemon_events,owner where daemon_events.user_id=owner.user_id and daemon_events.message='client_review' order by created_at,id limit 50) r),'[]'),
     'managerStatus',(select case when s.user_id is null then null else jsonb_build_object('state',s.state,'accepts_work',s.accepts_work,'manager_heartbeat_at',s.manager_heartbeat_at,'execution_process_id',s.execution_process_id,'execution_generation',s.execution_generation,'execution_started_at',s.execution_started_at,'last_successful_restart_at',s.last_successful_restart_at,'status_detail',s.status_detail,'updated_at',s.updated_at,'activeRequest',case when q.id is null then null else jsonb_build_object('id',q.id,'status',q.status,'blockers',q.blockers) end) end from owner left join daemon_manager_state s on s.user_id=owner.user_id and s.message='client_review' left join daemon_manager_requests q on q.id=s.active_request_id)
   );
 $$;
@@ -1472,7 +1306,6 @@ declare claimed_id uuid;result jsonb;begin
  select jsonb_build_object(
  'communications',coalesce((select jsonb_agg(to_jsonb(r) order by purpose)from(select purpose,content,updated_at from communications where user_id=p_user_id and message='daemon_review' and purpose in('agent_prompt','git_sync_request','feature_file_load','parameter_file_load','parameter_file_update','entry_point_update')order by purpose limit 6)r),'[]'),
  'agentTasks',coalesce((select jsonb_agg(to_jsonb(task) order by task.queue_sequence) from daemon_list_agent_tasks(p_user_id) task),'[]'),
- 'orchestrationBatches',coalesce((select jsonb_agg(to_jsonb(r)order by created_at)from(select id,repository,base_commit,task_ids,integration_branch,integration_worktree_path,status,message,resolver_attempts,verification_output,retry_generation,quiet_since,created_at,completed_at,updated_at from orchestration_batches where user_id=p_user_id and message='daemon_review' order by created_at limit 100)r),'[]'),
  'architectureViews',coalesce((select jsonb_agg(to_jsonb(r)order by requested_at,id)from(select id,prompt_id,repository,base_commit,final_commit,targeted_feature_paths,generation,status,requested_at,updated_at from architecture_views where user_id=p_user_id and message='daemon_review' and status in('queued','running')order by requested_at,id limit 10)r),'[]'),
  'featureRunControls',coalesce((select jsonb_agg(to_jsonb(r)order by created_at,id)from(select id,status,cancel_requested,created_at from feature_execution_runs where user_id=p_user_id and message='daemon_review' and status in('queued','running')and id is distinct from claimed_id order by created_at,id limit 100)r),'[]'),
  'claimedFeatureRun',(select case when r.id is null then null else to_jsonb(r)end from(select id,project_directory,feature_file_path,status,cancel_requested from feature_execution_runs where id=claimed_id)r))into result;return result;
@@ -1482,5 +1315,5 @@ create or replace function daemon_manager_tick(p_user_id uuid,p_manager_instance
 returns jsonb language plpgsql security definer set search_path=public as $$
 declare result jsonb;begin
  update daemon_manager_state set manager_heartbeat_at=now(),execution_process_id=p_execution_process_id,execution_started_at=p_execution_started_at,status_detail=coalesce(p_status_detail,status_detail),message='client_review',updated_at=now()where user_id=p_user_id and manager_instance_id=p_manager_instance_id;if not found then raise exception 'Manager lease ownership was lost';end if;
- select jsonb_build_object('activeRequest',case when q.id is null then null else jsonb_build_object('id',q.id,'status',q.status,'updated_at',q.updated_at)end,'drainSummary',case when q.status<>'draining' then null else jsonb_build_object('total',(select count(*)from agent_tasks where user_id=p_user_id and message='daemon_review')+(select count(*)from orchestration_batches where user_id=p_user_id and message='daemon_review')+(select count(*)from feature_execution_runs where user_id=p_user_id and message='daemon_review' and status in('queued','running'))+(select count(*)from architecture_views where user_id=p_user_id and message='daemon_review' and status in('queued','running'))+(select count(*)from communications where user_id=p_user_id and message='daemon_review'),'agentTasks',(select count(*)from agent_tasks where user_id=p_user_id and message='daemon_review'),'orchestrationBatches',(select count(*)from orchestration_batches where user_id=p_user_id and message='daemon_review'),'featureExecutions',(select count(*)from feature_execution_runs where user_id=p_user_id and message='daemon_review' and status in('queued','running')),'architectureViews',(select count(*)from architecture_views where user_id=p_user_id and message='daemon_review' and status in('queued','running')),'communications',coalesce((select jsonb_object_agg(purpose,count)from(select purpose,count(*)count from communications where user_id=p_user_id and message='daemon_review' group by purpose order by purpose limit 10)counts),'{}'))end)into result from daemon_manager_state s left join daemon_manager_requests q on q.id=s.active_request_id and q.message='daemon_review' where s.user_id=p_user_id and s.manager_instance_id=p_manager_instance_id;return result;
+ select jsonb_build_object('activeRequest',case when q.id is null then null else jsonb_build_object('id',q.id,'status',q.status,'updated_at',q.updated_at)end,'drainSummary',case when q.status<>'draining' then null else daemon_manager_get_drain_summary(p_user_id,p_manager_instance_id)end)into result from daemon_manager_state s left join daemon_manager_requests q on q.id=s.active_request_id and q.message='daemon_review' where s.user_id=p_user_id and s.manager_instance_id=p_manager_instance_id;return result;
 end; $$;

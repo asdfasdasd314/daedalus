@@ -16,7 +16,7 @@ The recurrent row review protocol prevents the client, daemon, and manager from 
 - **Schema and Test Gate**: New recurrent reads require migration and schema-snapshot updates plus lifecycle, idle-transfer, and stale-acknowledgement tests.
 - **Measured Budget**: The pre-remediation baseline was approximately 4,320 browser, 5,040 daemon, and 3,600 manager recurrent requests per hour; acceptance is at most 720 per component and 2,160 combined for one visible idle browser, daemon, and manager.
 - **Consolidated Browser Inbox**: `get_client_review_inbox()` returns explicitly projected, deterministically ordered, fixed-bound client-review collections, and `acknowledge_client_reviews()` guards every mutable receipt by review state and `updated_at` (plus monotonic generation where applicable).
-- **Task Integration Events**: Successful integration events carry task identity and their own review timestamp without transient batch tombstones.
+- **Task Integration Events**: Successful integration events carry task identity and their own review timestamp.
 - **Consolidated Daemon Snapshot**: `daemon_poll_task_work()` returns communications, task records, bounded Architecture View requests, active run controls, and one atomic feature-run claim without unreviewed large result fields.
 - **Architecture Document Delivery**: Architecture generation metadata enters the daemon snapshot without document bodies; validated `architecture_document` JSON transfers only from an explicit bounded `client_review` row and acknowledgements match both `updated_at` and the monotonic generation.
 - **Empty-Poll Contract**: Empty inboxes return arrays or `null`, produce no acknowledgement request, and are measured with aggregate request-count and response-byte logging rather than per-poll messages.
@@ -27,7 +27,7 @@ The recurrent row review protocol prevents the client, daemon, and manager from 
 - `shared/database/schema.sql`: Current schema snapshot.
 - `local-daemon/src/daedalus_daemon/communications.py`: Daemon review queries and state updates.
 - `local-daemon/src/daedalus_daemon/main.py`: Communications request handling.
-- `local-daemon/src/daedalus_daemon/orchestrator.py`: Durable task and batch state transitions.
+- `local-daemon/src/daedalus_daemon/orchestrator.py`: Durable task state transitions.
 - `local-daemon-manager/src/daedalus_daemon_manager/communications.py`: Recipient-filtered manager request reads and guarded control acknowledgements.
 - `local-daemon-manager/src/daedalus_daemon_manager/main.py`: Manager request lifecycle consumption.
 - `daedalus-site/app/feature-files-dashboard.tsx`: Client review polling and acknowledgements.
@@ -36,8 +36,7 @@ The recurrent row review protocol prevents the client, daemon, and manager from 
 - `supabase/migrations/023_complete_recurrent_supabase_read_hardening.sql`: Remaining control-plane protocol migration and review indexes.
 - `supabase/migrations/027_recurrent_supabase_egress_remediation.sql`: Consolidated browser, daemon, and manager RPCs, bounded projections, and batched acknowledgements.
 - `supabase/migrations/029_system_architecture_visualization_engine.sql`: Generation-guarded structured Architecture View completion and reviewed JSON delivery.
-- `supabase/migrations/035_agent_output_viewer_reliability.sql`: Completes daemon-event generation projection and timestamp-guarded client acknowledgement.
-- `supabase/migrations/036_preserve_batch_retry_worktree.sql`: Adds bounded retry-generation projection to the existing daemon work snapshot.
+- `supabase/migrations/039_remove_legacy_batch_persistence.sql`: Task-only browser inbox, daemon polling, event acknowledgement, and manager-drain contracts.
 
 ## Dev Mode
 TESTING

@@ -15,6 +15,7 @@ The local daemon owns the final, serialized Supabase CLI deployment stage for ve
 - `supabase/migrations/`: Canonical ordered Supabase migration history.
 - `supabase/config.toml`: Supabase CLI project structure; local link state is ignored.
 - `shared/database/README.md`: Bootstrap and operational migration procedure.
+- `supabase/migrations/039_remove_legacy_batch_persistence.sql`: Guarded forward-only retirement of the drained orchestration persistence layer.
 
 ## Dev Mode
 TESTING

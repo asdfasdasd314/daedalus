@@ -10,12 +10,14 @@ The local daemon manager is a small Python supervisor and Supabase-backed contro
 - **Invocation Root**: The manager keeps loading its own code and configuration from the Daedalus checkout, while the manager and its execution child use the directory where the manager command began as their working root.
 - **Compatibility**: Users without a manager state row continue accepting work until the manager is first registered or a restart is requested.
 - **Five-Second Tick**: Idle heartbeat publication and control retrieval share one lease-checked database tick aligned to the five-second stale-health cadence; drain details are returned only during draining.
+- **Task-Only Drain**: Restart blockers count durable tasks and active non-task subsystems; retired orchestration collections cannot contribute stale blocker totals.
 
 ## Relevant Files
 - `local-daemon-manager/src/daedalus_daemon_manager/`: Manager configuration, Supabase communication, and supervision loop.
 - `supabase/migrations/020_local_daemon_manager.sql`: Manager control plane, lifecycle RPCs, drain summary, and admission policies.
 - `supabase/migrations/023_fix_daemon_manager_begin_restart_blockers_ambiguity.sql`: Disambiguates `blockers` in `daemon_manager_begin_restart`.
 - `supabase/migrations/028_system_architecture_communication_engine.sql`: Includes Architecture View generations in restart drain accounting.
+- `supabase/migrations/039_remove_legacy_batch_persistence.sql`: Normalizes blocker state and installs task-only drain summaries and manager ticks.
 - `daedalus-site/app/daemon-manager-panel.tsx`: Workspace manager status and restart controls.
 - `parameter_files/local-daemon-manager.toml`: Manager-owned polling, heartbeat, stability, and process timing values.
 

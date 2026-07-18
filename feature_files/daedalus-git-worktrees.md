@@ -30,8 +30,8 @@ Daedalus Git Worktrees isolates agent-mode prompts on task branches and uses a d
 - `local-daemon/src/daedalus_daemon/main.py`: Tracked agent subprocess registry and SIGTERM/SIGKILL cancel plumbing.
 - `supabase/migrations/015_agent_task_cancel.sql`: Adds `cancelled` status, `cancel_requested`, cancel RLS, and terminal RPC handling.
 - `supabase/migrations/024_repair_agent_tasks_cancel_requested.sql`: Idempotent repair when live DB skipped 015's `cancel_requested` column.
-- `supabase/migrations/030_task_and_batch_failure_recovery.sql`: Batch recovery, retained-worktree task retry, and daemon-owned deletion protocol.
-- `supabase/migrations/009_git_worktree_orchestrator.sql`: Auth-scoped orchestration tables, policies, and daemon RPCs.
+- `supabase/migrations/039_remove_legacy_batch_persistence.sql`: Forward-only removal of retired orchestration persistence and task-only shared RPC contracts.
+- `shared/database/schema.sql`: Canonical task-only orchestration schema.
 - `daedalus-site/app/feature-files-dashboard.tsx`: Durable agent task submission, cancel requests, and status polling.
 - `daedalus-site/app/agent-session-panel.tsx`: Cancel control on in-flight durable tasks.
 - `parameter_files/daedalus-git-worktrees.toml`: Daedalus-owned scheduler, resolver, branch, cancel grace, and verification configuration shared by managed repositories.
@@ -67,3 +67,4 @@ HACKING
 - 2026-07-17: Prepended TASK_MODE coding on task/repair prompts and TASK_MODE integrating on resolver prompts for AGENTS.md profile routing.
 - 2026-07-18: Replaced cohort batching and separate integration worktrees with immediate, repository-serialized integration in each retained task worktree.
 - 2026-07-18: Made successful task cleanup remove the merged task branch after its worktree, including restart recovery, and added a manually whitelisted local-branch pruning script for retired task and integration worktrees.
+- 2026-07-18: Removed the legacy batch persistence layer so durable tasks solely own scheduling, integration, retry, review, events, and manager draining.
