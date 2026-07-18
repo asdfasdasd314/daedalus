@@ -30,6 +30,8 @@ from daedalus_daemon.main import (
     PLANNING_PROMPT_PREFIX,
     PLANNING_PROMPT_SUFFIX,
     TARGETED_FEATURES_PROMPT_PREFIX,
+    TASK_MODE_CODING,
+    TASK_MODE_PLANNING,
     apply_parameter_file_update,
     build_agent_prompt_state_message,
     build_git_sync_state_message,
@@ -337,13 +339,14 @@ class BuildCodexPromptTests(unittest.TestCase):
     def test_returns_raw_prompt_for_empty_targeted_feature_list(self):
         self.assertEqual(
             build_codex_prompt("Build the feature", False, []),
-            "Build the feature",
+            f"{TASK_MODE_CODING}\n\nBuild the feature",
         )
 
     def test_builds_planning_only_prompt(self):
         self.assertEqual(
             build_codex_prompt("Build the feature", True, []),
             (
+                f"{TASK_MODE_PLANNING}\n\n"
                 f"{PLANNING_PROMPT_PREFIX.rstrip()}\n\n"
                 f"{PLANNING_PROMPT_SUFFIX.rstrip()}\n\n"
                 "Build the feature"
@@ -359,7 +362,8 @@ class BuildCodexPromptTests(unittest.TestCase):
         self.assertEqual(
             build_codex_prompt("Build the feature", False, targeted_paths),
             (
-                TARGETED_FEATURES_PROMPT_PREFIX.format(
+                f"{TASK_MODE_CODING}\n\n"
+                + TARGETED_FEATURES_PROMPT_PREFIX.format(
                     paths=", ".join(targeted_paths),
                 )
                 + "\n\nBuild the feature"
@@ -372,6 +376,7 @@ class BuildCodexPromptTests(unittest.TestCase):
         self.assertEqual(
             build_codex_prompt("Build the feature", True, targeted_paths),
             (
+                f"{TASK_MODE_PLANNING}\n\n"
                 f"{PLANNING_PROMPT_PREFIX.rstrip()}\n\n"
                 f"{PLANNING_PROMPT_SUFFIX.rstrip()}\n\n"
                 f"{TARGETED_FEATURES_PROMPT_PREFIX.format(paths=targeted_paths[0])}\n\n"
@@ -591,7 +596,7 @@ class RunAgentPromptCycleTests(unittest.TestCase):
         )
         self.assertEqual(
             runs,
-            [("/workspace/project", "Build the feature", "gpt-5.5", "medium")],
+            [("/workspace/project", f"{TASK_MODE_CODING}\n\nBuild the feature", "gpt-5.5", "medium")],
         )
         self.assertEqual(
             deliveries,
@@ -691,6 +696,7 @@ class RunAgentPromptCycleTests(unittest.TestCase):
         })
         message_reads = [prompt_payload]
         expected_prompt = (
+            f"{TASK_MODE_PLANNING}\n\n"
             f"{PLANNING_PROMPT_PREFIX.rstrip()}\n\n"
             f"{PLANNING_PROMPT_SUFFIX.rstrip()}\n\n"
             "The following prompt reqeusts changes relevant to the following feature files: "
@@ -838,7 +844,7 @@ class RunAgentPromptCycleTests(unittest.TestCase):
         )
         self.assertEqual(
             runs,
-            [("/workspace/project", "Build the first feature", "gpt-5.5", "medium")],
+            [("/workspace/project", f"{TASK_MODE_CODING}\n\nBuild the first feature", "gpt-5.5", "medium")],
         )
         self.assertEqual(
             deliveries,
@@ -882,7 +888,7 @@ class CursorProviderRoutingTests(unittest.TestCase):
 
         def fake_run_cursor_prompt(directory, prompt, planning_mode):
             self.assertEqual(directory, "/workspace/project")
-            self.assertEqual(prompt, "Build the feature")
+            self.assertEqual(prompt, f"{TASK_MODE_CODING}\n\nBuild the feature")
             self.assertFalse(planning_mode)
             return "Cursor completed"
 
@@ -1156,7 +1162,7 @@ class RunCursorExecTests(unittest.TestCase):
             f"{PLANNING_PROMPT_PREFIX.rstrip()}\n\n"
             "Do not try to output the plan to a file.\n\n",
         )
-        self.assertTrue(prompt.startswith(PLANNING_PROMPT_PREFIX.rstrip()))
+        self.assertTrue(prompt.startswith(TASK_MODE_PLANNING))
         self.assertIn(PLANNING_PROMPT_SUFFIX.rstrip(), prompt)
         self.assertIn("# Existing plan", prompt)
         self.assertIn("1. Use cache? — Yes", prompt)

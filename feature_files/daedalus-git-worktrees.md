@@ -63,3 +63,4 @@ HACKING
 - 2026-07-16: Separated implementation completion from batch integration failure, preserving recoverable task worktrees and adding guarded batch-only retries with successful batch cleanup.
 - 2026-07-17: Added the final daemon-owned Supabase migration deployment gate, forwarding bounded preflight diagnostics through the existing resolver loop while retaining blocked integration worktrees.
 - 2026-07-17: Prevented a just-finalized batch from being recreated as collecting by deferring admission and collection until the daemon polls fresh durable state, and reclaim orphaned collecting rows whose completed task branches have no integration worktree.
+- 2026-07-17: Prepended TASK_MODE coding on task/repair prompts and TASK_MODE integrating on resolver prompts for AGENTS.md profile routing.

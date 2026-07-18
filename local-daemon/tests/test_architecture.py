@@ -61,7 +61,6 @@ class ArchitectureEvidenceTests(unittest.TestCase):
             patch("daedalus_daemon.architecture.add_snapshot_worktree"),
             patch("daedalus_daemon.architecture.remove_snapshot_worktree"),
             patch("daedalus_daemon.architecture.collect_relevant_feature_files", return_value=[]),
-            patch("daedalus_daemon.architecture.collect_graph_community_evidence", return_value=[]),
         ):
             result = generate_architecture_view({
                 "id": "view-1",
@@ -153,17 +152,23 @@ class ArchitectureEvidenceTests(unittest.TestCase):
 
     def test_prompt_requires_final_state_json_without_change_narration(self):
         prompt = build_architecture_prompt(
-            [{"status": "M", "path": "src/owned.py"}],
+            [
+                {"status": "M", "path": "src/owned.py"},
+                {"status": "M", "path": "feature_files/owned.md"},
+            ],
             ["feature_files/owned.md"],
-            [{"community": 4, "members": []}],
             Path("/repo/shared/architecture/architecture-view-view-1-generation-1.json"),
         )
 
+        self.assertTrue(prompt.startswith("TASK_MODE: architecture"))
         self.assertIn('"$schema": "https://json-schema.org/draft/2020-12/schema"', prompt)
         self.assertIn('"source_system_id"', prompt)
         self.assertIn("never describe the changes", prompt)
         self.assertIn("Write one complete raw JSON object", prompt)
         self.assertIn("After writing the file", prompt)
+        self.assertIn("feature_files/owned.md", prompt)
+        self.assertNotIn("src/owned.py", prompt)
+        self.assertNotIn("Graphify community evidence", prompt)
 
     def test_reads_model_document_artifact_and_records_each_interaction(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -180,7 +185,6 @@ class ArchitectureEvidenceTests(unittest.TestCase):
                 patch("daedalus_daemon.architecture.add_snapshot_worktree"),
                 patch("daedalus_daemon.architecture.remove_snapshot_worktree"),
                 patch("daedalus_daemon.architecture.collect_relevant_feature_files", return_value=[]),
-                patch("daedalus_daemon.architecture.collect_graph_community_evidence", return_value=[]),
             ):
                 result = generate_architecture_view({
                     "id": "view-1", "repository": str(repository), "base_commit": "base",
@@ -212,7 +216,6 @@ class ArchitectureEvidenceTests(unittest.TestCase):
             patch("daedalus_daemon.architecture.add_snapshot_worktree"),
             patch("daedalus_daemon.architecture.remove_snapshot_worktree"),
             patch("daedalus_daemon.architecture.collect_relevant_feature_files", return_value=["feature_files/owned.md"]),
-            patch("daedalus_daemon.architecture.collect_graph_community_evidence", return_value=[]),
         ):
             result = generate_architecture_view({
                 "id": "view-1", "repository": "/repo", "base_commit": "base",
@@ -227,6 +230,8 @@ class ArchitectureEvidenceTests(unittest.TestCase):
         self.assertIn("line 1, column 1", calls[1])
         self.assertIn("schema_version", calls[2])
         self.assertIn("feature_files/owned.md", calls[2])
+        self.assertNotIn("src/owned.py", calls[0])
+        self.assertNotIn("src/owned.py", calls[2])
         self.assertIn("Published JSON Schema", calls[2])
         self.assertIn("complete corrected document, not a patch", calls[2])
         self.assertEqual([item[0] for item in progress], [
@@ -244,7 +249,6 @@ class ArchitectureEvidenceTests(unittest.TestCase):
             patch("daedalus_daemon.architecture.add_snapshot_worktree"),
             patch("daedalus_daemon.architecture.remove_snapshot_worktree"),
             patch("daedalus_daemon.architecture.collect_relevant_feature_files", return_value=[]),
-            patch("daedalus_daemon.architecture.collect_graph_community_evidence", return_value=[]),
         ):
             result = generate_architecture_view({
                 "id": "view-1", "repository": "/repo", "base_commit": "base",
@@ -268,7 +272,6 @@ class ArchitectureEvidenceTests(unittest.TestCase):
                 patch("daedalus_daemon.architecture.add_snapshot_worktree"),
                 patch("daedalus_daemon.architecture.remove_snapshot_worktree"),
                 patch("daedalus_daemon.architecture.collect_relevant_feature_files", return_value=[]),
-                patch("daedalus_daemon.architecture.collect_graph_community_evidence", return_value=[]),
             ):
                 result = generate_architecture_view({
                     "id": "view-1", "repository": "/repo", "base_commit": "base",
@@ -291,7 +294,6 @@ class ArchitectureEvidenceTests(unittest.TestCase):
             patch("daedalus_daemon.architecture.add_snapshot_worktree"),
             patch("daedalus_daemon.architecture.remove_snapshot_worktree"),
             patch("daedalus_daemon.architecture.collect_relevant_feature_files", return_value=[]),
-            patch("daedalus_daemon.architecture.collect_graph_community_evidence", return_value=[]),
         ):
             result = generate_architecture_view({
                 "id": "view-1", "repository": "/repo", "base_commit": "base",
@@ -317,7 +319,6 @@ class ArchitectureEvidenceTests(unittest.TestCase):
             patch("daedalus_daemon.architecture.add_snapshot_worktree"),
             patch("daedalus_daemon.architecture.remove_snapshot_worktree"),
             patch("daedalus_daemon.architecture.collect_relevant_feature_files", return_value=[]),
-            patch("daedalus_daemon.architecture.collect_graph_community_evidence", return_value=[]),
         ):
             result = generate_architecture_view({
                 "id": "view-1", "repository": "/repo", "base_commit": "base",

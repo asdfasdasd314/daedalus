@@ -61,6 +61,8 @@ TARGETED_FEATURE_PATH_REGEX = re.compile(r"^feature_files/[A-Za-z0-9._/-]+\.md$"
 TARGETED_FEATURES_PROMPT_PREFIX = (
     "The following prompt reqeusts changes relevant to the following feature files: {paths}"
 )
+TASK_MODE_CODING = "TASK_MODE: coding"
+TASK_MODE_PLANNING = "TASK_MODE: planning"
 
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -916,6 +918,7 @@ def build_codex_prompt(
     if ask_mode:
         prompt_sections.append(ASK_PROMPT_PREFIX.rstrip())
     elif planning_mode:
+        prompt_sections.append(TASK_MODE_PLANNING)
         prompt_sections.append(PLANNING_PROMPT_PREFIX.rstrip())
         prompt_sections.append(PLANNING_PROMPT_SUFFIX.rstrip())
         refinement_context = build_planning_refinement_context(
@@ -924,6 +927,8 @@ def build_codex_prompt(
         )
         if refinement_context:
             prompt_sections.append(refinement_context)
+    else:
+        prompt_sections.append(TASK_MODE_CODING)
 
     if targeted_feature_paths:
         prompt_sections.append(
@@ -931,9 +936,6 @@ def build_codex_prompt(
                 paths=", ".join(targeted_feature_paths),
             ),
         )
-
-    if not prompt_sections:
-        return prompt
 
     prompt_prefix = "\n\n".join(prompt_sections)
     return f"{prompt_prefix}\n\n{prompt}"
@@ -952,6 +954,7 @@ def build_cursor_prompt(
     if ask_mode:
         prompt_sections.append(CURSOR_ASK_PROMPT_PREFIX.rstrip())
     elif planning_mode:
+        prompt_sections.append(TASK_MODE_PLANNING)
         prompt_sections.append(CURSOR_PLANNING_PROMPT_PREFIX.rstrip())
         prompt_sections.append(PLANNING_PROMPT_SUFFIX.rstrip())
         refinement_context = build_planning_refinement_context(
@@ -960,6 +963,8 @@ def build_cursor_prompt(
         )
         if refinement_context:
             prompt_sections.append(refinement_context)
+    else:
+        prompt_sections.append(TASK_MODE_CODING)
 
     if targeted_feature_paths:
         prompt_sections.append(
@@ -967,9 +972,6 @@ def build_cursor_prompt(
                 paths=", ".join(targeted_feature_paths),
             ),
         )
-
-    if not prompt_sections:
-        return prompt
 
     prompt_prefix = "\n\n".join(prompt_sections)
     return f"{prompt_prefix}\n\n{prompt}"

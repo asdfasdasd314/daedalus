@@ -1,17 +1,19 @@
 # Recurrent Row Review Protocol
 
 ## Summary
-The recurrent row review protocol prevents the client, daemon, and manager from repeatedly transferring full Supabase rows. Every recurrent transport row has a strict `message` state: `daemon_review`, `client_review`, `daemon_complete`, or `client_complete`. The browser and daemon each consume one bounded recipient inbox per five-second cycle, while the manager publishes its heartbeat and receives control state through one five-second tick.
+The recurrent row review protocol prevents the client, daemon, and manager from repeatedly transferring full Supabase rows. Prefer one-shot, user-triggered, or on-demand Supabase reads; historical, archive, and completed data must never be polled recurrently. Every recurrent transport table enforces the four protocol values (`daemon_review`, `client_review`, `client_complete`, `daemon_complete`) with user/state indexes for its recipient query, and every recurrent read filters by recipient state: `daemon_review` for daemon/manager work or `client_review` for browser work. Health, heartbeat, lease, and control-plane reads are not exempt. The browser and daemon each consume one bounded recipient inbox per five-second cycle, while the manager publishes its heartbeat and receives control state through one five-second tick.
 
 ## Key Points
-- **Recipient-Owned Reads**: The daemon polls only `daemon_review` rows and the client polls only `client_review` rows.
+- **Recipient-Owned Reads**: Every recurrent Supabase read must use this protocol; the daemon and manager poll only `daemon_review` rows and the client polls only `client_review` rows.
+- **Bounded Column Selection**: Never use `select=*` in a recurrent read. Select only required columns, apply a bounded limit, and transfer large payload fields only from rows explicitly marked for recipient review.
 - **One-Time Payload Delivery**: Daemon payloads are marked `client_review` on write and become `client_complete` only after the browser consumes the payload.
 - **Communications Content**: `communications.message` is protocol state; nullable `content` carries agent prompts, parameter edits, and git-sync requests. Feature and parameter load requests need no content.
 - **Durable Work**: Active orchestrator tasks and batches remain `daemon_review` until terminal work is ready for the client or fully complete.
-- **Safe Acknowledgements**: Client completion updates include the expected review state, so an older response cannot acknowledge newer content.
+- **Safe Acknowledgements**: After consuming a review row, acknowledge it conditionally using both the expected review state and the row generation (`updated_at` or an equivalent monotonic version); a stale response must not complete newer work.
 - **No Recurrent Archives**: Historical task, feature-run, and agent-output data loads only during hydration or explicit user requests; idle polling is recipient-filtered and bounded.
 - **Selected Archive Detail**: Archive lists and searches remain summary-only, while selecting an agent-output conversation makes one bounded, on-demand request for its full prompt, output, and error bodies.
-- **Control-Plane Coverage**: Manager heartbeat and restart-control rows use the same protocol and generation-aware client acknowledgement.
+- **Control-Plane Coverage**: Manager heartbeat, restart-control, lease, and related control-plane rows use the same protocol and generation-aware acknowledgement; they are not exempt.
+- **Schema and Test Gate**: New recurrent reads require migration and schema-snapshot updates plus lifecycle, idle-transfer, and stale-acknowledgement tests.
 - **Measured Budget**: The pre-remediation baseline was approximately 4,320 browser, 5,040 daemon, and 3,600 manager recurrent requests per hour; acceptance is at most 720 per component and 2,160 combined for one visible idle browser, daemon, and manager.
 - **Consolidated Browser Inbox**: `get_client_review_inbox()` returns explicitly projected, deterministically ordered, fixed-bound client-review collections, and `acknowledge_client_reviews()` guards every mutable receipt by review state and `updated_at` (plus monotonic generation where applicable).
 - **Durable Batch Tombstones**: Successful integration events retain `batch_id`, retry generation, and their own review timestamp after the transient batch row is deleted, allowing the browser to remove only the completed generation.
@@ -31,7 +33,6 @@ The recurrent row review protocol prevents the client, daemon, and manager from 
 - `daedalus-site/app/feature-files-dashboard.tsx`: Client review polling and acknowledgements.
 - `daedalus-site/app/daemon-manager-panel.tsx`: Heartbeat review consumption and timestamp-guarded acknowledgement.
 - `daedalus-site/app/agent-output-viewer.tsx`: On-demand historical output loading.
-- `AGENTS.md`: Project-wide recurrent Supabase read requirements.
 - `supabase/migrations/023_complete_recurrent_supabase_read_hardening.sql`: Remaining control-plane protocol migration and review indexes.
 - `supabase/migrations/027_recurrent_supabase_egress_remediation.sql`: Consolidated browser, daemon, and manager RPCs, bounded projections, and batched acknowledgements.
 - `supabase/migrations/029_system_architecture_visualization_engine.sql`: Generation-guarded structured Architecture View completion and reviewed JSON delivery.
@@ -62,3 +63,4 @@ TESTING
 - 2026-07-16: Resolved the follow-up integration conflict by preserving both structured Architecture View delivery and hydrated History detail across bounded refreshes.
 - 2026-07-17: Consolidated terminal task and daemon-event delivery under the single browser inbox and added durable, generation-scoped batch completion acknowledgements.
 - 2026-07-17: Projected batch retry generations through the bounded daemon snapshot so retained manual retries are distinguishable from new integrations without adding a recurrent transport.
+- 2026-07-17: Folded project-wide recurrent Supabase read requirements from `AGENTS.md` into this feature's Summary and Key Points.

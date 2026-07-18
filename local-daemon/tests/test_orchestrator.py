@@ -258,6 +258,7 @@ class PromptTests(unittest.TestCase):
             "prompt": "Build it",
             "targeted_feature_paths": ["feature_files/example.md"],
         })
+        self.assertTrue(prompt.startswith("TASK_MODE: coding"))
         self.assertIn("feature_files/example.md", prompt)
         self.assertIn("Commit every completed change", prompt)
 
@@ -266,6 +267,7 @@ class PromptTests(unittest.TestCase):
             {"prompt": "Build it"}, "COMMAND: pytest\nSTDERR: failed", 2, 3
         )
 
+        self.assertTrue(prompt.startswith("TASK_MODE: coding"))
         self.assertIn("Build it", prompt)
         self.assertIn("COMMAND: pytest", prompt)
         self.assertIn("2/3", prompt)
@@ -276,6 +278,7 @@ class PromptTests(unittest.TestCase):
             [{"prompt": "First goal"}, {"prompt": "Second goal"}],
             "merge conflict",
         )
+        self.assertTrue(prompt.startswith("TASK_MODE: integrating"))
         self.assertIn("First goal", prompt)
         self.assertIn("Second goal", prompt)
         self.assertIn("merge conflict", prompt)

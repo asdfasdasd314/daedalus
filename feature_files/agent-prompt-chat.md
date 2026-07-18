@@ -38,3 +38,4 @@ HACKING
 - 2026-07-14: Kept prompt submission and planning handoffs in the composer without automatically opening the output viewer; the latest prompt remains selected when the viewer is opened manually.
 - 2026-07-14: Resolved the integration merge by retaining both the Edit-form typography restoration and manual output-viewer handoff.
 - 2026-07-14: Diagnosed batch resolver failures caused by passing Cursor's empty reasoning setting into a Codex resolver invocation.
+- 2026-07-17: Prepended TASK_MODE routing lines on direct planning and coding chat prompts so AGENTS.md selects the matching agent profile.

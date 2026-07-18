@@ -1363,6 +1363,7 @@ def build_task_prompt(task: dict) -> str:
     paths = task.get("targeted_feature_paths") or []
     scope = f"\nTargeted feature files: {', '.join(paths)}" if paths else ""
     return (
+        f"TASK_MODE: coding\n\n"
         f"{task['prompt']}{scope}\n\n"
         "Work only in this Git worktree. Commit every completed change to the current task branch; "
         "if your sandbox cannot access Git worktree metadata, leave the completed changes for Daedalus to commit. "
@@ -1374,6 +1375,7 @@ def build_task_repair_prompt(
     task: dict, failure: str, attempt: int, limit: int
 ) -> str:
     return (
+        "TASK_MODE: coding\n\n"
         "Repair the failing verification suite in this existing isolated Git worktree. "
         "Preserve the original task intent, inspect the current changes and failure details, and make the smallest fix. "
         "Commit every completed change; if your sandbox cannot access Git worktree metadata, leave the completed changes for Daedalus to commit. "
@@ -1387,6 +1389,7 @@ def build_task_repair_prompt(
 def build_resolver_prompt(batch: dict, tasks: list[dict], failure: str) -> str:
     goals = "\n".join(f"- {task['prompt']}" for task in tasks)
     return (
+        "TASK_MODE: integrating\n\n"
         "Resolve the current integration failure while preserving every task's intent. "
         "Inspect the existing worktree state, make the smallest compatible fix, run relevant checks, "
         "and commit the resolution. If your sandbox cannot commit, leave the completed resolution for Daedalus to commit. "

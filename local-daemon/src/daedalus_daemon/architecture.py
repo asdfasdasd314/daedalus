@@ -201,15 +201,12 @@ def generate_architecture_view(
         feature_paths = collect_relevant_feature_files(
             snapshot_path, changed_files, targeted_paths
         )
-        graph_evidence = collect_graph_community_evidence(
-            snapshot_path, changed_files
-        )
-        publish_progress(view, "collecting_evidence", "Feature and Graphify evidence collected.")
+        publish_progress(view, "collecting_evidence", "Feature-file evidence collected.")
         document_path = architecture_document_path(
             repository, str(view["id"]), int(view["generation"])
         )
         prompt = build_architecture_prompt(
-            changed_files, feature_paths, graph_evidence, document_path
+            changed_files, feature_paths, document_path
         )
         raw_response = ""
         final_problems = ""
@@ -278,7 +275,6 @@ def generate_architecture_view(
                 prompt = build_architecture_correction_prompt(
                     changed_files,
                     feature_paths,
-                    graph_evidence,
                     raw_response,
                     final_problems,
                     document_path,
@@ -518,25 +514,34 @@ def collect_graph_community_evidence(
     return evidence
 
 
+def feature_file_change_hints(changed_files: list[dict]) -> list[dict]:
+    hints: list[dict] = []
+    for item in changed_files:
+        path = str(item.get("path") or "").replace("\\", "/")
+        previous = str(item.get("previousPath") or "").replace("\\", "/")
+        if path.startswith("feature_files/") or previous.startswith("feature_files/"):
+            hints.append(item)
+    return hints
+
+
 def build_architecture_prompt(
     changed_files: list[dict],
     feature_paths: list[str],
-    graph_evidence: list[dict],
     document_path: Path,
 ) -> str:
     schema = SOFTWARE_ARCHITECTURE_SCHEMA_PATH.read_text(encoding="utf-8")
-    return f"""Create a structured Architecture View for the affected systems in this repository snapshot.
+    feature_hints = feature_file_change_hints(changed_files)
+    return f"""TASK_MODE: architecture
 
-The snapshot is already checked out at the task's final verified commit. Inspect the repository as needed, especially the listed feature files and the relevant Graphify communities. Changed paths are attention hints only: never describe the changes, the diff, commits, before/after states, implementation chronology, or work performed. Describe each affected surviving system only as it exists in this snapshot. Feature files are the primary candidates for system ownership boundaries. Graphify communities are secondary structural evidence. Merge or split candidates when the repository evidence supports it, and do not claim that an inferred system name is an official registered name.
+Create a structured Architecture View for the affected systems in this repository snapshot.
 
-Changed path hints:
-{json.dumps(changed_files, indent=2)}
+The snapshot is already checked out at the task's final verified commit. Inspect the repository as needed, especially the listed feature files. Feature-file path hints are attention hints only: never describe the changes, the diff, commits, before/after states, implementation chronology, or work performed. Describe each affected surviving system only as it exists in this snapshot. Feature files are the primary candidates for system ownership boundaries. Use graphify yourself when you need structural relationships. Merge or split candidates when the repository evidence supports it, and do not claim that an inferred system name is an official registered name.
+
+Feature-file path hints:
+{json.dumps(feature_hints, indent=2)}
 
 Relevant feature files:
 {json.dumps(feature_paths, indent=2)}
-
-Relevant Graphify community evidence:
-{json.dumps(graph_evidence, indent=2)}
 
 Published JSON Schema:
 {schema}
@@ -549,13 +554,12 @@ Create its parent directories if necessary. The file must contain JSON only: no 
 def build_architecture_correction_prompt(
     changed_files: list[dict],
     feature_paths: list[str],
-    graph_evidence: list[dict],
     invalid_response: str,
     validation_problems: str,
     document_path: Path,
 ) -> str:
     original_prompt = build_architecture_prompt(
-        changed_files, feature_paths, graph_evidence, document_path
+        changed_files, feature_paths, document_path
     )
     return f"""{original_prompt}
 

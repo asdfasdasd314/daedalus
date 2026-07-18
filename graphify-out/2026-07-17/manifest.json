@@ -460,8 +460,8 @@
     "semantic_hash": ""
   },
   "local-daemon/src/daedalus_daemon/architecture.py": {
-    "mtime": 1784343450.0956085,
-    "ast_hash": "f3177e88b2c30ea38f262cca72af3890",
+    "mtime": 1784342936.36296,
+    "ast_hash": "59a94522332f2b60879abc51ce6bcbf8",
     "semantic_hash": ""
   },
   "local-daemon/src/daedalus_daemon/architecture_document.py": {
@@ -470,8 +470,8 @@
     "semantic_hash": ""
   },
   "local-daemon/tests/test_architecture.py": {
-    "mtime": 1784343473.653725,
-    "ast_hash": "dcd066c0f4d56380b66df54279fa3880",
+    "mtime": 1784342956.0945623,
+    "ast_hash": "75b51e714e86e37a72c13cd3bcc8e958",
     "semantic_hash": ""
   },
   "local-daemon/tests/test_architecture_document.py": {
@@ -485,8 +485,8 @@
     "semantic_hash": ""
   },
   "feature_files/system-architecture-communication-engine.md": {
-    "mtime": 1784343479.7004836,
-    "ast_hash": "9db1e67366250e6dbbcda6616c8e53a1",
+    "mtime": 1784342957.9908273,
+    "ast_hash": "d12718e759d4cc3fbecfbcf8bf381100",
     "semantic_hash": ""
   },
   "feature_files/system-architecture-visualization-engine.md": {
