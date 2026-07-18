@@ -224,6 +224,17 @@ test("live durable task rehydrate stays non-recurrent and column-scoped", () => 
   assert.doesNotMatch(byId, /select", "\*"/);
 });
 
+test("finalized task deletion reloads the durable revision instead of using archive history time", () => {
+  const deletionHandler = dashboardSource.slice(
+    dashboardSource.indexOf("onDeleteDurableTask={async (exchange) => {"),
+    dashboardSource.indexOf("onImplementPlan", dashboardSource.indexOf("onDeleteDurableTask={async (exchange) => {")),
+  );
+  assert.match(deletionHandler, /fetchAgentTaskById\(/);
+  assert.match(deletionHandler, /isFinalizedAgentTaskStatus\(currentTask\.status\)/);
+  assert.match(deletionHandler, /currentTask\.updated_at/);
+  assert.doesNotMatch(deletionHandler, /requestFinalizedTaskDeletion\([\s\S]*exchange\.updatedAt/);
+});
+
 test("manager panel is display/action only", () => {
   assert.doesNotMatch(managerSource, /get_daemon_manager_status/);
   assert.doesNotMatch(managerSource, /setInterval/);

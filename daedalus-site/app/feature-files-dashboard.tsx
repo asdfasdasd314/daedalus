@@ -2902,7 +2902,19 @@ export default function FeatureFilesDashboard({
           if (!exchange.taskId || !currentUser || !accessToken) {
             throw new Error("This finalized task is unavailable for synchronized deletion.");
           }
-          await requestFinalizedTaskDeletion(supabaseUrl, supabasePublishableKey, accessToken, exchange.taskId, exchange.updatedAt);
+          // The selected exchange can be an archived history row, whose timestamp
+          // is independent from agent_tasks.updated_at. The deletion RPC guards on
+          // the durable task's exact database revision, so reload it before asking
+          // the daemon to clean up its worktree and history.
+          const currentTask = await fetchAgentTaskById(
+            supabaseUrl, supabasePublishableKey, accessToken, currentUserId, exchange.taskId,
+          );
+          if (!currentTask || !isFinalizedAgentTaskStatus(currentTask.status)) {
+            throw new Error("This task is no longer finalized and cannot be deleted.");
+          }
+          await requestFinalizedTaskDeletion(
+            supabaseUrl, supabasePublishableKey, accessToken, currentTask.id, currentTask.updated_at,
+          );
           setPromptStatus("Synchronized task deletion requested.");
         }}
         onImplementPlan={() => void implementPlanningSession()}
