@@ -24,12 +24,13 @@ Daedalus Git Worktrees isolates agent-mode prompts on task branches and uses a d
 
 ## Relevant Files
 - `local-daemon/src/daedalus_daemon/orchestrator.py`: Git worktree lifecycle, verification, batching, resolver attempts, hard cancel, and promotion.
+- `local-daemon/src/daedalus_daemon/migration_deployment.py`: Serialized, allowlisted Supabase CLI preflight and deployment stage for verified integration batches.
 - `local-daemon/src/daedalus_daemon/communications.py`: Durable task, batch, and event transport used by the daemon.
 - `local-daemon/src/daedalus_daemon/main.py`: Tracked agent subprocess registry and SIGTERM/SIGKILL cancel plumbing.
-- `shared/database/migrations/015_agent_task_cancel.sql`: Adds `cancelled` status, `cancel_requested`, cancel RLS, and terminal RPC handling.
-- `shared/database/migrations/024_repair_agent_tasks_cancel_requested.sql`: Idempotent repair when live DB skipped 015's `cancel_requested` column.
-- `shared/database/migrations/030_task_and_batch_failure_recovery.sql`: Batch recovery, retained-worktree task retry, and daemon-owned deletion protocol.
-- `shared/database/migrations/009_git_worktree_orchestrator.sql`: Auth-scoped orchestration tables, policies, and daemon RPCs.
+- `supabase/migrations/015_agent_task_cancel.sql`: Adds `cancelled` status, `cancel_requested`, cancel RLS, and terminal RPC handling.
+- `supabase/migrations/024_repair_agent_tasks_cancel_requested.sql`: Idempotent repair when live DB skipped 015's `cancel_requested` column.
+- `supabase/migrations/030_task_and_batch_failure_recovery.sql`: Batch recovery, retained-worktree task retry, and daemon-owned deletion protocol.
+- `supabase/migrations/009_git_worktree_orchestrator.sql`: Auth-scoped orchestration tables, policies, and daemon RPCs.
 - `daedalus-site/app/feature-files-dashboard.tsx`: Durable agent task submission, cancel requests, and status polling.
 - `daedalus-site/app/agent-session-panel.tsx`: Cancel control on in-flight durable tasks.
 - `parameter_files/daedalus-git-worktrees.toml`: Daedalus-owned scheduler, resolver, branch, cancel grace, and verification configuration shared by managed repositories.
@@ -60,3 +61,4 @@ HACKING
 - 2026-07-16: Persisted each successful task's final verified branch commit after repair completion for forward-only Architecture View reconstruction.
 - 2026-07-16: Recovered blocked batch `de42f513-83d8-4405-9a50-61beac599016` by merging the user's newer primary commit into its integration branch and fast-forwarding the clean combined history to `main`.
 - 2026-07-16: Separated implementation completion from batch integration failure, preserving recoverable task worktrees and adding guarded batch-only retries with successful batch cleanup.
+- 2026-07-17: Added the final daemon-owned Supabase migration deployment gate, forwarding bounded preflight diagnostics through the existing resolver loop while retaining blocked integration worktrees.

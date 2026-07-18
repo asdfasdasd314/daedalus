@@ -20,7 +20,7 @@ The dev environment loader expands Daedalus beyond feature-file markdown so the 
 - `daedalus-site/app/parameter-variable-selector.tsx`: Lets the user choose a parameter variable, inspect its leading-comment context, and save typed edits.
 - `daedalus-site/lib/parameter-file-cache.ts`: Stores the daemon-delivered parameter-file payload.
 - `daedalus-site/lib/parameter-file-parser.ts`: Parses flat TOML assignments, infers simple types, and rewrites edited values back into the file text.
-- `shared/database/migrations/008_auth_scoped_daedalus.sql`: Adds the daemon payload and communications rows used for parameter payload delivery and update commands.
+- `supabase/migrations/008_auth_scoped_daedalus.sql`: Adds the daemon payload and communications rows used for parameter payload delivery and update commands.
 
 ## Dev Mode
 HACKING

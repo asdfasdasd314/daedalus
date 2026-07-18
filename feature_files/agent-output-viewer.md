@@ -22,16 +22,16 @@ The Agent Output Viewer is the durable, authenticated history and live-status su
 - **Persistent Architecture Rail**: Architecture View keeps History, search, feature groups, exchange selection, and a compact selected-exchange action area visible as a fixed left rail without owning diagram layout.
 
 ## Relevant Files
-- `shared/database/migrations/018_agent_output_history.sql`: Durable history table, policies, RPCs, task projection trigger, and recoverable backfills.
-- `shared/database/migrations/019_allow_agent_output_history_delete.sql`: Original owner delete policy for history rows.
-- `shared/database/migrations/025_allow_terminal_agent_output_history_delete.sql`: Owner delete policy for every finalized history row.
-- `shared/database/migrations/020_planning_conversation_history.sql`: Durable planning conversation linkage for direct prompts and implementation tasks.
-- `shared/database/migrations/024_repair_agent_tasks_cancel_requested.sql`: Idempotent repair when live `agent_tasks` is missing `cancel_requested` (breaks History hydration selects).
+- `supabase/migrations/018_agent_output_history.sql`: Durable history table, policies, RPCs, task projection trigger, and recoverable backfills.
+- `supabase/migrations/019_allow_agent_output_history_delete.sql`: Original owner delete policy for history rows.
+- `supabase/migrations/025_allow_terminal_agent_output_history_delete.sql`: Owner delete policy for every finalized history row.
+- `supabase/migrations/020_planning_conversation_history.sql`: Durable planning conversation linkage for direct prompts and implementation tasks.
+- `supabase/migrations/024_repair_agent_tasks_cancel_requested.sql`: Idempotent repair when live `agent_tasks` is missing `cancel_requested` (breaks History hydration selects).
 - `shared/database/schema.sql`: Current database schema snapshot.
-- `shared/database/migrations/030_task_and_batch_failure_recovery.sql`: Guarded task/batch retry and daemon-synchronized deletion requests.
-- `shared/database/migrations/034_blocked_batch_task_reservation.sql`: Keeps a blocked batch's member tasks out of fresh collection until the original batch is retried or deleted.
-- `shared/database/migrations/035_agent_output_viewer_reliability.sql`: Generation-scoped batch tombstones, terminal timestamp repair, bounded inbox projection, and guarded acknowledgement.
-- `shared/database/migrations/036_preserve_batch_retry_worktree.sql`: Preserves a manually retried integration's retained worktree and projects its retry generation to the daemon.
+- `supabase/migrations/030_task_and_batch_failure_recovery.sql`: Guarded task/batch retry and daemon-synchronized deletion requests.
+- `supabase/migrations/034_blocked_batch_task_reservation.sql`: Keeps a blocked batch's member tasks out of fresh collection until the original batch is retried or deleted.
+- `supabase/migrations/035_agent_output_viewer_reliability.sql`: Generation-scoped batch tombstones, terminal timestamp repair, bounded inbox projection, and guarded acknowledgement.
+- `supabase/migrations/036_preserve_batch_retry_worktree.sql`: Preserves a manually retried integration's retained worktree and projects its retry generation to the daemon.
 - `parameter_files/agent-output-viewer.toml`: Viewer-owned tunable settings.
 - `local-daemon/src/daedalus_daemon/communications.py`: Narrow direct-prompt history upsert transport.
 - `local-daemon/src/daedalus_daemon/main.py`: Direct planning and ask execution publication.

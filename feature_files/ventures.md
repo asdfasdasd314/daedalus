@@ -19,11 +19,11 @@ The Ventures feature adds a Supabase-backed tracking surface to the graph worksp
 
 ## Relevant Files
 - `daedalus-site/app/feature-files-dashboard.tsx`: Workspace shell that hosts the ventures drawer UI, venture CRUD flows, and project-scoped feature tagging controls.
-- `shared/database/migrations/004_create_ventures_table.sql`: Creates the `venture_progress_state` enum and the `ventures` table.
-- `shared/database/migrations/005_enable_ventures_rls.sql`: Enables venture row level security policies for anon browser CRUD access.
-- `shared/database/migrations/006_add_project_directory_to_ventures.sql`: Adds the optional venture project tag and details columns.
-- `shared/database/migrations/007_add_feature_file_paths_to_ventures.sql`: Adds the venture feature-tag path array column.
-- `shared/database/migrations/008_auth_scoped_daedalus.sql`: Adds venture ownership and authenticated owner-only RLS policies.
+- `supabase/migrations/004_create_ventures_table.sql`: Creates the `venture_progress_state` enum and the `ventures` table.
+- `supabase/migrations/005_enable_ventures_rls.sql`: Enables venture row level security policies for anon browser CRUD access.
+- `supabase/migrations/006_add_project_directory_to_ventures.sql`: Adds the optional venture project tag and details columns.
+- `supabase/migrations/007_add_feature_file_paths_to_ventures.sql`: Adds the venture feature-tag path array column.
+- `supabase/migrations/008_auth_scoped_daedalus.sql`: Adds venture ownership and authenticated owner-only RLS policies.
 - `shared/database/schema.sql`: Checked-in schema snapshot that includes the current ventures table definition and policies.
 - `parameter_files/ventures.toml`: Sibling parameter file placeholder for the Ventures feature.
 

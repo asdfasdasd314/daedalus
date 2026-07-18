@@ -19,23 +19,23 @@ const daemonMainSource = readFileSync(
   "utf8",
 );
 const migrationSource = readFileSync(
-  new URL("../../shared/database/migrations/028_system_architecture_communication_engine.sql", import.meta.url),
+  new URL("../../supabase/migrations/028_system_architecture_communication_engine.sql", import.meta.url),
   "utf8",
 );
 const visualizationMigrationSource = readFileSync(
-  new URL("../../shared/database/migrations/029_system_architecture_visualization_engine.sql", import.meta.url),
+  new URL("../../supabase/migrations/029_system_architecture_visualization_engine.sql", import.meta.url),
   "utf8",
 );
 const progressMigrationSource = readFileSync(
-  new URL("../../shared/database/migrations/033_architecture_view_generation_progress.sql", import.meta.url),
+  new URL("../../supabase/migrations/033_architecture_view_generation_progress.sql", import.meta.url),
   "utf8",
 );
 const reliabilityMigrationSource = readFileSync(
-  new URL("../../shared/database/migrations/035_agent_output_viewer_reliability.sql", import.meta.url),
+  new URL("../../supabase/migrations/035_agent_output_viewer_reliability.sql", import.meta.url),
   "utf8",
 );
 const batchRetryMigrationSource = readFileSync(
-  new URL("../../shared/database/migrations/036_preserve_batch_retry_worktree.sql", import.meta.url),
+  new URL("../../supabase/migrations/036_preserve_batch_retry_worktree.sql", import.meta.url),
   "utf8",
 );
 const orchestratorSource = readFileSync(

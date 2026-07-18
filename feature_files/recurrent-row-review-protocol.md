@@ -21,7 +21,7 @@ The recurrent row review protocol prevents the client, daemon, and manager from 
 - **Visibility and Cadence**: Visible browser polling is completion-scheduled every five seconds, hidden-page polling backs off to at least thirty seconds, visibility restoration refreshes immediately, and manager database cadence matches its five-second heartbeat.
 
 ## Relevant Files
-- `shared/database/migrations/013_recurrent_row_review_protocol.sql`: Schema migration and daemon RPC protocol changes.
+- `supabase/migrations/013_recurrent_row_review_protocol.sql`: Schema migration and daemon RPC protocol changes.
 - `shared/database/schema.sql`: Current schema snapshot.
 - `local-daemon/src/daedalus_daemon/communications.py`: Daemon review queries and state updates.
 - `local-daemon/src/daedalus_daemon/main.py`: Communications request handling.
@@ -32,11 +32,11 @@ The recurrent row review protocol prevents the client, daemon, and manager from 
 - `daedalus-site/app/daemon-manager-panel.tsx`: Heartbeat review consumption and timestamp-guarded acknowledgement.
 - `daedalus-site/app/agent-output-viewer.tsx`: On-demand historical output loading.
 - `AGENTS.md`: Project-wide recurrent Supabase read requirements.
-- `shared/database/migrations/023_complete_recurrent_supabase_read_hardening.sql`: Remaining control-plane protocol migration and review indexes.
-- `shared/database/migrations/027_recurrent_supabase_egress_remediation.sql`: Consolidated browser, daemon, and manager RPCs, bounded projections, and batched acknowledgements.
-- `shared/database/migrations/029_system_architecture_visualization_engine.sql`: Generation-guarded structured Architecture View completion and reviewed JSON delivery.
-- `shared/database/migrations/035_agent_output_viewer_reliability.sql`: Completes daemon-event generation projection and timestamp-guarded client acknowledgement.
-- `shared/database/migrations/036_preserve_batch_retry_worktree.sql`: Adds bounded retry-generation projection to the existing daemon work snapshot.
+- `supabase/migrations/023_complete_recurrent_supabase_read_hardening.sql`: Remaining control-plane protocol migration and review indexes.
+- `supabase/migrations/027_recurrent_supabase_egress_remediation.sql`: Consolidated browser, daemon, and manager RPCs, bounded projections, and batched acknowledgements.
+- `supabase/migrations/029_system_architecture_visualization_engine.sql`: Generation-guarded structured Architecture View completion and reviewed JSON delivery.
+- `supabase/migrations/035_agent_output_viewer_reliability.sql`: Completes daemon-event generation projection and timestamp-guarded client acknowledgement.
+- `supabase/migrations/036_preserve_batch_retry_worktree.sql`: Adds bounded retry-generation projection to the existing daemon work snapshot.
 
 ## Dev Mode
 TESTING

@@ -18,8 +18,8 @@ The feature execution system lets an authenticated user start a Python feature e
 - `daedalus-site/app/feature-files-dashboard.tsx`: Feature overlay Run/status/Cancel UI.
 - `daedalus-site/app/feature-workspace-utils.ts`: Paired-file and runnable metadata helpers.
 - `daedalus-site/app/entry-point-picker.tsx`: Parameter-tab entry-point suggestions and add/update/remove controls.
-- `shared/database/migrations/016_feature_execution_runs.sql`: Durable run table, RLS, and RPCs.
-- `shared/database/migrations/017_feature_execution_entry_point_metadata.sql`: Entry-point run diagnostic metadata.
+- `supabase/migrations/016_feature_execution_runs.sql`: Durable run table, RLS, and RPCs.
+- `supabase/migrations/017_feature_execution_entry_point_metadata.sql`: Entry-point run diagnostic metadata.
 
 ## Dev Mode
 HACKING

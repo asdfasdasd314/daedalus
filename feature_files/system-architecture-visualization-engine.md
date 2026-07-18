@@ -14,7 +14,7 @@ The System Architecture Visualization Engine publishes and validates a recursive
 ## Relevant Files
 - `shared/schemas/software-architecture-v1.schema.json`: Published JSON Schema used as the model prompt contract.
 - `local-daemon/src/daedalus_daemon/architecture_document.py`: Strict Pydantic models and corrective validation details.
-- `shared/database/migrations/029_system_architecture_visualization_engine.sql`: Structured Architecture View persistence transition.
+- `supabase/migrations/029_system_architecture_visualization_engine.sql`: Structured Architecture View persistence transition.
 - `daedalus-site/lib/architecture-view.ts`: Recursive frontend document types and Architecture View transport.
 - `daedalus-site/lib/architecture-layout.ts`: Pure deterministic layout helpers.
 - `daedalus-site/app/architecture-visualization.tsx`: Architecture canvas states and SVG renderer.
