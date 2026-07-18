@@ -205,8 +205,11 @@ def generate_architecture_view(
             snapshot_path, changed_files
         )
         publish_progress(view, "collecting_evidence", "Feature and Graphify evidence collected.")
+        document_path = architecture_document_path(
+            repository, str(view["id"]), int(view["generation"])
+        )
         prompt = build_architecture_prompt(
-            changed_files, feature_paths, graph_evidence
+            changed_files, feature_paths, graph_evidence, document_path
         )
         raw_response = ""
         final_problems = ""
@@ -220,15 +223,27 @@ def generate_architecture_view(
                 settings["maxValidationAttempts"],
             )
             try:
-                raw_response = run_codex(
+                document_path.unlink(missing_ok=True)
+                model_stdout = run_codex(
                     str(snapshot_path), prompt, settings["model"],
-                    settings["reasoning"], ask_mode=True,
+                    settings["reasoning"], ask_mode=False,
+                    writable_directories=[str(repository)],
                 )
             except Exception as error:
                 publish_progress(view, "finalizing", "Finalizing Architecture View.")
                 return architecture_operational_failure(
                     stage, error, settings, changed_files
                 )
+            raw_response = read_architecture_document_artifact(
+                document_path, model_stdout
+            )
+            try:
+                write_architecture_interaction_log(
+                    repository, str(view["id"]), int(view["generation"]), attempt + 1,
+                    prompt, model_stdout, raw_response, document_path,
+                )
+            except Exception as error:
+                print(f"Architecture interaction log write failed: {error}")
             try:
                 stage = "document_validation"
                 publish_progress(
@@ -266,6 +281,7 @@ def generate_architecture_view(
                     graph_evidence,
                     raw_response,
                     final_problems,
+                    document_path,
                 )
         publish_progress(view, "finalizing", "Finalizing Architecture View.")
         return {
@@ -302,6 +318,59 @@ def generate_architecture_view(
 def architecture_snapshot_path(repository: Path, view_id: str, generation: int) -> Path:
     root = repository.parent / ".daedalus-worktrees" / repository.name
     return root / f"architecture-{view_id}-{generation}"
+
+
+def architecture_document_path(repository: Path, view_id: str, generation: int) -> Path:
+    return (
+        repository
+        / "shared"
+        / "architecture"
+        / f"architecture-view-{view_id}-generation-{generation}.json"
+    )
+
+
+def architecture_log_path(
+    repository: Path, view_id: str, generation: int, attempt: int,
+) -> Path:
+    return (
+        repository
+        / "shared"
+        / "architecture"
+        / "logs"
+        / f"architecture-view-{view_id}-generation-{generation}-attempt-{attempt}.json"
+    )
+
+
+def read_architecture_document_artifact(
+    document_path: Path, model_stdout: str,
+) -> str:
+    if document_path.is_file():
+        return document_path.read_text(encoding="utf-8")
+    return model_stdout
+
+
+def write_architecture_interaction_log(
+    repository: Path,
+    view_id: str,
+    generation: int,
+    attempt: int,
+    prompt: str,
+    model_stdout: str,
+    document_response: str,
+    document_path: Path,
+) -> None:
+    log_path = architecture_log_path(repository, view_id, generation, attempt)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.write_text(json.dumps({
+        "viewId": view_id,
+        "generation": generation,
+        "attempt": attempt,
+        "documentPath": str(document_path),
+        "prompt": prompt,
+        "modelStdout": model_stdout,
+        "documentResponse": document_response,
+        "usedDocumentArtifact": document_path.is_file(),
+    }, indent=2) + "\n", encoding="utf-8")
 
 
 def add_snapshot_worktree(repository: Path, snapshot_path: Path, final_commit: str) -> None:
@@ -453,6 +522,7 @@ def build_architecture_prompt(
     changed_files: list[dict],
     feature_paths: list[str],
     graph_evidence: list[dict],
+    document_path: Path,
 ) -> str:
     schema = SOFTWARE_ARCHITECTURE_SCHEMA_PATH.read_text(encoding="utf-8")
     return f"""Create a structured Architecture View for the affected systems in this repository snapshot.
@@ -471,7 +541,9 @@ Relevant Graphify community evidence:
 Published JSON Schema:
 {schema}
 
-Return one complete raw JSON object that validates against the published schema. Output JSON only. Do not use Markdown fences or add commentary, diff narration, implementation history, a change summary, commit metadata, Q&A, or implementation notes."""
+Write one complete raw JSON object that validates against the published schema to this exact file: {document_path}
+
+Create its parent directories if necessary. The file must contain JSON only: no Markdown fences or commentary. Do not modify any other files. After writing the file, give only a brief confirmation; its terminal response is not used as the architecture document."""
 
 
 def build_architecture_correction_prompt(
@@ -480,9 +552,10 @@ def build_architecture_correction_prompt(
     graph_evidence: list[dict],
     invalid_response: str,
     validation_problems: str,
+    document_path: Path,
 ) -> str:
     original_prompt = build_architecture_prompt(
-        changed_files, feature_paths, graph_evidence
+        changed_files, feature_paths, graph_evidence, document_path
     )
     return f"""{original_prompt}
 
@@ -494,7 +567,7 @@ Validation problems:
 Full invalid response:
 {invalid_response}
 
-Return a complete corrected document, not a patch. The corrected response must again be one raw JSON object with no Markdown fences or commentary."""
+Return a complete corrected document, not a patch. Write it to the exact architecture document file named above, again as raw JSON with no Markdown fences or commentary."""
 
 
 def run_git(repository: Path, arguments: list[str]) -> str:

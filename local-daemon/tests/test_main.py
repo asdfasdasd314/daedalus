@@ -1024,6 +1024,25 @@ class RunCodexExecTests(unittest.TestCase):
         self.assertEqual(command[command.index("--sandbox") + 1], "read-only")
         self.assertEqual(reply, "answer")
 
+    def test_allows_architecture_agent_to_write_to_requested_repository(self):
+        class FakeProcess:
+            returncode = 0
+            stdout = "Document written."
+            stderr = ""
+
+        with patch("daedalus_daemon.main.subprocess.run", return_value=FakeProcess()) as mocked_run:
+            reply = run_codex_exec(
+                "/workspace/snapshot", "Write the document", "gpt-5.5", "high",
+                writable_directories=["/workspace/repository"],
+            )
+
+        command = mocked_run.call_args.args[0]
+        self.assertEqual(command[command.index("--sandbox") + 1], "workspace-write")
+        self.assertEqual(
+            command[command.index("--add-dir") + 1], "/workspace/repository",
+        )
+        self.assertEqual(reply, "Document written.")
+
 
 class RunCursorExecTests(unittest.TestCase):
     def test_returns_actionable_message_when_cursor_is_unavailable(self):

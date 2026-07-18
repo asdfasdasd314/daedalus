@@ -1025,6 +1025,7 @@ def run_codex_exec(
     reasoning: str = DEFAULT_CODEX_REASONING,
     task_id: str | None = None,
     ask_mode: bool = False,
+    writable_directories: list[str] | None = None,
 ) -> str:
     codex_reasoning = map_reasoning_for_codex(reasoning)
     command = [
@@ -1037,6 +1038,10 @@ def run_codex_exec(
     ]
     if ask_mode:
         command.extend(["--sandbox", "read-only"])
+    elif writable_directories:
+        command.extend(["--sandbox", "workspace-write"])
+    for writable_directory in writable_directories or []:
+        command.extend(["--add-dir", writable_directory])
     command.append(prompt)
 
     try:
