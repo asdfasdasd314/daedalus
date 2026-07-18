@@ -173,6 +173,19 @@ test("blocked task retries preserve their worktree and return to integration", (
   assert.doesNotMatch(orchestratorSource, /create_integration_worktree|integration\/batch/);
 });
 
+test("durable task resume uses the authoritative task revision and reports its outcome", () => {
+  const resume = dashboardSource.slice(
+    dashboardSource.indexOf("onRetryDurableTask={async (exchange) =>"),
+    dashboardSource.indexOf("onSelectedPromptIdChange", dashboardSource.indexOf("onRetryDurableTask={async (exchange) =>")),
+  );
+  assert.match(resume, /fetchAgentTaskById/);
+  assert.match(resume, /currentTask\.updated_at/);
+  assert.match(resume, /rehydrateDurableAgentTasks/);
+  assert.match(historySource, /async function resumeDurableTask/);
+  assert.match(historySource, /Unable to resume this task/);
+  assert.match(historySource, /Resuming…/);
+});
+
 test("terminal task timestamps and archive repair cover every terminal outcome", () => {
   for (const status of ["completed", "failed", "blocked", "cancelled"]) {
     assert.match(reliabilityMigrationSource, new RegExp(status));

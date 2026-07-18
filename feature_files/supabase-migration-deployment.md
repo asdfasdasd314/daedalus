@@ -5,7 +5,7 @@ The local daemon owns the final, serialized Supabase CLI deployment stage for ve
 
 ## Key Points
 - **Explicit enablement**: Deployment is disabled until an operator verifies the existing remote schema and migration history, records the accepted baseline, and configures the exact repository/project mapping.
-- **Safe scope**: Only a repository whose resolved path is paired with `DAEDALUS_SUPABASE_PROJECT_REF` in this feature's parameter file may deploy. Tokens and database credentials are daemon-local environment variables, never TOML values.
+- **Safe scope**: The parameter file selects the sole project ref paired with an exactly resolved repository path; an unlisted repository or multiple configured project refs is blocked with its resolved path in the diagnostic. Tokens and database credentials remain daemon-local environment variables, never TOML values.
 - **Forward-only repair**: Resolver agents receive bounded CLI diagnostics and may alter confirmed-unapplied migrations or add a corrective migration; they must never edit an applied migration or run migration-history repair.
 - **Serialization and recovery**: A process-local lock serializes pushes per project. A restart blocks retained integrations, and cancellation during a push is treated as an uncertain remote state requiring manual history reconciliation.
 
@@ -27,3 +27,4 @@ TESTING
 - 2026-07-17: Added an operator-confirmed baseline script for manually applied migrations 001–036 before pushing migration 037.
 - 2026-07-18: Moved deployment telemetry and retry ownership from integration batches to the task being integrated and diffed migrations from the latest primary commit.
 - 2026-07-18: Restored the legacy cohort timing setting temporarily during Stage 1 because the running batch daemon validates it on every cycle; migration deployment also requires the daemon process to be launched with its allowlisted project reference.
+- 2026-07-18: Made the exact repository-to-project parameter mapping the deployment source of truth, with separate unlisted, ambiguous, and missing-credential blocked states.

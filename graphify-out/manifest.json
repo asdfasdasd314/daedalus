@@ -5,9 +5,9 @@
     "semantic_hash": "8897146e4053c1a3668e19546907f631"
   },
   "daedalus-site/app/agent-output-viewer.tsx": {
-    "mtime": 1784395999.8076882,
-    "ast_hash": "b48ebc8ea926a642e9893931d53d4d47",
-    "semantic_hash": "b48ebc8ea926a642e9893931d53d4d47"
+    "mtime": 1784398658.101094,
+    "ast_hash": "4c0e8a86ba59d4f538037ffe33321422",
+    "semantic_hash": ""
   },
   "daedalus-site/app/agent-session-panel.tsx": {
     "mtime": 1784395999.80807,
@@ -50,9 +50,9 @@
     "semantic_hash": "eb708572688fbc0c243f038a1dcd39bb"
   },
   "daedalus-site/app/feature-files-dashboard.tsx": {
-    "mtime": 1784395999.8120718,
-    "ast_hash": "252ae86ab08bbc34ad54ac97ad11e083",
-    "semantic_hash": "252ae86ab08bbc34ad54ac97ad11e083"
+    "mtime": 1784398658.1054204,
+    "ast_hash": "fb6c7c73a97cd77fa06ee33df8be00f9",
+    "semantic_hash": ""
   },
   "daedalus-site/app/feature-search-dialog.tsx": {
     "mtime": 1784395999.8121963,
@@ -95,9 +95,9 @@
     "semantic_hash": "adb51e29a07dd29c1c202a6977f72a08"
   },
   "daedalus-site/app/recurrent-supabase-queries.test.ts": {
-    "mtime": 1784396672.9088447,
-    "ast_hash": "1d41484bb4afb09940f335c5ff71f7e4",
-    "semantic_hash": "1d41484bb4afb09940f335c5ff71f7e4"
+    "mtime": 1784398658.1061606,
+    "ast_hash": "ee4e6874e96999c5510136389cf502cc",
+    "semantic_hash": ""
   },
   "daedalus-site/config/agent_models.json": {
     "mtime": 1784395999.8139942,
@@ -265,9 +265,9 @@
     "semantic_hash": "48f58404d0ba8908f1a649a84b0a765d"
   },
   "local-daemon/tests/test_orchestrator.py": {
-    "mtime": 1784395999.9341047,
-    "ast_hash": "b887a86756ca25104d78a06928bf2de5",
-    "semantic_hash": "b887a86756ca25104d78a06928bf2de5"
+    "mtime": 1784396947.4412494,
+    "ast_hash": "5ff23f2c2585689747c251c166dc91c0",
+    "semantic_hash": ""
   },
   "local-daemon/tests/test_scanner.py": {
     "mtime": 1784395999.934362,
@@ -280,157 +280,157 @@
     "semantic_hash": "11779dd681264b25bbd436494f543d84"
   },
   "AGENTS.md": {
-    "mtime": 1784342613.608422,
+    "mtime": 1784395999.8056288,
     "ast_hash": "4f0b7e3ed59e798e75cf56d11241cc32",
     "semantic_hash": ""
   },
   "README.md": {
-    "mtime": 1783917864.5782506,
+    "mtime": 1784395999.8057497,
     "ast_hash": "092497606da73ef5d97a2e26d94327de",
     "semantic_hash": "092497606da73ef5d97a2e26d94327de"
   },
   "daedalus-site/AGENTS.md": {
-    "mtime": 1783917864.578432,
+    "mtime": 1784395999.8060434,
     "ast_hash": "9e09241799026ac05be315a2f0b50055",
     "semantic_hash": "9e09241799026ac05be315a2f0b50055"
   },
   "daedalus-site/CLAUDE.md": {
-    "mtime": 1783917864.5784907,
+    "mtime": 1784395999.806117,
     "ast_hash": "5c27369b226fcf2be8a6cfe52224e767",
     "semantic_hash": "5c27369b226fcf2be8a6cfe52224e767"
   },
   "daedalus-site/README.md": {
-    "mtime": 1783917864.5785594,
+    "mtime": 1784395999.8061898,
     "ast_hash": "f15aaa42d5d299d091b1171097ea56ad",
     "semantic_hash": "f15aaa42d5d299d091b1171097ea56ad"
   },
   "feature_files/agent-output-viewer.md": {
-    "mtime": 1784349101.7158895,
-    "ast_hash": "1cbd584cd0d55029871889ccfc4d6544",
+    "mtime": 1784398658.1067266,
+    "ast_hash": "fba9f83e38d10eacd44bc8b9fd438c00",
     "semantic_hash": ""
   },
   "feature_files/agent-prompt-chat.md": {
-    "mtime": 1784342956.9093182,
+    "mtime": 1784395999.8232863,
     "ast_hash": "5abb639598d1fb4679f4be63adc26c66",
     "semantic_hash": ""
   },
   "feature_files/agent-task-notifications.md": {
-    "mtime": 1783995567.475763,
+    "mtime": 1784395999.8235168,
     "ast_hash": "8c0cf0e14ba17ea445e62a425ab2241c",
     "semantic_hash": "8c0cf0e14ba17ea445e62a425ab2241c"
   },
   "feature_files/auth-scoped-supabase-access.md": {
-    "mtime": 1784349102.330801,
-    "ast_hash": "1d2a90e2f5bec98f4a7688cb1e3a46ad",
+    "mtime": 1784396562.8585227,
+    "ast_hash": "1153642de91cb53be7c2c8e11bf3786e",
     "semantic_hash": ""
   },
   "feature_files/cursor-agent.md": {
-    "mtime": 1783921675.3502343,
+    "mtime": 1784395999.8239703,
     "ast_hash": "ea2b94ce0b4c75a81b4b9d380849539b",
     "semantic_hash": "ea2b94ce0b4c75a81b4b9d380849539b"
   },
   "feature_files/daedalus-git-worktrees.md": {
-    "mtime": 1784349101.5828464,
-    "ast_hash": "40a2c7851abb1f98e07dd51fe941ad16",
+    "mtime": 1784396986.5419338,
+    "ast_hash": "fb671d9418c76f25516cadbdf8622d71",
     "semantic_hash": ""
   },
   "feature_files/dev-environment-parameter-file-loading.md": {
-    "mtime": 1784333150.0109417,
+    "mtime": 1784395999.824687,
     "ast_hash": "c7f8b7990e285844ef216491529b6158",
     "semantic_hash": ""
   },
   "feature_files/feature-execution-system.md": {
-    "mtime": 1784333150.0114005,
+    "mtime": 1784395999.82492,
     "ast_hash": "3595f73f7d458c2544350fd367f73ac7",
     "semantic_hash": ""
   },
   "feature_files/feature-file-communications-system.md": {
-    "mtime": 1784333150.0118067,
+    "mtime": 1784395999.8251283,
     "ast_hash": "5d2604aee41085a0a715b9ec59631df2",
     "semantic_hash": ""
   },
   "feature_files/feature-file-graph-display.md": {
-    "mtime": 1783917864.5858238,
+    "mtime": 1784395999.8254576,
     "ast_hash": "b34fc28d1a79d4d940c91b976911fbcc",
     "semantic_hash": "b34fc28d1a79d4d940c91b976911fbcc"
   },
   "feature_files/feature-first-graph-workspace-shell.md": {
-    "mtime": 1784253660.2491062,
+    "mtime": 1784395999.8257656,
     "ast_hash": "1218b39aae5e894988829dc100daee57",
     "semantic_hash": ""
   },
   "feature_files/feature-search-fuzzy-finder.md": {
-    "mtime": 1783917864.5859878,
+    "mtime": 1784395999.825874,
     "ast_hash": "3e64fd1198fb6337f3d9f6f0a7a92c81",
     "semantic_hash": "3e64fd1198fb6337f3d9f6f0a7a92c81"
   },
   "feature_files/git-sync.md": {
-    "mtime": 1784333150.011978,
+    "mtime": 1784395999.8259988,
     "ast_hash": "2c167b12c996ac92754b8239428f4c79",
     "semantic_hash": ""
   },
   "feature_files/local-daemon-feature-file-scanner.md": {
-    "mtime": 1784081516.508273,
+    "mtime": 1784395999.826229,
     "ast_hash": "c92e386a7d5f5e0719297198907703bc",
     "semantic_hash": "c92e386a7d5f5e0719297198907703bc"
   },
   "feature_files/local-daemon-manager.md": {
-    "mtime": 1784349102.14642,
-    "ast_hash": "7c658a4591606ac2a57a6925a9e4f892",
+    "mtime": 1784396562.633835,
+    "ast_hash": "0dd5ae0ac95068496598c37180cf8c80",
     "semantic_hash": ""
   },
   "feature_files/planning-questionnaire.md": {
-    "mtime": 1784079574.4170187,
+    "mtime": 1784395999.8268187,
     "ast_hash": "22dde13dfdc5a8a92b034464c419237a",
     "semantic_hash": "22dde13dfdc5a8a92b034464c419237a"
   },
   "feature_files/recurrent-row-review-protocol.md": {
-    "mtime": 1784349101.8609583,
-    "ast_hash": "b2ad80cd4506c9acc3598908b131ae2c",
+    "mtime": 1784396774.6926374,
+    "ast_hash": "ba02b05ac92c7fdec5f21b97f8f0b291",
     "semantic_hash": ""
   },
   "feature_files/shared-supabase-config.md": {
-    "mtime": 1783917864.5862806,
+    "mtime": 1784395999.8270981,
     "ast_hash": "9297349dba2d6dec136ce0fdd26b6f2a",
     "semantic_hash": "9297349dba2d6dec136ce0fdd26b6f2a"
   },
   "feature_files/ventures.md": {
-    "mtime": 1784333150.0136647,
+    "mtime": 1784395999.8280191,
     "ast_hash": "9f44524e74ca276eb74223bc3fe02649",
     "semantic_hash": ""
   },
   "local-daemon/requirements.txt": {
-    "mtime": 1784253660.2723303,
+    "mtime": 1784395999.9265294,
     "ast_hash": "dcf7aaaee30e4ec1972b3a5531c15dd9",
     "semantic_hash": ""
   },
   "shared/database/README.md": {
-    "mtime": 1784349337.4828627,
-    "ast_hash": "89b6a08cf96b0fae421c49e64ee88346",
+    "mtime": 1784398658.1164272,
+    "ast_hash": "c2c30ee02da46246d673622a9b702b6b",
     "semantic_hash": ""
   },
   "daedalus-site/public/file.svg": {
-    "mtime": 1783917864.5846984,
+    "mtime": 1784395999.8224206,
     "ast_hash": "d09f95206c3fa0bb9bd9fefabfd0ea71",
     "semantic_hash": "d09f95206c3fa0bb9bd9fefabfd0ea71"
   },
   "daedalus-site/public/globe.svg": {
-    "mtime": 1783917864.5847669,
+    "mtime": 1784395999.8224885,
     "ast_hash": "2aaafa6a49b6563925fe440891e32717",
     "semantic_hash": "2aaafa6a49b6563925fe440891e32717"
   },
   "daedalus-site/public/next.svg": {
-    "mtime": 1783917864.5848444,
+    "mtime": 1784395999.8225555,
     "ast_hash": "8e061864f388b47f33a1c3780831193e",
     "semantic_hash": "8e061864f388b47f33a1c3780831193e"
   },
   "daedalus-site/public/vercel.svg": {
-    "mtime": 1783917864.5849144,
+    "mtime": 1784395999.8226178,
     "ast_hash": "c0af2f507b369b085b35ef4bbe3bcf1e",
     "semantic_hash": "c0af2f507b369b085b35ef4bbe3bcf1e"
   },
   "daedalus-site/public/window.svg": {
-    "mtime": 1783917864.5849848,
+    "mtime": 1784395999.8226852,
     "ast_hash": "a2760511c65806022ad20adf74370ff3",
     "semantic_hash": "a2760511c65806022ad20adf74370ff3"
   },
@@ -485,24 +485,24 @@
     "semantic_hash": "e19252f8aa8eaf34a43abf132fcb7eee"
   },
   "feature_files/system-architecture-communication-engine.md": {
-    "mtime": 1784343479.7004836,
+    "mtime": 1784395999.8275106,
     "ast_hash": "9db1e67366250e6dbbcda6616c8e53a1",
     "semantic_hash": ""
   },
   "feature_files/system-architecture-visualization-engine.md": {
-    "mtime": 1784335295.7523065,
-    "ast_hash": "1b00c926617321f45954d8bd44d1ec77",
+    "mtime": 1784395999.8277023,
+    "ast_hash": "b85293e2b8b3436d70c1a2ea41190f53",
     "semantic_hash": ""
   },
   "local-daemon/src/daedalus_daemon/migration_deployment.py": {
-    "mtime": 1784395999.9301872,
-    "ast_hash": "8611fe478d15c2b8916211ab7e35e974",
-    "semantic_hash": "8611fe478d15c2b8916211ab7e35e974"
+    "mtime": 1784398658.1153326,
+    "ast_hash": "ee0890f037537d52f5bb4d624c3b1fc9",
+    "semantic_hash": ""
   },
   "local-daemon/tests/test_migration_deployment.py": {
-    "mtime": 1784395999.933713,
-    "ast_hash": "18f40ad327688af0fc2aea50eef7fd39",
-    "semantic_hash": "18f40ad327688af0fc2aea50eef7fd39"
+    "mtime": 1784398658.116192,
+    "ast_hash": "98473b9fcc8635be3343071063188af1",
+    "semantic_hash": ""
   },
   "supabase/migrations/001_create_communications_table.sql": {
     "mtime": 1784395999.945376,
@@ -685,28 +685,28 @@
     "semantic_hash": "244ff1fd2f16783525468abbe140c864"
   },
   ".agents/profiles/architecture.md": {
-    "mtime": 1784342476.4407485,
+    "mtime": 1784395999.8028574,
     "ast_hash": "884aae1f4f1fb3ab12fa275d4d7e2966",
     "semantic_hash": ""
   },
   ".agents/profiles/coding.md": {
-    "mtime": 1784341511.7962081,
+    "mtime": 1784395999.8031554,
     "ast_hash": "51a165cdbb6fae3b509f3accc9ee01a2",
     "semantic_hash": ""
   },
   ".agents/profiles/integrating.md": {
-    "mtime": 1784342089.8159778,
+    "mtime": 1784395999.8038583,
     "ast_hash": "a2b9fb790264fab4569d4a38f82cfdef",
     "semantic_hash": ""
   },
   ".agents/profiles/planning.md": {
-    "mtime": 1784342867.8856604,
+    "mtime": 1784395999.8040247,
     "ast_hash": "51a165cdbb6fae3b509f3accc9ee01a2",
     "semantic_hash": ""
   },
   "feature_files/supabase-migration-deployment.md": {
-    "mtime": 1784349101.9942906,
-    "ast_hash": "f71e9365e997e63dfee1d8a1d7e48c6c",
+    "mtime": 1784398658.1071217,
+    "ast_hash": "518f5a7e66638d234ae703f9c27731f0",
     "semantic_hash": ""
   },
   "supabase/migrations/037_allow_migration_deployment_events.sql": {

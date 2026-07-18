@@ -11,8 +11,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from daedalus_daemon.migration_deployment import (
     deploy_pending_migrations,
     migration_files_changed,
+    project_ref_for_repository,
     redact,
-    repository_project_allowed,
     project_lock,
     validate_migrations,
 )
@@ -33,10 +33,24 @@ class MigrationDeploymentTests(unittest.TestCase):
             (migrations / "001_second.sql").write_text("-- second", encoding="utf-8")
             self.assertIn("Duplicate", validate_migrations(directory))
 
-    def test_allowlist_requires_exact_repository_and_project(self):
+    def test_selects_only_exact_repository_mapping(self):
         repository = str(Path("/tmp/daedalus").resolve())
-        self.assertTrue(repository_project_allowed(repository, "project-a", [repository + "::project-a"]))
-        self.assertFalse(repository_project_allowed(repository, "project-b", [repository + "::project-a"]))
+        project_ref, error = project_ref_for_repository(repository, [repository + "::project-a"])
+        self.assertEqual(project_ref, "project-a")
+        self.assertEqual(error, "")
+
+        project_ref, error = project_ref_for_repository(repository + "-other", [repository + "::project-a"])
+        self.assertIsNone(project_ref)
+        self.assertIn(str(Path(repository + "-other").resolve()), error)
+
+    def test_rejects_ambiguous_repository_mappings(self):
+        repository = str(Path("/tmp/daedalus").resolve())
+        project_ref, error = project_ref_for_repository(repository, [
+            repository + "::project-a", repository + "::project-b",
+        ])
+        self.assertIsNone(project_ref)
+        self.assertIn("Ambiguous", error)
+        self.assertIn(repository, error)
 
     def test_redacts_credentials(self):
         self.assertNotIn("secret", redact("SUPABASE_ACCESS_TOKEN=secret"))
@@ -46,7 +60,7 @@ class MigrationDeploymentTests(unittest.TestCase):
         self.assertIs(project_lock("project-a"), project_lock("project-a"))
         self.assertIsNot(project_lock("project-a"), project_lock("project-b"))
 
-    def test_pushes_only_when_dry_run_reports_pending(self):
+    def test_task_worktree_reaches_preflight_from_primary_repository_mapping_without_project_ref_environment(self):
         commands = []
 
         def runner(_directory, command, _timeout):
@@ -58,16 +72,18 @@ class MigrationDeploymentTests(unittest.TestCase):
             return {"command": command, "returncode": 0, "stdout": "", "stderr": ""}
 
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {
-            "DAEDALUS_SUPABASE_PROJECT_REF": "project-a",
             "SUPABASE_ACCESS_TOKEN": "token",
             "SUPABASE_DB_PASSWORD": "password",
-        }, clear=False):
-            Path(directory, "supabase/migrations").mkdir(parents=True)
-            Path(directory, "supabase/migrations/037_new.sql").write_text("-- new", encoding="utf-8")
-            settings = {"enabled": True, "allowedMappings": [str(Path(directory).resolve()) + "::project-a"], "commandTimeoutSeconds": 1, "requireDryRun": True, "resolverAttemptLimit": 3}
-            result = deploy_pending_migrations(directory, directory, "base", settings, runner)
+        }, clear=True):
+            primary_repository = Path(directory) / "primary"
+            worktree = Path(directory) / "task-worktree"
+            (worktree / "supabase/migrations").mkdir(parents=True)
+            (worktree / "supabase/migrations/037_new.sql").write_text("-- new", encoding="utf-8")
+            settings = {"enabled": True, "allowedMappings": [str(primary_repository.resolve()) + "::project-a"], "commandTimeoutSeconds": 1, "requireDryRun": True, "resolverAttemptLimit": 3}
+            result = deploy_pending_migrations(str(worktree), str(primary_repository), "base", settings, runner)
 
         self.assertTrue(result["ok"])
+        self.assertIn(["supabase", "migration", "list", "--linked"], commands)
         self.assertIn(["supabase", "db", "push", "--linked"], commands)
 
     def test_non_pending_dry_run_never_pushes(self):
@@ -80,8 +96,8 @@ class MigrationDeploymentTests(unittest.TestCase):
             return {"command": command, "returncode": 0, "stdout": "No migrations to apply", "stderr": ""}
 
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {
-            "DAEDALUS_SUPABASE_PROJECT_REF": "project-a", "SUPABASE_ACCESS_TOKEN": "token", "SUPABASE_DB_PASSWORD": "password",
-        }, clear=False):
+            "SUPABASE_ACCESS_TOKEN": "token", "SUPABASE_DB_PASSWORD": "password",
+        }, clear=True):
             Path(directory, "supabase/migrations").mkdir(parents=True)
             Path(directory, "supabase/migrations/037_new.sql").write_text("-- new", encoding="utf-8")
             settings = {"enabled": True, "allowedMappings": [str(Path(directory).resolve()) + "::project-a"], "commandTimeoutSeconds": 1, "requireDryRun": True, "resolverAttemptLimit": 3}
@@ -89,6 +105,60 @@ class MigrationDeploymentTests(unittest.TestCase):
 
         self.assertEqual(result["state"], "no_pending")
         self.assertNotIn(["supabase", "db", "push", "--linked"], commands)
+
+    def test_unlisted_repository_is_blocked_before_supabase_preflight(self):
+        commands = []
+
+        def runner(_directory, command, _timeout):
+            commands.append(command)
+            return {"command": command, "returncode": 0, "stdout": "supabase/migrations/037_new.sql\n", "stderr": ""}
+
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {
+            "SUPABASE_ACCESS_TOKEN": "token", "SUPABASE_DB_PASSWORD": "password",
+        }, clear=True):
+            Path(directory, "supabase/migrations").mkdir(parents=True)
+            Path(directory, "supabase/migrations/037_new.sql").write_text("-- new", encoding="utf-8")
+            settings = {"enabled": True, "allowedMappings": [str(Path(directory, "other").resolve()) + "::project-a"], "commandTimeoutSeconds": 1, "requireDryRun": True, "resolverAttemptLimit": 3}
+            result = deploy_pending_migrations(directory, directory, "base", settings, runner)
+
+        self.assertFalse(result["ok"])
+        self.assertIn("No allowlisted", result["error"])
+        self.assertIn(str(Path(directory).resolve()), result["error"])
+        self.assertEqual(commands, [["git", "diff", "--name-only", "base..HEAD"]])
+
+    def test_ambiguous_repository_mapping_is_blocked_before_supabase_preflight(self):
+        commands = []
+
+        def runner(_directory, command, _timeout):
+            commands.append(command)
+            return {"command": command, "returncode": 0, "stdout": "supabase/migrations/037_new.sql\n", "stderr": ""}
+
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {
+            "SUPABASE_ACCESS_TOKEN": "token", "SUPABASE_DB_PASSWORD": "password",
+        }, clear=True):
+            Path(directory, "supabase/migrations").mkdir(parents=True)
+            Path(directory, "supabase/migrations/037_new.sql").write_text("-- new", encoding="utf-8")
+            repository = str(Path(directory).resolve())
+            settings = {"enabled": True, "allowedMappings": [repository + "::project-a", repository + "::project-b"], "commandTimeoutSeconds": 1, "requireDryRun": True, "resolverAttemptLimit": 3}
+            result = deploy_pending_migrations(directory, directory, "base", settings, runner)
+
+        self.assertFalse(result["ok"])
+        self.assertIn("Ambiguous", result["error"])
+        self.assertEqual(commands, [["git", "diff", "--name-only", "base..HEAD"]])
+
+    def test_missing_daemon_local_credentials_is_blocked_after_mapping_selection(self):
+        def runner(_directory, command, _timeout):
+            return {"command": command, "returncode": 0, "stdout": "supabase/migrations/037_new.sql\n", "stderr": ""}
+
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {}, clear=True):
+            Path(directory, "supabase/migrations").mkdir(parents=True)
+            Path(directory, "supabase/migrations/037_new.sql").write_text("-- new", encoding="utf-8")
+            repository = str(Path(directory).resolve())
+            settings = {"enabled": True, "allowedMappings": [repository + "::project-a"], "commandTimeoutSeconds": 1, "requireDryRun": True, "resolverAttemptLimit": 3}
+            result = deploy_pending_migrations(directory, directory, "base", settings, runner)
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error"], "Missing daemon-local Supabase credentials: SUPABASE_ACCESS_TOKEN, SUPABASE_DB_PASSWORD.")
 
     def test_cancellation_before_deployment_never_runs_cli(self):
         commands = []

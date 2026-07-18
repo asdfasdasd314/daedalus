@@ -175,7 +175,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "community": 14,
-      "community_name": "getProjectLabel",
+      "community_name": "feature-workspace-utils.ts",
       "norm_label": "agent-session-panel.tsx",
       "id": "daedalus_site_app_agent_session_panel"
     },
@@ -186,7 +186,7 @@
       "source_location": "L7",
       "_origin": "ast",
       "community": 14,
-      "community_name": "getProjectLabel",
+      "community_name": "feature-workspace-utils.ts",
       "norm_label": "agentpromptmode",
       "id": "daedalus_site_app_agent_session_panel_agentpromptmode"
     },
@@ -197,7 +197,7 @@
       "source_location": "L9",
       "_origin": "ast",
       "community": 14,
-      "community_name": "getProjectLabel",
+      "community_name": "feature-workspace-utils.ts",
       "norm_label": "agentsessionpanelprops",
       "id": "daedalus_site_app_agent_session_panel_agentsessionpanelprops"
     },
@@ -208,7 +208,7 @@
       "source_location": "L33",
       "_origin": "ast",
       "community": 14,
-      "community_name": "getProjectLabel",
+      "community_name": "feature-workspace-utils.ts",
       "norm_label": "agentsessionpanel()",
       "id": "daedalus_site_app_agent_session_panel_agentsessionpanel"
     },
@@ -1594,7 +1594,7 @@
       "source_location": "L276",
       "_origin": "ast",
       "community": 1,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "feature-files-dashboard.tsx",
       "norm_label": "featurefilesdashboard()",
       "id": "daedalus_site_app_feature_files_dashboard_featurefilesdashboard"
     },
@@ -1605,7 +1605,7 @@
       "source_location": "L3983",
       "_origin": "ast",
       "community": 1,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "feature-files-dashboard.tsx",
       "norm_label": "mergearchitectureview()",
       "id": "daedalus_site_app_feature_files_dashboard_mergearchitectureview"
     },
@@ -1627,7 +1627,7 @@
       "source_location": "L4026",
       "_origin": "ast",
       "community": 1,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "feature-files-dashboard.tsx",
       "norm_label": "ismanagerheartbeatcurrent()",
       "id": "daedalus_site_app_feature_files_dashboard_ismanagerheartbeatcurrent"
     },
@@ -1693,7 +1693,7 @@
       "source_location": "L4168",
       "_origin": "ast",
       "community": 1,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "feature-files-dashboard.tsx",
       "norm_label": "fetchdaemonpayload()",
       "id": "daedalus_site_app_feature_files_dashboard_fetchdaemonpayload"
     },
@@ -1803,7 +1803,7 @@
       "source_location": "L4447",
       "_origin": "ast",
       "community": 1,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "feature-files-dashboard.tsx",
       "norm_label": "mapagenttaskrowtoqueueentry()",
       "id": "daedalus_site_app_feature_files_dashboard_mapagenttaskrowtoqueueentry"
     },
@@ -1814,7 +1814,7 @@
       "source_location": "L4469",
       "_origin": "ast",
       "community": 1,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "feature-files-dashboard.tsx",
       "norm_label": "getdevenvironmentstate()",
       "id": "daedalus_site_app_feature_files_dashboard_getdevenvironmentstate"
     },
@@ -1825,7 +1825,7 @@
       "source_location": "L4498",
       "_origin": "ast",
       "community": 1,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "feature-files-dashboard.tsx",
       "norm_label": "getgraphzoomsettings()",
       "id": "daedalus_site_app_feature_files_dashboard_getgraphzoomsettings"
     },
@@ -1836,7 +1836,7 @@
       "source_location": "L4551",
       "_origin": "ast",
       "community": 1,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "feature-files-dashboard.tsx",
       "norm_label": "findparameterfilebypath()",
       "id": "daedalus_site_app_feature_files_dashboard_findparameterfilebypath"
     },
@@ -1847,7 +1847,7 @@
       "source_location": "L4571",
       "_origin": "ast",
       "community": 1,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "feature-files-dashboard.tsx",
       "norm_label": "getnumericparametervalue()",
       "id": "daedalus_site_app_feature_files_dashboard_getnumericparametervalue"
     },
@@ -1858,7 +1858,7 @@
       "source_location": "L4595",
       "_origin": "ast",
       "community": 1,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "feature-files-dashboard.tsx",
       "norm_label": "clampnumber()",
       "id": "daedalus_site_app_feature_files_dashboard_clampnumber"
     },
@@ -1913,7 +1913,7 @@
       "source_location": "L4669",
       "_origin": "ast",
       "community": 1,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "feature-files-dashboard.tsx",
       "norm_label": "fetchfeatureexecutionhydration()",
       "id": "daedalus_site_app_feature_files_dashboard_fetchfeatureexecutionhydration"
     },
@@ -1924,7 +1924,7 @@
       "source_location": "L4685",
       "_origin": "ast",
       "community": 1,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "feature-files-dashboard.tsx",
       "norm_label": "fetchfeatureexecutionhistorysummaries()",
       "id": "daedalus_site_app_feature_files_dashboard_fetchfeatureexecutionhistorysummaries"
     },
@@ -1935,7 +1935,7 @@
       "source_location": "L4700",
       "_origin": "ast",
       "community": 1,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "feature-files-dashboard.tsx",
       "norm_label": "fetchfeatureexecutionrundetail()",
       "id": "daedalus_site_app_feature_files_dashboard_fetchfeatureexecutionrundetail"
     },
@@ -1968,7 +1968,7 @@
       "source_location": "L4744",
       "_origin": "ast",
       "community": 1,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "feature-files-dashboard.tsx",
       "norm_label": "formatfeatureexecutiontime()",
       "id": "daedalus_site_app_feature_files_dashboard_formatfeatureexecutiontime"
     },
@@ -1979,7 +1979,7 @@
       "source_location": "L4749",
       "_origin": "ast",
       "community": 1,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "feature-files-dashboard.tsx",
       "norm_label": "fetchactiveagenttasksummaries()",
       "id": "daedalus_site_app_feature_files_dashboard_fetchactiveagenttasksummaries"
     },
@@ -2067,7 +2067,7 @@
       "source_location": "L4888",
       "_origin": "ast",
       "community": 1,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "feature-files-dashboard.tsx",
       "norm_label": "requestfinalizedtaskdeletion()",
       "id": "daedalus_site_app_feature_files_dashboard_requestfinalizedtaskdeletion"
     },
@@ -2078,7 +2078,7 @@
       "source_location": "L4899",
       "_origin": "ast",
       "community": 1,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "feature-files-dashboard.tsx",
       "norm_label": "parseparameterupdaterowmessage()",
       "id": "daedalus_site_app_feature_files_dashboard_parseparameterupdaterowmessage"
     },
@@ -2111,7 +2111,7 @@
       "source_location": "L4953",
       "_origin": "ast",
       "community": 1,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "feature-files-dashboard.tsx",
       "norm_label": "formatventureprogressstate()",
       "id": "daedalus_site_app_feature_files_dashboard_formatventureprogressstate"
     },
@@ -2122,7 +2122,7 @@
       "source_location": "L4965",
       "_origin": "ast",
       "community": 1,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "feature-files-dashboard.tsx",
       "norm_label": "formatventurecreatedat()",
       "id": "daedalus_site_app_feature_files_dashboard_formatventurecreatedat"
     },
@@ -2133,7 +2133,7 @@
       "source_location": "L4975",
       "_origin": "ast",
       "community": 1,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "feature-files-dashboard.tsx",
       "norm_label": "getventurecardclassname()",
       "id": "daedalus_site_app_feature_files_dashboard_getventurecardclassname"
     },
@@ -2232,7 +2232,7 @@
       "source_location": "L22",
       "_origin": "ast",
       "community": 1,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "feature-files-dashboard.tsx",
       "norm_label": "normalizeparameterfilepath()",
       "id": "daedalus_site_app_feature_workspace_utils_normalizeparameterfilepath"
     },
@@ -2331,7 +2331,7 @@
       "source_location": "L126",
       "_origin": "ast",
       "community": 14,
-      "community_name": "getProjectLabel",
+      "community_name": "feature-workspace-utils.ts",
       "norm_label": "getsharedprojectroot()",
       "id": "daedalus_site_app_feature_workspace_utils_getsharedprojectroot"
     },
@@ -2342,7 +2342,7 @@
       "source_location": "L147",
       "_origin": "ast",
       "community": 14,
-      "community_name": "getProjectLabel",
+      "community_name": "feature-workspace-utils.ts",
       "norm_label": "getprojectlabel()",
       "id": "daedalus_site_app_feature_workspace_utils_getprojectlabel"
     },
@@ -2353,7 +2353,7 @@
       "source_location": "L166",
       "_origin": "ast",
       "community": 14,
-      "community_name": "getProjectLabel",
+      "community_name": "feature-workspace-utils.ts",
       "norm_label": "getcompactprojectlabel()",
       "id": "daedalus_site_app_feature_workspace_utils_getcompactprojectlabel"
     },
@@ -2375,7 +2375,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "community": 27,
-      "community_name": "getProjectLabel",
+      "community_name": "git-sync-panel.tsx",
       "norm_label": "git-sync-panel.tsx",
       "id": "daedalus_site_app_git_sync_panel"
     },
@@ -2386,7 +2386,7 @@
       "source_location": "L11",
       "_origin": "ast",
       "community": 27,
-      "community_name": "getProjectLabel",
+      "community_name": "git-sync-panel.tsx",
       "norm_label": "gitsyncpanelprops",
       "id": "daedalus_site_app_git_sync_panel_gitsyncpanelprops"
     },
@@ -2397,7 +2397,7 @@
       "source_location": "L27",
       "_origin": "ast",
       "community": 27,
-      "community_name": "getProjectLabel",
+      "community_name": "git-sync-panel.tsx",
       "norm_label": "gitsyncpanel()",
       "id": "daedalus_site_app_git_sync_panel_gitsyncpanel"
     },
@@ -2408,7 +2408,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "community": 27,
-      "community_name": "getProjectLabel",
+      "community_name": "git-sync-panel.tsx",
       "norm_label": "git-sync-types.ts",
       "id": "daedalus_site_app_git_sync_types"
     },
@@ -2419,7 +2419,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "community": 27,
-      "community_name": "getProjectLabel",
+      "community_name": "git-sync-panel.tsx",
       "norm_label": "gitsyncoperation",
       "id": "daedalus_site_app_git_sync_types_gitsyncoperation"
     },
@@ -2430,7 +2430,7 @@
       "source_location": "L3",
       "_origin": "ast",
       "community": 27,
-      "community_name": "getProjectLabel",
+      "community_name": "git-sync-panel.tsx",
       "norm_label": "gitsyncstep",
       "id": "daedalus_site_app_git_sync_types_gitsyncstep"
     },
@@ -2441,7 +2441,7 @@
       "source_location": "L11",
       "_origin": "ast",
       "community": 27,
-      "community_name": "getProjectLabel",
+      "community_name": "git-sync-panel.tsx",
       "norm_label": "gitsyncresult",
       "id": "daedalus_site_app_git_sync_types_gitsyncresult"
     },
@@ -2452,7 +2452,7 @@
       "source_location": "L19",
       "_origin": "ast",
       "community": 27,
-      "community_name": "getProjectLabel",
+      "community_name": "git-sync-panel.tsx",
       "norm_label": "parsedgitsyncrow",
       "id": "daedalus_site_app_git_sync_types_parsedgitsyncrow"
     },
@@ -2463,7 +2463,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "community": 27,
-      "community_name": "getProjectLabel",
+      "community_name": "git-sync-panel.tsx",
       "norm_label": "git-sync-utils.ts",
       "id": "daedalus_site_app_git_sync_utils"
     },
@@ -2474,7 +2474,7 @@
       "source_location": "L3",
       "_origin": "ast",
       "community": 27,
-      "community_name": "getProjectLabel",
+      "community_name": "git-sync-panel.tsx",
       "norm_label": "formatstepoutput()",
       "id": "daedalus_site_app_git_sync_utils_formatstepoutput"
     },
@@ -2485,7 +2485,7 @@
       "source_location": "L27",
       "_origin": "ast",
       "community": 27,
-      "community_name": "getProjectLabel",
+      "community_name": "git-sync-panel.tsx",
       "norm_label": "formatgitsyncoutput()",
       "id": "daedalus_site_app_git_sync_utils_formatgitsyncoutput"
     },
@@ -2496,7 +2496,7 @@
       "source_location": "L41",
       "_origin": "ast",
       "community": 27,
-      "community_name": "getProjectLabel",
+      "community_name": "git-sync-panel.tsx",
       "norm_label": "parsegitsyncrowmessage()",
       "id": "daedalus_site_app_git_sync_utils_parsegitsyncrowmessage"
     },
@@ -2793,7 +2793,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "community": 61,
-      "community_name": "getProjectLabel",
+      "community_name": "agent-chat-cache.ts",
       "norm_label": "agent-chat-cache.ts",
       "id": "daedalus_site_lib_agent_chat_cache"
     },
@@ -2804,7 +2804,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "community": 61,
-      "community_name": "getProjectLabel",
+      "community_name": "agent-chat-cache.ts",
       "norm_label": "targetedfeature",
       "id": "daedalus_site_lib_agent_chat_cache_targetedfeature"
     },
@@ -2815,7 +2815,7 @@
       "source_location": "L7",
       "_origin": "ast",
       "community": 61,
-      "community_name": "getProjectLabel",
+      "community_name": "agent-chat-cache.ts",
       "norm_label": "agentchatexchange",
       "id": "daedalus_site_lib_agent_chat_cache_agentchatexchange"
     },
@@ -2826,7 +2826,7 @@
       "source_location": "L22",
       "_origin": "ast",
       "community": 61,
-      "community_name": "getProjectLabel",
+      "community_name": "agent-chat-cache.ts",
       "norm_label": "getcachedexchange()",
       "id": "daedalus_site_lib_agent_chat_cache_getcachedexchange"
     },
@@ -2837,7 +2837,7 @@
       "source_location": "L26",
       "_origin": "ast",
       "community": 61,
-      "community_name": "getProjectLabel",
+      "community_name": "agent-chat-cache.ts",
       "norm_label": "setcachedexchange()",
       "id": "daedalus_site_lib_agent_chat_cache_setcachedexchange"
     },
@@ -5466,7 +5466,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "community": 28,
-      "community_name": "communications.py",
+      "community_name": "__init__.py",
       "norm_label": "__init__.py",
       "id": "local_daemon_src_daedalus_daemon_init"
     },
@@ -5785,7 +5785,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "community": 11,
-      "community_name": "UpdateCurrentMessageTests",
+      "community_name": "architecture_document.py",
       "norm_label": "architecture_document.py",
       "id": "local_daemon_src_daedalus_daemon_architecture_document"
     },
@@ -5796,7 +5796,7 @@
       "source_location": "L15",
       "_origin": "ast",
       "community": 11,
-      "community_name": "UpdateCurrentMessageTests",
+      "community_name": "architecture_document.py",
       "norm_label": "architecturedocumentmodel",
       "id": "local_daemon_src_daedalus_daemon_architecture_document_architecturedocumentmodel"
     },
@@ -5807,7 +5807,7 @@
       "source_location": "",
       "_origin": "ast",
       "community": 11,
-      "community_name": "UpdateCurrentMessageTests",
+      "community_name": "architecture_document.py",
       "norm_label": "basemodel",
       "id": "basemodel"
     },
@@ -5818,7 +5818,7 @@
       "source_location": "L19",
       "_origin": "ast",
       "community": 11,
-      "community_name": "UpdateCurrentMessageTests",
+      "community_name": "architecture_document.py",
       "norm_label": "namedfielddefinition",
       "id": "local_daemon_src_daedalus_daemon_architecture_document_namedfielddefinition"
     },
@@ -5829,7 +5829,7 @@
       "source_location": "L26",
       "_origin": "ast",
       "community": 11,
-      "community_name": "UpdateCurrentMessageTests",
+      "community_name": "architecture_document.py",
       "norm_label": ".require_field_summary_text()",
       "id": "local_daemon_src_daedalus_daemon_architecture_document_namedfielddefinition_require_field_summary_text"
     },
@@ -5840,7 +5840,7 @@
       "source_location": "L32",
       "_origin": "ast",
       "community": 11,
-      "community_name": "UpdateCurrentMessageTests",
+      "community_name": "architecture_document.py",
       "norm_label": "primitivefielddefinition",
       "id": "local_daemon_src_daedalus_daemon_architecture_document_primitivefielddefinition"
     },
@@ -5851,7 +5851,7 @@
       "source_location": "L36",
       "_origin": "ast",
       "community": 11,
-      "community_name": "UpdateCurrentMessageTests",
+      "community_name": "architecture_document.py",
       "norm_label": "arrayfielddefinition",
       "id": "local_daemon_src_daedalus_daemon_architecture_document_arrayfielddefinition"
     },
@@ -5862,7 +5862,7 @@
       "source_location": "L41",
       "_origin": "ast",
       "community": 11,
-      "community_name": "UpdateCurrentMessageTests",
+      "community_name": "architecture_document.py",
       "norm_label": "objectfielddefinition",
       "id": "local_daemon_src_daedalus_daemon_architecture_document_objectfielddefinition"
     },
@@ -5873,7 +5873,7 @@
       "source_location": "L52",
       "_origin": "ast",
       "community": 11,
-      "community_name": "UpdateCurrentMessageTests",
+      "community_name": "architecture_document.py",
       "norm_label": "systemdefinition",
       "id": "local_daemon_src_daedalus_daemon_architecture_document_systemdefinition"
     },
@@ -5884,7 +5884,7 @@
       "source_location": "L60",
       "_origin": "ast",
       "community": 11,
-      "community_name": "UpdateCurrentMessageTests",
+      "community_name": "architecture_document.py",
       "norm_label": ".require_system_text()",
       "id": "local_daemon_src_daedalus_daemon_architecture_document_systemdefinition_require_system_text"
     },
@@ -5895,7 +5895,7 @@
       "source_location": "L67",
       "_origin": "ast",
       "community": 11,
-      "community_name": "UpdateCurrentMessageTests",
+      "community_name": "architecture_document.py",
       "norm_label": ".require_unique_non_empty_files()",
       "id": "local_daemon_src_daedalus_daemon_architecture_document_systemdefinition_require_unique_non_empty_files"
     },
@@ -5906,7 +5906,7 @@
       "source_location": "L76",
       "_origin": "ast",
       "community": 11,
-      "community_name": "UpdateCurrentMessageTests",
+      "community_name": "architecture_document.py",
       "norm_label": "channeldefinition",
       "id": "local_daemon_src_daedalus_daemon_architecture_document_channeldefinition"
     },
@@ -5917,7 +5917,7 @@
       "source_location": "L86",
       "_origin": "ast",
       "community": 11,
-      "community_name": "UpdateCurrentMessageTests",
+      "community_name": "architecture_document.py",
       "norm_label": ".require_channel_text()",
       "id": "local_daemon_src_daedalus_daemon_architecture_document_channeldefinition_require_channel_text"
     },
@@ -5928,7 +5928,7 @@
       "source_location": "L92",
       "_origin": "ast",
       "community": 11,
-      "community_name": "UpdateCurrentMessageTests",
+      "community_name": "architecture_document.py",
       "norm_label": "softwarearchitecture",
       "id": "local_daemon_src_daedalus_daemon_architecture_document_softwarearchitecture"
     },
@@ -5939,7 +5939,7 @@
       "source_location": "L100",
       "_origin": "ast",
       "community": 11,
-      "community_name": "UpdateCurrentMessageTests",
+      "community_name": "architecture_document.py",
       "norm_label": ".require_architecture_summary_text()",
       "id": "local_daemon_src_daedalus_daemon_architecture_document_softwarearchitecture_require_architecture_summary_text"
     },
@@ -5950,7 +5950,7 @@
       "source_location": "L106",
       "_origin": "ast",
       "community": 11,
-      "community_name": "UpdateCurrentMessageTests",
+      "community_name": "architecture_document.py",
       "norm_label": ".validate_graph()",
       "id": "local_daemon_src_daedalus_daemon_architecture_document_softwarearchitecture_validate_graph"
     },
@@ -5961,7 +5961,7 @@
       "source_location": "L131",
       "_origin": "ast",
       "community": 11,
-      "community_name": "UpdateCurrentMessageTests",
+      "community_name": "architecture_document.py",
       "norm_label": "load_published_architecture_schema()",
       "id": "local_daemon_src_daedalus_daemon_architecture_document_load_published_architecture_schema"
     },
@@ -5972,7 +5972,7 @@
       "source_location": "L135",
       "_origin": "ast",
       "community": 11,
-      "community_name": "UpdateCurrentMessageTests",
+      "community_name": "architecture_document.py",
       "norm_label": "parse_and_validate_architecture_response()",
       "id": "local_daemon_src_daedalus_daemon_architecture_document_parse_and_validate_architecture_response"
     },
@@ -6148,7 +6148,7 @@
       "source_location": "L157",
       "_origin": "ast",
       "community": 28,
-      "community_name": "communications.py",
+      "community_name": "__init__.py",
       "norm_label": "post_git_sync_result()",
       "id": "local_daemon_src_daedalus_daemon_communications_post_git_sync_result"
     },
@@ -6192,7 +6192,7 @@
       "source_location": "L208",
       "_origin": "ast",
       "community": 0,
-      "community_name": "record_daemon_event",
+      "community_name": "orchestrator.py",
       "norm_label": "update_agent_task()",
       "id": "local_daemon_src_daedalus_daemon_communications_update_agent_task"
     },
@@ -6203,7 +6203,7 @@
       "source_location": "L225",
       "_origin": "ast",
       "community": 2,
-      "community_name": "architecture.py",
+      "community_name": "communications.py",
       "norm_label": "claim_architecture_view()",
       "id": "local_daemon_src_daedalus_daemon_communications_claim_architecture_view"
     },
@@ -6236,7 +6236,7 @@
       "source_location": "L288",
       "_origin": "ast",
       "community": 2,
-      "community_name": "scan_feature_file_projects",
+      "community_name": "communications.py",
       "norm_label": "claim_feature_execution_run()",
       "id": "local_daemon_src_daedalus_daemon_communications_claim_feature_execution_run"
     },
@@ -6247,7 +6247,7 @@
       "source_location": "L295",
       "_origin": "ast",
       "community": 2,
-      "community_name": "scan_feature_file_projects",
+      "community_name": "communications.py",
       "norm_label": "update_feature_execution_run()",
       "id": "local_daemon_src_daedalus_daemon_communications_update_feature_execution_run"
     },
@@ -6258,7 +6258,7 @@
       "source_location": "L305",
       "_origin": "ast",
       "community": 2,
-      "community_name": "scan_feature_file_projects",
+      "community_name": "communications.py",
       "norm_label": "list_active_feature_execution_runs()",
       "id": "local_daemon_src_daedalus_daemon_communications_list_active_feature_execution_runs"
     },
@@ -6291,7 +6291,7 @@
       "source_location": "L326",
       "_origin": "ast",
       "community": 0,
-      "community_name": "record_daemon_event",
+      "community_name": "orchestrator.py",
       "norm_label": "record_daemon_event()",
       "id": "local_daemon_src_daedalus_daemon_communications_record_daemon_event"
     },
@@ -6478,7 +6478,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "community": 2,
-      "community_name": "scan_feature_file_projects",
+      "community_name": "communications.py",
       "norm_label": "execution.py",
       "id": "local_daemon_src_daedalus_daemon_execution"
     },
@@ -6489,7 +6489,7 @@
       "source_location": "L15",
       "_origin": "ast",
       "community": 2,
-      "community_name": "scan_feature_file_projects",
+      "community_name": "communications.py",
       "norm_label": "paired_parameter_file_path()",
       "id": "local_daemon_src_daedalus_daemon_execution_paired_parameter_file_path"
     },
@@ -6500,7 +6500,7 @@
       "source_location": "L22",
       "_origin": "ast",
       "community": 2,
-      "community_name": "scan_feature_file_projects",
+      "community_name": "communications.py",
       "norm_label": "resolve_inside_project()",
       "id": "local_daemon_src_daedalus_daemon_execution_resolve_inside_project"
     },
@@ -6511,7 +6511,7 @@
       "source_location": "",
       "_origin": "ast",
       "community": 2,
-      "community_name": "scan_feature_file_projects",
+      "community_name": "communications.py",
       "norm_label": "path",
       "id": "local_daemon_src_daedalus_daemon_execution_py_path"
     },
@@ -6522,7 +6522,7 @@
       "source_location": "L31",
       "_origin": "ast",
       "community": 2,
-      "community_name": "scan_feature_file_projects",
+      "community_name": "communications.py",
       "norm_label": "validate_execution_entry_point()",
       "id": "local_daemon_src_daedalus_daemon_execution_validate_execution_entry_point"
     },
@@ -6533,7 +6533,7 @@
       "source_location": "L45",
       "_origin": "ast",
       "community": 2,
-      "community_name": "scan_feature_file_projects",
+      "community_name": "communications.py",
       "norm_label": "validate_execution_request()",
       "id": "local_daemon_src_daedalus_daemon_execution_validate_execution_request"
     },
@@ -6544,7 +6544,7 @@
       "source_location": "L66",
       "_origin": "ast",
       "community": 2,
-      "community_name": "scan_feature_file_projects",
+      "community_name": "communications.py",
       "norm_label": "append_tail()",
       "id": "local_daemon_src_daedalus_daemon_execution_append_tail"
     },
@@ -6555,7 +6555,7 @@
       "source_location": "L70",
       "_origin": "ast",
       "community": 2,
-      "community_name": "scan_feature_file_projects",
+      "community_name": "communications.py",
       "norm_label": "featureexecutionsupervisor",
       "id": "local_daemon_src_daedalus_daemon_execution_featureexecutionsupervisor"
     },
@@ -6566,7 +6566,7 @@
       "source_location": "L71",
       "_origin": "ast",
       "community": 2,
-      "community_name": "scan_feature_file_projects",
+      "community_name": "communications.py",
       "norm_label": ".__init__()",
       "id": "local_daemon_src_daedalus_daemon_execution_featureexecutionsupervisor_init"
     },
@@ -6577,7 +6577,7 @@
       "source_location": "L76",
       "_origin": "ast",
       "community": 2,
-      "community_name": "scan_feature_file_projects",
+      "community_name": "communications.py",
       "norm_label": ".run_cycle()",
       "id": "local_daemon_src_daedalus_daemon_execution_featureexecutionsupervisor_run_cycle"
     },
@@ -6588,7 +6588,7 @@
       "source_location": "L84",
       "_origin": "ast",
       "community": 2,
-      "community_name": "scan_feature_file_projects",
+      "community_name": "communications.py",
       "norm_label": "._reconcile_restart()",
       "id": "local_daemon_src_daedalus_daemon_execution_featureexecutionsupervisor_reconcile_restart"
     },
@@ -6599,7 +6599,7 @@
       "source_location": "L97",
       "_origin": "ast",
       "community": 2,
-      "community_name": "scan_feature_file_projects",
+      "community_name": "communications.py",
       "norm_label": "._claim_and_start()",
       "id": "local_daemon_src_daedalus_daemon_execution_featureexecutionsupervisor_claim_and_start"
     },
@@ -6610,7 +6610,7 @@
       "source_location": "L130",
       "_origin": "ast",
       "community": 2,
-      "community_name": "scan_feature_file_projects",
+      "community_name": "communications.py",
       "norm_label": "._read_stream()",
       "id": "local_daemon_src_daedalus_daemon_execution_featureexecutionsupervisor_read_stream"
     },
@@ -6621,7 +6621,7 @@
       "source_location": "L142",
       "_origin": "ast",
       "community": 2,
-      "community_name": "scan_feature_file_projects",
+      "community_name": "communications.py",
       "norm_label": "._poll_processes()",
       "id": "local_daemon_src_daedalus_daemon_execution_featureexecutionsupervisor_poll_processes"
     },
@@ -6632,7 +6632,7 @@
       "source_location": "L159",
       "_origin": "ast",
       "community": 2,
-      "community_name": "scan_feature_file_projects",
+      "community_name": "communications.py",
       "norm_label": "._terminate()",
       "id": "local_daemon_src_daedalus_daemon_execution_featureexecutionsupervisor_terminate"
     },
@@ -6643,7 +6643,7 @@
       "source_location": "",
       "_origin": "ast",
       "community": 2,
-      "community_name": "scan_feature_file_projects",
+      "community_name": "communications.py",
       "norm_label": "popen",
       "id": "local_daemon_src_daedalus_daemon_execution_py_popen"
     },
@@ -7193,7 +7193,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "community": 12,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "migration_deployment.py",
       "norm_label": "migration_deployment.py",
       "id": "local_daemon_src_daedalus_daemon_migration_deployment"
     },
@@ -7204,7 +7204,7 @@
       "source_location": "L21",
       "_origin": "ast",
       "community": 12,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "migration_deployment.py",
       "norm_label": "load_deployment_settings()",
       "id": "local_daemon_src_daedalus_daemon_migration_deployment_load_deployment_settings"
     },
@@ -7215,7 +7215,7 @@
       "source_location": "",
       "_origin": "ast",
       "community": 12,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "migration_deployment.py",
       "norm_label": "path",
       "id": "local_daemon_src_daedalus_daemon_migration_deployment_py_path"
     },
@@ -7226,7 +7226,7 @@
       "source_location": "L41",
       "_origin": "ast",
       "community": 12,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "migration_deployment.py",
       "norm_label": "positive_int()",
       "id": "local_daemon_src_daedalus_daemon_migration_deployment_positive_int"
     },
@@ -7237,7 +7237,7 @@
       "source_location": "L48",
       "_origin": "ast",
       "community": 12,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "migration_deployment.py",
       "norm_label": "migration_files_changed()",
       "id": "local_daemon_src_daedalus_daemon_migration_deployment_migration_files_changed"
     },
@@ -7248,7 +7248,7 @@
       "source_location": "L56",
       "_origin": "ast",
       "community": 12,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "migration_deployment.py",
       "norm_label": "validate_migrations()",
       "id": "local_daemon_src_daedalus_daemon_migration_deployment_validate_migrations"
     },
@@ -7259,7 +7259,7 @@
       "source_location": "L74",
       "_origin": "ast",
       "community": 12,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "migration_deployment.py",
       "norm_label": "repository_project_allowed()",
       "id": "local_daemon_src_daedalus_daemon_migration_deployment_repository_project_allowed"
     },
@@ -7270,7 +7270,7 @@
       "source_location": "L79",
       "_origin": "ast",
       "community": 12,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "migration_deployment.py",
       "norm_label": "project_lock()",
       "id": "local_daemon_src_daedalus_daemon_migration_deployment_project_lock"
     },
@@ -7281,7 +7281,7 @@
       "source_location": "",
       "_origin": "ast",
       "community": 12,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "migration_deployment.py",
       "norm_label": "lock",
       "id": "lock"
     },
@@ -7292,7 +7292,7 @@
       "source_location": "L84",
       "_origin": "ast",
       "community": 12,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "migration_deployment.py",
       "norm_label": "deploy_pending_migrations()",
       "id": "local_daemon_src_daedalus_daemon_migration_deployment_deploy_pending_migrations"
     },
@@ -7303,7 +7303,7 @@
       "source_location": "L138",
       "_origin": "ast",
       "community": 12,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "migration_deployment.py",
       "norm_label": "run_command()",
       "id": "local_daemon_src_daedalus_daemon_migration_deployment_run_command"
     },
@@ -7314,7 +7314,7 @@
       "source_location": "L146",
       "_origin": "ast",
       "community": 12,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "migration_deployment.py",
       "norm_label": "redact_diagnostic()",
       "id": "local_daemon_src_daedalus_daemon_migration_deployment_redact_diagnostic"
     },
@@ -7325,7 +7325,7 @@
       "source_location": "L150",
       "_origin": "ast",
       "community": 12,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "migration_deployment.py",
       "norm_label": "redact()",
       "id": "local_daemon_src_daedalus_daemon_migration_deployment_redact"
     },
@@ -7336,7 +7336,7 @@
       "source_location": "L156",
       "_origin": "ast",
       "community": 12,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "migration_deployment.py",
       "norm_label": "diagnostic_text()",
       "id": "local_daemon_src_daedalus_daemon_migration_deployment_diagnostic_text"
     },
@@ -7347,7 +7347,7 @@
       "source_location": "L161",
       "_origin": "ast",
       "community": 12,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "migration_deployment.py",
       "norm_label": "reports_pending_migrations()",
       "id": "local_daemon_src_daedalus_daemon_migration_deployment_reports_pending_migrations"
     },
@@ -7358,7 +7358,7 @@
       "source_location": "L166",
       "_origin": "ast",
       "community": 12,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "migration_deployment.py",
       "norm_label": "blocked()",
       "id": "local_daemon_src_daedalus_daemon_migration_deployment_blocked"
     },
@@ -7369,7 +7369,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "community": 0,
-      "community_name": "GitWorktreeOrchestrator",
+      "community_name": "orchestrator.py",
       "norm_label": "orchestrator.py",
       "id": "local_daemon_src_daedalus_daemon_orchestrator"
     },
@@ -7413,7 +7413,7 @@
       "source_location": "L70",
       "_origin": "ast",
       "community": 0,
-      "community_name": "communications.py",
+      "community_name": "orchestrator.py",
       "norm_label": "._handle_task_deletion_requests()",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_gitworktreeorchestrator_handle_task_deletion_requests"
     },
@@ -7424,7 +7424,7 @@
       "source_location": "L82",
       "_origin": "ast",
       "community": 0,
-      "community_name": "record_daemon_event",
+      "community_name": "orchestrator.py",
       "norm_label": ".run_cycle()",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_gitworktreeorchestrator_run_cycle"
     },
@@ -7435,7 +7435,7 @@
       "source_location": "L121",
       "_origin": "ast",
       "community": 0,
-      "community_name": "record_daemon_event",
+      "community_name": "orchestrator.py",
       "norm_label": "._cleanup_reclaimable_worktrees()",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_gitworktreeorchestrator_cleanup_reclaimable_worktrees"
     },
@@ -7446,7 +7446,7 @@
       "source_location": "L135",
       "_origin": "ast",
       "community": 0,
-      "community_name": "record_daemon_event",
+      "community_name": "orchestrator.py",
       "norm_label": "._recover_interrupted_work()",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_gitworktreeorchestrator_recover_interrupted_work"
     },
@@ -7457,7 +7457,7 @@
       "source_location": "L167",
       "_origin": "ast",
       "community": 0,
-      "community_name": "record_daemon_event",
+      "community_name": "orchestrator.py",
       "norm_label": "._handle_cancel_requests()",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_gitworktreeorchestrator_handle_cancel_requests"
     },
@@ -7468,7 +7468,7 @@
       "source_location": "L195",
       "_origin": "ast",
       "community": 0,
-      "community_name": "record_daemon_event",
+      "community_name": "orchestrator.py",
       "norm_label": "._mark_task_cancelled()",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_gitworktreeorchestrator_mark_task_cancelled"
     },
@@ -7479,7 +7479,7 @@
       "source_location": "L219",
       "_origin": "ast",
       "community": 0,
-      "community_name": "GitWorktreeOrchestrator",
+      "community_name": "orchestrator.py",
       "norm_label": "._refresh_cancel_requested()",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_gitworktreeorchestrator_refresh_cancel_requested"
     },
@@ -7490,7 +7490,7 @@
       "source_location": "L227",
       "_origin": "ast",
       "community": 0,
-      "community_name": "record_daemon_event",
+      "community_name": "orchestrator.py",
       "norm_label": "._admit_tasks()",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_gitworktreeorchestrator_admit_tasks"
     },
@@ -7501,7 +7501,7 @@
       "source_location": "L305",
       "_origin": "ast",
       "community": 0,
-      "community_name": "GitWorktreeOrchestrator",
+      "community_name": "orchestrator.py",
       "norm_label": "._run_task()",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_gitworktreeorchestrator_run_task"
     },
@@ -7534,7 +7534,7 @@
       "source_location": "L514",
       "_origin": "ast",
       "community": 0,
-      "community_name": "record_daemon_event",
+      "community_name": "orchestrator.py",
       "norm_label": "._finish_tasks()",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_gitworktreeorchestrator_finish_tasks"
     },
@@ -7545,7 +7545,7 @@
       "source_location": "L577",
       "_origin": "ast",
       "community": 0,
-      "community_name": "record_daemon_event",
+      "community_name": "orchestrator.py",
       "norm_label": "._start_next_integration()",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_gitworktreeorchestrator_start_next_integration"
     },
@@ -7556,7 +7556,7 @@
       "source_location": "L599",
       "_origin": "ast",
       "community": 0,
-      "community_name": "GitWorktreeOrchestrator",
+      "community_name": "orchestrator.py",
       "norm_label": "._integration_cancelled()",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_gitworktreeorchestrator_integration_cancelled"
     },
@@ -7567,7 +7567,7 @@
       "source_location": "L603",
       "_origin": "ast",
       "community": 0,
-      "community_name": "GitWorktreeOrchestrator",
+      "community_name": "orchestrator.py",
       "norm_label": "._integrate_task()",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_gitworktreeorchestrator_integrate_task"
     },
@@ -7589,7 +7589,7 @@
       "source_location": "L728",
       "_origin": "ast",
       "community": 0,
-      "community_name": "GitWorktreeOrchestrator",
+      "community_name": "orchestrator.py",
       "norm_label": "._run_resolver_loop()",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_gitworktreeorchestrator_run_resolver_loop"
     },
@@ -7600,7 +7600,7 @@
       "source_location": "L775",
       "_origin": "ast",
       "community": 0,
-      "community_name": "record_daemon_event",
+      "community_name": "orchestrator.py",
       "norm_label": "._finish_integrations()",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_gitworktreeorchestrator_finish_integrations"
     },
@@ -7611,7 +7611,7 @@
       "source_location": "L825",
       "_origin": "ast",
       "community": 0,
-      "community_name": "record_daemon_event",
+      "community_name": "orchestrator.py",
       "norm_label": "load_worktree_settings()",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_load_worktree_settings"
     },
@@ -7622,7 +7622,7 @@
       "source_location": "L856",
       "_origin": "ast",
       "community": 0,
-      "community_name": "GitWorktreeOrchestrator",
+      "community_name": "orchestrator.py",
       "norm_label": "verification_commands_for_worktree()",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_verification_commands_for_worktree"
     },
@@ -7633,7 +7633,7 @@
       "source_location": "L879",
       "_origin": "ast",
       "community": 0,
-      "community_name": "GitWorktreeOrchestrator",
+      "community_name": "orchestrator.py",
       "norm_label": "package_has_test_script()",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_package_has_test_script"
     },
@@ -7644,7 +7644,7 @@
       "source_location": "",
       "_origin": "ast",
       "community": 0,
-      "community_name": "GitWorktreeOrchestrator",
+      "community_name": "orchestrator.py",
       "norm_label": "path",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_py_path"
     },
@@ -7655,7 +7655,7 @@
       "source_location": "L890",
       "_origin": "ast",
       "community": 0,
-      "community_name": "record_daemon_event",
+      "community_name": "orchestrator.py",
       "norm_label": "positive_int()",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_positive_int"
     },
@@ -7666,7 +7666,7 @@
       "source_location": "L897",
       "_origin": "ast",
       "community": 0,
-      "community_name": "record_daemon_event",
+      "community_name": "orchestrator.py",
       "norm_label": "non_negative_number()",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_non_negative_number"
     },
@@ -7677,7 +7677,7 @@
       "source_location": "L906",
       "_origin": "ast",
       "community": 0,
-      "community_name": "GitWorktreeOrchestrator",
+      "community_name": "orchestrator.py",
       "norm_label": "create_task_worktree()",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_create_task_worktree"
     },
@@ -7688,7 +7688,7 @@
       "source_location": "L917",
       "_origin": "ast",
       "community": 0,
-      "community_name": "GitWorktreeOrchestrator",
+      "community_name": "orchestrator.py",
       "norm_label": "retained_task_worktree_valid()",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_retained_task_worktree_valid"
     },
@@ -7699,7 +7699,7 @@
       "source_location": "L926",
       "_origin": "ast",
       "community": 0,
-      "community_name": "GitWorktreeOrchestrator",
+      "community_name": "orchestrator.py",
       "norm_label": "validate_primary_worktree()",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_validate_primary_worktree"
     },
@@ -7710,7 +7710,7 @@
       "source_location": "L935",
       "_origin": "ast",
       "community": 0,
-      "community_name": "GitWorktreeOrchestrator",
+      "community_name": "orchestrator.py",
       "norm_label": "worktree_root()",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_worktree_root"
     },
@@ -7721,7 +7721,7 @@
       "source_location": "L941",
       "_origin": "ast",
       "community": 0,
-      "community_name": "GitWorktreeOrchestrator",
+      "community_name": "orchestrator.py",
       "norm_label": "worktree_root_path()",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_worktree_root_path"
     },
@@ -7732,7 +7732,7 @@
       "source_location": "L945",
       "_origin": "ast",
       "community": 0,
-      "community_name": "record_daemon_event",
+      "community_name": "orchestrator.py",
       "norm_label": "remove_worktree()",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_remove_worktree"
     },
@@ -7743,7 +7743,7 @@
       "source_location": "L955",
       "_origin": "ast",
       "community": 0,
-      "community_name": "GitWorktreeOrchestrator",
+      "community_name": "orchestrator.py",
       "norm_label": "is_clean_worktree()",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_is_clean_worktree"
     },
@@ -7754,7 +7754,7 @@
       "source_location": "L961",
       "_origin": "ast",
       "community": 0,
-      "community_name": "GitWorktreeOrchestrator",
+      "community_name": "orchestrator.py",
       "norm_label": "prune_worktrees()",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_prune_worktrees"
     },
@@ -7765,7 +7765,7 @@
       "source_location": "L965",
       "_origin": "ast",
       "community": 0,
-      "community_name": "WorktreeTests",
+      "community_name": "orchestrator.py",
       "norm_label": "remove_empty_worktree_directories()",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_remove_empty_worktree_directories"
     },
@@ -7776,7 +7776,7 @@
       "source_location": "L974",
       "_origin": "ast",
       "community": 0,
-      "community_name": "GitWorktreeOrchestrator",
+      "community_name": "orchestrator.py",
       "norm_label": "commit_worktree_changes()",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_commit_worktree_changes"
     },
@@ -7787,7 +7787,7 @@
       "source_location": "L987",
       "_origin": "ast",
       "community": 0,
-      "community_name": "GitWorktreeOrchestrator",
+      "community_name": "orchestrator.py",
       "norm_label": "find_migration_directories()",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_find_migration_directories"
     },
@@ -7798,7 +7798,7 @@
       "source_location": "L997",
       "_origin": "ast",
       "community": 0,
-      "community_name": "plan_migration_renames",
+      "community_name": "orchestrator.py",
       "norm_label": "plan_migration_renames()",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_plan_migration_renames"
     },
@@ -7809,7 +7809,7 @@
       "source_location": "L1041",
       "_origin": "ast",
       "community": 0,
-      "community_name": "GitWorktreeOrchestrator",
+      "community_name": "orchestrator.py",
       "norm_label": "reconcile_migration_numbers()",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_reconcile_migration_numbers"
     },
@@ -7820,7 +7820,7 @@
       "source_location": "L1052",
       "_origin": "ast",
       "community": 0,
-      "community_name": "GitWorktreeOrchestrator",
+      "community_name": "orchestrator.py",
       "norm_label": "run_verification()",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_run_verification"
     },
@@ -7831,7 +7831,7 @@
       "source_location": "L1062",
       "_origin": "ast",
       "community": 0,
-      "community_name": "GitWorktreeOrchestrator",
+      "community_name": "orchestrator.py",
       "norm_label": "run_process()",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_run_process"
     },
@@ -7842,7 +7842,7 @@
       "source_location": "L1066",
       "_origin": "ast",
       "community": 0,
-      "community_name": "GitWorktreeOrchestrator",
+      "community_name": "orchestrator.py",
       "norm_label": "git_output()",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_git_output"
     },
@@ -7853,7 +7853,7 @@
       "source_location": "L1073",
       "_origin": "ast",
       "community": 0,
-      "community_name": "GitWorktreeOrchestrator",
+      "community_name": "orchestrator.py",
       "norm_label": "format_process_failure()",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_format_process_failure"
     },
@@ -7864,7 +7864,7 @@
       "source_location": "L1078",
       "_origin": "ast",
       "community": 0,
-      "community_name": "GitWorktreeOrchestrator",
+      "community_name": "orchestrator.py",
       "norm_label": "build_task_prompt()",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_build_task_prompt"
     },
@@ -7875,7 +7875,7 @@
       "source_location": "L1090",
       "_origin": "ast",
       "community": 0,
-      "community_name": "GitWorktreeOrchestrator",
+      "community_name": "orchestrator.py",
       "norm_label": "build_task_repair_prompt()",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_build_task_repair_prompt"
     },
@@ -7886,7 +7886,7 @@
       "source_location": "L1105",
       "_origin": "ast",
       "community": 0,
-      "community_name": "GitWorktreeOrchestrator",
+      "community_name": "orchestrator.py",
       "norm_label": "build_resolver_prompt()",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_build_resolver_prompt"
     },
@@ -7897,7 +7897,7 @@
       "source_location": "L1117",
       "_origin": "ast",
       "community": 0,
-      "community_name": "record_daemon_event",
+      "community_name": "orchestrator.py",
       "norm_label": "utc_now()",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_utc_now"
     },
@@ -7908,7 +7908,7 @@
       "source_location": "L1121",
       "_origin": "ast",
       "community": 0,
-      "community_name": "GitWorktreeOrchestrator",
+      "community_name": "orchestrator.py",
       "norm_label": "reply_indicates_failure()",
       "id": "local_daemon_src_daedalus_daemon_orchestrator_reply_indicates_failure"
     },
@@ -8227,7 +8227,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "community": 11,
-      "community_name": "UpdateCurrentMessageTests",
+      "community_name": "architecture_document.py",
       "norm_label": "test_architecture_document.py",
       "id": "local_daemon_tests_test_architecture_document"
     },
@@ -8238,7 +8238,7 @@
       "source_location": "L18",
       "_origin": "ast",
       "community": 11,
-      "community_name": "UpdateCurrentMessageTests",
+      "community_name": "architecture_document.py",
       "norm_label": "document()",
       "id": "local_daemon_tests_test_architecture_document_document"
     },
@@ -8249,7 +8249,7 @@
       "source_location": "L45",
       "_origin": "ast",
       "community": 11,
-      "community_name": "UpdateCurrentMessageTests",
+      "community_name": "architecture_document.py",
       "norm_label": "architecturedocumenttests",
       "id": "local_daemon_tests_test_architecture_document_architecturedocumenttests"
     },
@@ -8260,7 +8260,7 @@
       "source_location": "L46",
       "_origin": "ast",
       "community": 11,
-      "community_name": "UpdateCurrentMessageTests",
+      "community_name": "architecture_document.py",
       "norm_label": ".test_loads_exact_published_schema_file()",
       "id": "local_daemon_tests_test_architecture_document_architecturedocumenttests_test_loads_exact_published_schema_file"
     },
@@ -8271,7 +8271,7 @@
       "source_location": "L52",
       "_origin": "ast",
       "community": 11,
-      "community_name": "UpdateCurrentMessageTests",
+      "community_name": "architecture_document.py",
       "norm_label": ".test_validates_recursive_fields_and_serializes_required_default()",
       "id": "local_daemon_tests_test_architecture_document_architecturedocumenttests_test_validates_recursive_fields_and_serializes_required_default"
     },
@@ -8282,7 +8282,7 @@
       "source_location": "L59",
       "_origin": "ast",
       "community": 11,
-      "community_name": "UpdateCurrentMessageTests",
+      "community_name": "architecture_document.py",
       "norm_label": ".test_rejects_duplicate_files_missing_extra_invalid_and_strict_values()",
       "id": "local_daemon_tests_test_architecture_document_architecturedocumenttests_test_rejects_duplicate_files_missing_extra_invalid_and_strict_values"
     },
@@ -8293,7 +8293,7 @@
       "source_location": "L81",
       "_origin": "ast",
       "community": 11,
-      "community_name": "UpdateCurrentMessageTests",
+      "community_name": "architecture_document.py",
       "norm_label": ".test_rejects_duplicate_ids_and_unknown_endpoints()",
       "id": "local_daemon_tests_test_architecture_document_architecturedocumenttests_test_rejects_duplicate_ids_and_unknown_endpoints"
     },
@@ -8304,7 +8304,7 @@
       "source_location": "L92",
       "_origin": "ast",
       "community": 11,
-      "community_name": "UpdateCurrentMessageTests",
+      "community_name": "architecture_document.py",
       "norm_label": ".test_rejects_invalid_json_and_markdown_fences()",
       "id": "local_daemon_tests_test_architecture_document_architecturedocumenttests_test_rejects_invalid_json_and_markdown_fences"
     },
@@ -8315,7 +8315,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "community": 2,
-      "community_name": "FakeResponse",
+      "community_name": "communications.py",
       "norm_label": "test_communications.py",
       "id": "local_daemon_tests_test_communications"
     },
@@ -8326,7 +8326,7 @@
       "source_location": "L37",
       "_origin": "ast",
       "community": 2,
-      "community_name": "FakeResponse",
+      "community_name": "communications.py",
       "norm_label": "fakeresponse",
       "id": "local_daemon_tests_test_communications_fakeresponse"
     },
@@ -8337,7 +8337,7 @@
       "source_location": "L38",
       "_origin": "ast",
       "community": 2,
-      "community_name": "FakeResponse",
+      "community_name": "communications.py",
       "norm_label": ".__init__()",
       "id": "local_daemon_tests_test_communications_fakeresponse_init"
     },
@@ -8348,7 +8348,7 @@
       "source_location": "L41",
       "_origin": "ast",
       "community": 2,
-      "community_name": "FakeResponse",
+      "community_name": "communications.py",
       "norm_label": ".read()",
       "id": "local_daemon_tests_test_communications_fakeresponse_read"
     },
@@ -8359,7 +8359,7 @@
       "source_location": "L44",
       "_origin": "ast",
       "community": 2,
-      "community_name": "FakeResponse",
+      "community_name": "communications.py",
       "norm_label": ".__enter__()",
       "id": "local_daemon_tests_test_communications_fakeresponse_enter"
     },
@@ -8370,7 +8370,7 @@
       "source_location": "L47",
       "_origin": "ast",
       "community": 2,
-      "community_name": "FakeResponse",
+      "community_name": "communications.py",
       "norm_label": ".__exit__()",
       "id": "local_daemon_tests_test_communications_fakeresponse_exit"
     },
@@ -8535,7 +8535,7 @@
       "source_location": "L421",
       "_origin": "ast",
       "community": 2,
-      "community_name": "FakeResponse",
+      "community_name": "communications.py",
       "norm_label": "postgitsyncresulttests",
       "id": "local_daemon_tests_test_communications_postgitsyncresulttests"
     },
@@ -8546,7 +8546,7 @@
       "source_location": "L422",
       "_origin": "ast",
       "community": 2,
-      "community_name": "FakeResponse",
+      "community_name": "communications.py",
       "norm_label": ".test_posts_git_sync_result_to_daemon_payload_rpc()",
       "id": "local_daemon_tests_test_communications_postgitsyncresulttests_test_posts_git_sync_result_to_daemon_payload_rpc"
     },
@@ -8623,7 +8623,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "community": 2,
-      "community_name": "scan_feature_file_projects",
+      "community_name": "communications.py",
       "norm_label": "test_execution.py",
       "id": "local_daemon_tests_test_execution"
     },
@@ -8634,7 +8634,7 @@
       "source_location": "L16",
       "_origin": "ast",
       "community": 2,
-      "community_name": "scan_feature_file_projects",
+      "community_name": "communications.py",
       "norm_label": "executioncontracttests",
       "id": "local_daemon_tests_test_execution_executioncontracttests"
     },
@@ -8645,7 +8645,7 @@
       "source_location": "L17",
       "_origin": "ast",
       "community": 2,
-      "community_name": "scan_feature_file_projects",
+      "community_name": "communications.py",
       "norm_label": ".test_maps_feature_to_paired_parameter_file()",
       "id": "local_daemon_tests_test_execution_executioncontracttests_test_maps_feature_to_paired_parameter_file"
     },
@@ -8656,7 +8656,7 @@
       "source_location": "L23",
       "_origin": "ast",
       "community": 2,
-      "community_name": "scan_feature_file_projects",
+      "community_name": "communications.py",
       "norm_label": ".test_rejects_non_feature_path()",
       "id": "local_daemon_tests_test_execution_executioncontracttests_test_rejects_non_feature_path"
     },
@@ -8667,7 +8667,7 @@
       "source_location": "L27",
       "_origin": "ast",
       "community": 2,
-      "community_name": "scan_feature_file_projects",
+      "community_name": "communications.py",
       "norm_label": ".test_rejects_path_traversal()",
       "id": "local_daemon_tests_test_execution_executioncontracttests_test_rejects_path_traversal"
     },
@@ -8678,7 +8678,7 @@
       "source_location": "L32",
       "_origin": "ast",
       "community": 2,
-      "community_name": "scan_feature_file_projects",
+      "community_name": "communications.py",
       "norm_label": ".test_accepts_valid_execution_entry_point()",
       "id": "local_daemon_tests_test_execution_executioncontracttests_test_accepts_valid_execution_entry_point"
     },
@@ -8689,7 +8689,7 @@
       "source_location": "L42",
       "_origin": "ast",
       "community": 2,
-      "community_name": "scan_feature_file_projects",
+      "community_name": "communications.py",
       "norm_label": ".test_rejects_malformed_execution_entry_point()",
       "id": "local_daemon_tests_test_execution_executioncontracttests_test_rejects_malformed_execution_entry_point"
     },
@@ -8700,7 +8700,7 @@
       "source_location": "L49",
       "_origin": "ast",
       "community": 2,
-      "community_name": "scan_feature_file_projects",
+      "community_name": "communications.py",
       "norm_label": ".test_rejects_unscanned_project()",
       "id": "local_daemon_tests_test_execution_executioncontracttests_test_rejects_unscanned_project"
     },
@@ -9415,7 +9415,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "community": 12,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "migration_deployment.py",
       "norm_label": "test_migration_deployment.py",
       "id": "local_daemon_tests_test_migration_deployment"
     },
@@ -9426,7 +9426,7 @@
       "source_location": "L21",
       "_origin": "ast",
       "community": 12,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "migration_deployment.py",
       "norm_label": "migrationdeploymenttests",
       "id": "local_daemon_tests_test_migration_deployment_migrationdeploymenttests"
     },
@@ -9437,7 +9437,7 @@
       "source_location": "L22",
       "_origin": "ast",
       "community": 12,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "migration_deployment.py",
       "norm_label": ".test_detects_only_canonical_migration_changes()",
       "id": "local_daemon_tests_test_migration_deployment_migrationdeploymenttests_test_detects_only_canonical_migration_changes"
     },
@@ -9448,7 +9448,7 @@
       "source_location": "L28",
       "_origin": "ast",
       "community": 12,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "migration_deployment.py",
       "norm_label": ".test_validates_names_and_duplicate_versions()",
       "id": "local_daemon_tests_test_migration_deployment_migrationdeploymenttests_test_validates_names_and_duplicate_versions"
     },
@@ -9459,7 +9459,7 @@
       "source_location": "L36",
       "_origin": "ast",
       "community": 12,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "migration_deployment.py",
       "norm_label": ".test_allowlist_requires_exact_repository_and_project()",
       "id": "local_daemon_tests_test_migration_deployment_migrationdeploymenttests_test_allowlist_requires_exact_repository_and_project"
     },
@@ -9470,7 +9470,7 @@
       "source_location": "L41",
       "_origin": "ast",
       "community": 12,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "migration_deployment.py",
       "norm_label": ".test_redacts_credentials()",
       "id": "local_daemon_tests_test_migration_deployment_migrationdeploymenttests_test_redacts_credentials"
     },
@@ -9481,7 +9481,7 @@
       "source_location": "L45",
       "_origin": "ast",
       "community": 12,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "migration_deployment.py",
       "norm_label": ".test_serializes_by_project_reference()",
       "id": "local_daemon_tests_test_migration_deployment_migrationdeploymenttests_test_serializes_by_project_reference"
     },
@@ -9492,7 +9492,7 @@
       "source_location": "L49",
       "_origin": "ast",
       "community": 12,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "migration_deployment.py",
       "norm_label": ".test_pushes_only_when_dry_run_reports_pending()",
       "id": "local_daemon_tests_test_migration_deployment_migrationdeploymenttests_test_pushes_only_when_dry_run_reports_pending"
     },
@@ -9503,7 +9503,7 @@
       "source_location": "L73",
       "_origin": "ast",
       "community": 12,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "migration_deployment.py",
       "norm_label": ".test_non_pending_dry_run_never_pushes()",
       "id": "local_daemon_tests_test_migration_deployment_migrationdeploymenttests_test_non_pending_dry_run_never_pushes"
     },
@@ -9514,7 +9514,7 @@
       "source_location": "L93",
       "_origin": "ast",
       "community": 12,
-      "community_name": "planning-questionnaire.ts",
+      "community_name": "migration_deployment.py",
       "norm_label": ".test_cancellation_before_deployment_never_runs_cli()",
       "id": "local_daemon_tests_test_migration_deployment_migrationdeploymenttests_test_cancellation_before_deployment_never_runs_cli"
     },
@@ -9580,7 +9580,7 @@
       "source_location": "L72",
       "_origin": "ast",
       "community": 0,
-      "community_name": "WorktreeTests",
+      "community_name": "orchestrator.py",
       "norm_label": "worktreetests",
       "id": "local_daemon_tests_test_orchestrator_worktreetests"
     },
@@ -9591,7 +9591,7 @@
       "source_location": "L77",
       "_origin": "ast",
       "community": 0,
-      "community_name": "WorktreeTests",
+      "community_name": "orchestrator.py",
       "norm_label": ".test_creates_unique_task_branch_from_primary_sha()",
       "id": "local_daemon_tests_test_orchestrator_worktreetests_test_creates_unique_task_branch_from_primary_sha"
     },
@@ -9602,7 +9602,7 @@
       "source_location": "L97",
       "_origin": "ast",
       "community": 0,
-      "community_name": "WorktreeTests",
+      "community_name": "orchestrator.py",
       "norm_label": ".test_daemon_commits_agent_changes_when_the_worktree_is_dirty()",
       "id": "local_daemon_tests_test_orchestrator_worktreetests_test_daemon_commits_agent_changes_when_the_worktree_is_dirty"
     },
@@ -9613,7 +9613,7 @@
       "source_location": "L110",
       "_origin": "ast",
       "community": 0,
-      "community_name": "WorktreeTests",
+      "community_name": "orchestrator.py",
       "norm_label": ".test_clean_failed_worktree_is_reclaimable()",
       "id": "local_daemon_tests_test_orchestrator_worktreetests_test_clean_failed_worktree_is_reclaimable"
     },
@@ -9624,7 +9624,7 @@
       "source_location": "L114",
       "_origin": "ast",
       "community": 0,
-      "community_name": "WorktreeTests",
+      "community_name": "orchestrator.py",
       "norm_label": ".test_removes_empty_daedalus_worktree_directories()",
       "id": "local_daemon_tests_test_orchestrator_worktreetests_test_removes_empty_daedalus_worktree_directories"
     },
@@ -9855,7 +9855,7 @@
       "source_location": "L440",
       "_origin": "ast",
       "community": 0,
-      "community_name": "plan_migration_renames",
+      "community_name": "orchestrator.py",
       "norm_label": "migrationreconciletests",
       "id": "local_daemon_tests_test_orchestrator_migrationreconciletests"
     },
@@ -9866,7 +9866,7 @@
       "source_location": "L441",
       "_origin": "ast",
       "community": 0,
-      "community_name": "plan_migration_renames",
+      "community_name": "orchestrator.py",
       "norm_label": ".test_no_duplicates_yields_empty_plan()",
       "id": "local_daemon_tests_test_orchestrator_migrationreconciletests_test_no_duplicates_yields_empty_plan"
     },
@@ -9877,7 +9877,7 @@
       "source_location": "L449",
       "_origin": "ast",
       "community": 0,
-      "community_name": "plan_migration_renames",
+      "community_name": "orchestrator.py",
       "norm_label": ".test_triple_prefix_uses_next_free_after_max()",
       "id": "local_daemon_tests_test_orchestrator_migrationreconciletests_test_triple_prefix_uses_next_free_after_max"
     },
@@ -9888,7 +9888,7 @@
       "source_location": "L469",
       "_origin": "ast",
       "community": 0,
-      "community_name": "plan_migration_renames",
+      "community_name": "orchestrator.py",
       "norm_label": ".test_collision_skips_already_used_neighbors()",
       "id": "local_daemon_tests_test_orchestrator_migrationreconciletests_test_collision_skips_already_used_neighbors"
     },
@@ -9899,7 +9899,7 @@
       "source_location": "L484",
       "_origin": "ast",
       "community": 0,
-      "community_name": "plan_migration_renames",
+      "community_name": "orchestrator.py",
       "norm_label": ".test_padding_matches_folder_width()",
       "id": "local_daemon_tests_test_orchestrator_migrationreconciletests_test_padding_matches_folder_width"
     },
@@ -10251,7 +10251,7 @@
       "source_location": "L18",
       "_origin": "ast",
       "community": 19,
-      "community_name": "SupabaseUnavailableError",
+      "community_name": "summary",
       "norm_label": "summary",
       "id": "shared_schemas_software_architecture_v1_schema_properties_summary"
     },
@@ -10262,7 +10262,7 @@
       "source_location": "L19",
       "_origin": "ast",
       "community": 19,
-      "community_name": "SupabaseUnavailableError",
+      "community_name": "summary",
       "norm_label": "$ref",
       "id": "shared_schemas_software_architecture_v1_schema_summary_ref"
     },
@@ -10437,8 +10437,8 @@
       "source_file": "shared/schemas/software-architecture-v1.schema.json",
       "source_location": "L44",
       "_origin": "ast",
-      "community": 21,
-      "community_name": "SupabaseUnavailableError",
+      "community": 80,
+      "community_name": "system_definition",
       "norm_label": "system_definition",
       "id": "shared_schemas_software_architecture_v1_schema_defs_system_definition"
     },
@@ -10448,8 +10448,8 @@
       "source_file": "shared/schemas/software-architecture-v1.schema.json",
       "source_location": "L45",
       "_origin": "ast",
-      "community": 21,
-      "community_name": "SupabaseUnavailableError",
+      "community": 80,
+      "community_name": "system_definition",
       "norm_label": "type",
       "id": "shared_schemas_software_architecture_v1_schema_system_definition_type"
     },
@@ -10459,8 +10459,8 @@
       "source_file": "shared/schemas/software-architecture-v1.schema.json",
       "source_location": "L46",
       "_origin": "ast",
-      "community": 21,
-      "community_name": "SupabaseUnavailableError",
+      "community": 80,
+      "community_name": "system_definition",
       "norm_label": "additionalproperties",
       "id": "shared_schemas_software_architecture_v1_schema_system_definition_additionalproperties"
     },
@@ -10514,8 +10514,8 @@
       "source_file": "shared/schemas/software-architecture-v1.schema.json",
       "source_location": "L53",
       "_origin": "ast",
-      "community": 23,
-      "community_name": "SupabaseUnavailableError",
+      "community": 80,
+      "community_name": "system_definition",
       "norm_label": "properties",
       "id": "shared_schemas_software_architecture_v1_schema_system_definition_properties"
     },
@@ -10525,8 +10525,8 @@
       "source_file": "shared/schemas/software-architecture-v1.schema.json",
       "source_location": "L54",
       "_origin": "ast",
-      "community": 23,
-      "community_name": "SupabaseUnavailableError",
+      "community": 80,
+      "community_name": "system_definition",
       "norm_label": "id",
       "id": "shared_schemas_software_architecture_v1_schema_properties_id"
     },
@@ -10536,8 +10536,8 @@
       "source_file": "shared/schemas/software-architecture-v1.schema.json",
       "source_location": "L55",
       "_origin": "ast",
-      "community": 23,
-      "community_name": "SupabaseUnavailableError",
+      "community": 80,
+      "community_name": "system_definition",
       "norm_label": "$ref",
       "id": "shared_schemas_software_architecture_v1_schema_id_ref"
     },
@@ -10548,7 +10548,7 @@
       "source_location": "L57",
       "_origin": "ast",
       "community": 19,
-      "community_name": "SupabaseUnavailableError",
+      "community_name": "summary",
       "norm_label": "name",
       "id": "shared_schemas_software_architecture_v1_schema_properties_name"
     },
@@ -10559,7 +10559,7 @@
       "source_location": "L58",
       "_origin": "ast",
       "community": 19,
-      "community_name": "SupabaseUnavailableError",
+      "community_name": "summary",
       "norm_label": "$ref",
       "id": "shared_schemas_software_architecture_v1_schema_name_ref"
     },
@@ -10569,8 +10569,8 @@
       "source_file": "shared/schemas/software-architecture-v1.schema.json",
       "source_location": "L63",
       "_origin": "ast",
-      "community": 23,
-      "community_name": "$ref",
+      "community": 80,
+      "community_name": "system_definition",
       "norm_label": "files",
       "id": "shared_schemas_software_architecture_v1_schema_properties_files"
     },
@@ -10580,8 +10580,8 @@
       "source_file": "shared/schemas/software-architecture-v1.schema.json",
       "source_location": "L64",
       "_origin": "ast",
-      "community": 23,
-      "community_name": "$ref",
+      "community": 80,
+      "community_name": "system_definition",
       "norm_label": "type",
       "id": "shared_schemas_software_architecture_v1_schema_files_type"
     },
@@ -10591,8 +10591,8 @@
       "source_file": "shared/schemas/software-architecture-v1.schema.json",
       "source_location": "L65",
       "_origin": "ast",
-      "community": 23,
-      "community_name": "$ref",
+      "community": 80,
+      "community_name": "system_definition",
       "norm_label": "uniqueitems",
       "id": "shared_schemas_software_architecture_v1_schema_files_uniqueitems"
     },
@@ -10602,8 +10602,8 @@
       "source_file": "shared/schemas/software-architecture-v1.schema.json",
       "source_location": "L66",
       "_origin": "ast",
-      "community": 23,
-      "community_name": "$ref",
+      "community": 80,
+      "community_name": "system_definition",
       "norm_label": "items",
       "id": "shared_schemas_software_architecture_v1_schema_files_items"
     },
@@ -10614,7 +10614,7 @@
       "source_location": "L72",
       "_origin": "ast",
       "community": 23,
-      "community_name": "$defs",
+      "community_name": "properties",
       "norm_label": "channel_definition",
       "id": "shared_schemas_software_architecture_v1_schema_defs_channel_definition"
     },
@@ -10625,7 +10625,7 @@
       "source_location": "L73",
       "_origin": "ast",
       "community": 23,
-      "community_name": "$defs",
+      "community_name": "properties",
       "norm_label": "type",
       "id": "shared_schemas_software_architecture_v1_schema_channel_definition_type"
     },
@@ -10636,7 +10636,7 @@
       "source_location": "L74",
       "_origin": "ast",
       "community": 23,
-      "community_name": "$defs",
+      "community_name": "properties",
       "norm_label": "additionalproperties",
       "id": "shared_schemas_software_architecture_v1_schema_channel_definition_additionalproperties"
     },
@@ -10691,7 +10691,7 @@
       "source_location": "L83",
       "_origin": "ast",
       "community": 23,
-      "community_name": "SupabaseUnavailableError",
+      "community_name": "properties",
       "norm_label": "properties",
       "id": "shared_schemas_software_architecture_v1_schema_channel_definition_properties"
     },
@@ -10702,7 +10702,7 @@
       "source_location": "L93",
       "_origin": "ast",
       "community": 23,
-      "community_name": "SupabaseUnavailableError",
+      "community_name": "properties",
       "norm_label": "source_system_id",
       "id": "shared_schemas_software_architecture_v1_schema_properties_source_system_id"
     },
@@ -10713,7 +10713,7 @@
       "source_location": "L94",
       "_origin": "ast",
       "community": 23,
-      "community_name": "SupabaseUnavailableError",
+      "community_name": "properties",
       "norm_label": "$ref",
       "id": "shared_schemas_software_architecture_v1_schema_source_system_id_ref"
     },
@@ -10724,7 +10724,7 @@
       "source_location": "L96",
       "_origin": "ast",
       "community": 23,
-      "community_name": "SupabaseUnavailableError",
+      "community_name": "properties",
       "norm_label": "target_system_id",
       "id": "shared_schemas_software_architecture_v1_schema_properties_target_system_id"
     },
@@ -10735,7 +10735,7 @@
       "source_location": "L97",
       "_origin": "ast",
       "community": 23,
-      "community_name": "SupabaseUnavailableError",
+      "community_name": "properties",
       "norm_label": "$ref",
       "id": "shared_schemas_software_architecture_v1_schema_target_system_id_ref"
     },
@@ -10745,7 +10745,7 @@
       "source_file": "shared/schemas/software-architecture-v1.schema.json",
       "source_location": "L99",
       "_origin": "ast",
-      "community": 26,
+      "community": 23,
       "community_name": "properties",
       "norm_label": "fields",
       "id": "shared_schemas_software_architecture_v1_schema_properties_fields"
@@ -10756,7 +10756,7 @@
       "source_file": "shared/schemas/software-architecture-v1.schema.json",
       "source_location": "L100",
       "_origin": "ast",
-      "community": 26,
+      "community": 23,
       "community_name": "properties",
       "norm_label": "type",
       "id": "shared_schemas_software_architecture_v1_schema_fields_type"
@@ -10767,7 +10767,7 @@
       "source_file": "shared/schemas/software-architecture-v1.schema.json",
       "source_location": "L101",
       "_origin": "ast",
-      "community": 26,
+      "community": 23,
       "community_name": "properties",
       "norm_label": "items",
       "id": "shared_schemas_software_architecture_v1_schema_fields_items"
@@ -10801,7 +10801,7 @@
       "source_location": "L120",
       "_origin": "ast",
       "community": 19,
-      "community_name": "properties",
+      "community_name": "summary",
       "norm_label": "primitive_field_definition",
       "id": "shared_schemas_software_architecture_v1_schema_defs_primitive_field_definition"
     },
@@ -10812,7 +10812,7 @@
       "source_location": "L121",
       "_origin": "ast",
       "community": 19,
-      "community_name": "properties",
+      "community_name": "summary",
       "norm_label": "type",
       "id": "shared_schemas_software_architecture_v1_schema_primitive_field_definition_type"
     },
@@ -10823,7 +10823,7 @@
       "source_location": "L122",
       "_origin": "ast",
       "community": 19,
-      "community_name": "properties",
+      "community_name": "summary",
       "norm_label": "additionalproperties",
       "id": "shared_schemas_software_architecture_v1_schema_primitive_field_definition_additionalproperties"
     },
@@ -10856,7 +10856,7 @@
       "source_location": "L128",
       "_origin": "ast",
       "community": 19,
-      "community_name": "properties",
+      "community_name": "summary",
       "norm_label": "properties",
       "id": "shared_schemas_software_architecture_v1_schema_primitive_field_definition_properties"
     },
@@ -10867,7 +10867,7 @@
       "source_location": "L135",
       "_origin": "ast",
       "community": 19,
-      "community_name": "properties",
+      "community_name": "summary",
       "norm_label": "type",
       "id": "shared_schemas_software_architecture_v1_schema_properties_type"
     },
@@ -10878,7 +10878,7 @@
       "source_location": "L136",
       "_origin": "ast",
       "community": 58,
-      "community_name": "properties",
+      "community_name": "enum",
       "norm_label": "enum",
       "id": "shared_schemas_software_architecture_v1_schema_type_enum"
     },
@@ -10889,7 +10889,7 @@
       "source_location": "L136",
       "_origin": "ast",
       "community": 58,
-      "community_name": "properties",
+      "community_name": "enum",
       "norm_label": "string",
       "id": "ref_string"
     },
@@ -10900,7 +10900,7 @@
       "source_location": "L136",
       "_origin": "ast",
       "community": 58,
-      "community_name": "properties",
+      "community_name": "enum",
       "norm_label": "number",
       "id": "ref_number"
     },
@@ -10911,7 +10911,7 @@
       "source_location": "L136",
       "_origin": "ast",
       "community": 58,
-      "community_name": "properties",
+      "community_name": "enum",
       "norm_label": "integer",
       "id": "ref_integer"
     },
@@ -10922,7 +10922,7 @@
       "source_location": "L136",
       "_origin": "ast",
       "community": 58,
-      "community_name": "properties",
+      "community_name": "enum",
       "norm_label": "boolean",
       "id": "ref_boolean"
     },
@@ -10933,7 +10933,7 @@
       "source_location": "L136",
       "_origin": "ast",
       "community": 58,
-      "community_name": "properties",
+      "community_name": "enum",
       "norm_label": "null",
       "id": "ref_null"
     },
@@ -10944,7 +10944,7 @@
       "source_location": "L144",
       "_origin": "ast",
       "community": 19,
-      "community_name": "properties",
+      "community_name": "summary",
       "norm_label": "required",
       "id": "shared_schemas_software_architecture_v1_schema_properties_required"
     },
@@ -10955,7 +10955,7 @@
       "source_location": "L145",
       "_origin": "ast",
       "community": 19,
-      "community_name": "properties",
+      "community_name": "summary",
       "norm_label": "type",
       "id": "shared_schemas_software_architecture_v1_schema_required_type"
     },
@@ -10966,7 +10966,7 @@
       "source_location": "L146",
       "_origin": "ast",
       "community": 19,
-      "community_name": "properties",
+      "community_name": "summary",
       "norm_label": "default",
       "id": "shared_schemas_software_architecture_v1_schema_required_default"
     },
@@ -11032,7 +11032,7 @@
       "source_location": "L159",
       "_origin": "ast",
       "community": 19,
-      "community_name": "properties",
+      "community_name": "summary",
       "norm_label": "properties",
       "id": "shared_schemas_software_architecture_v1_schema_array_field_definition_properties"
     },
@@ -11043,7 +11043,7 @@
       "source_location": "L167",
       "_origin": "ast",
       "community": 19,
-      "community_name": "properties",
+      "community_name": "summary",
       "norm_label": "const",
       "id": "shared_schemas_software_architecture_v1_schema_type_const"
     },
@@ -11065,7 +11065,7 @@
       "source_location": "L178",
       "_origin": "ast",
       "community": 19,
-      "community_name": "properties",
+      "community_name": "summary",
       "norm_label": "object_field_definition",
       "id": "shared_schemas_software_architecture_v1_schema_defs_object_field_definition"
     },
@@ -11076,7 +11076,7 @@
       "source_location": "L179",
       "_origin": "ast",
       "community": 19,
-      "community_name": "properties",
+      "community_name": "summary",
       "norm_label": "type",
       "id": "shared_schemas_software_architecture_v1_schema_object_field_definition_type"
     },
@@ -11087,7 +11087,7 @@
       "source_location": "L180",
       "_origin": "ast",
       "community": 19,
-      "community_name": "properties",
+      "community_name": "summary",
       "norm_label": "additionalproperties",
       "id": "shared_schemas_software_architecture_v1_schema_object_field_definition_additionalproperties"
     },
@@ -11109,7 +11109,7 @@
       "source_location": "L187",
       "_origin": "ast",
       "community": 19,
-      "community_name": "properties",
+      "community_name": "summary",
       "norm_label": "properties",
       "id": "shared_schemas_software_architecture_v1_schema_object_field_definition_properties"
     },
@@ -11186,7 +11186,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "community": 36,
-      "community_name": "update_execution_entry_point_in_toml",
+      "community_name": "coding.md",
       "norm_label": "coding.md",
       "id": "agents_profiles_coding"
     },
@@ -11197,7 +11197,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "community": 36,
-      "community_name": "update_execution_entry_point_in_toml",
+      "community_name": "coding.md",
       "norm_label": "execution boundaries (critical)",
       "id": "agents_profiles_coding_execution_boundaries_critical"
     },
@@ -11208,7 +11208,7 @@
       "source_location": "L5",
       "_origin": "ast",
       "community": 36,
-      "community_name": "update_execution_entry_point_in_toml",
+      "community_name": "coding.md",
       "norm_label": "feature file automation",
       "id": "agents_profiles_coding_feature_file_automation"
     },
@@ -11219,7 +11219,7 @@
       "source_location": "L39",
       "_origin": "ast",
       "community": 36,
-      "community_name": "update_execution_entry_point_in_toml",
+      "community_name": "coding.md",
       "norm_label": "parameter file centralization",
       "id": "agents_profiles_coding_parameter_file_centralization"
     },
@@ -11230,7 +11230,7 @@
       "source_location": "L95",
       "_origin": "ast",
       "community": 36,
-      "community_name": "update_execution_entry_point_in_toml",
+      "community_name": "coding.md",
       "norm_label": "4-stage development lifecycle",
       "id": "agents_profiles_coding_4_stage_development_lifecycle"
     },
@@ -11241,7 +11241,7 @@
       "source_location": "L103",
       "_origin": "ast",
       "community": 36,
-      "community_name": "update_execution_entry_point_in_toml",
+      "community_name": "coding.md",
       "norm_label": "alignment",
       "id": "agents_profiles_coding_alignment"
     },
@@ -11252,7 +11252,7 @@
       "source_location": "L106",
       "_origin": "ast",
       "community": 36,
-      "community_name": "update_execution_entry_point_in_toml",
+      "community_name": "coding.md",
       "norm_label": "debugging",
       "id": "agents_profiles_coding_debugging"
     },
@@ -11395,7 +11395,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "community": 62,
-      "community_name": "AGENTS.md",
+      "community_name": "Daedalus Project Instructions",
       "norm_label": "agents.md",
       "id": "agents"
     },
@@ -11406,7 +11406,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "community": 62,
-      "community_name": "AGENTS.md",
+      "community_name": "Daedalus Project Instructions",
       "norm_label": "daedalus project instructions",
       "id": "agents_daedalus_project_instructions"
     },
@@ -11417,7 +11417,7 @@
       "source_location": "L5",
       "_origin": "ast",
       "community": 62,
-      "community_name": "AGENTS.md",
+      "community_name": "Daedalus Project Instructions",
       "norm_label": "task mode",
       "id": "agents_task_mode"
     },
@@ -11428,7 +11428,7 @@
       "source_location": "L24",
       "_origin": "ast",
       "community": 62,
-      "community_name": "AGENTS.md",
+      "community_name": "Daedalus Project Instructions",
       "norm_label": "graphify",
       "id": "agents_graphify"
     },
@@ -12407,7 +12407,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "community": 9,
-      "community_name": "Feature-File Graph Display",
+      "community_name": "Feature-First Graph Workspace Shell",
       "norm_label": "feature-file-graph-display.md",
       "id": "feature_files_feature_file_graph_display"
     },
@@ -12418,7 +12418,7 @@
       "source_location": "L3",
       "_origin": "ast",
       "community": 9,
-      "community_name": "Feature-File Graph Display",
+      "community_name": "Feature-First Graph Workspace Shell",
       "norm_label": "summary",
       "id": "feature_files_feature_file_graph_display_summary"
     },
@@ -12429,7 +12429,7 @@
       "source_location": "L6",
       "_origin": "ast",
       "community": 9,
-      "community_name": "Feature-File Graph Display",
+      "community_name": "Feature-First Graph Workspace Shell",
       "norm_label": "key points",
       "id": "feature_files_feature_file_graph_display_key_points"
     },
@@ -12440,7 +12440,7 @@
       "source_location": "L30",
       "_origin": "ast",
       "community": 9,
-      "community_name": "Feature-File Graph Display",
+      "community_name": "Feature-First Graph Workspace Shell",
       "norm_label": "relevant files",
       "id": "feature_files_feature_file_graph_display_relevant_files"
     },
@@ -12451,7 +12451,7 @@
       "source_location": "L38",
       "_origin": "ast",
       "community": 9,
-      "community_name": "Feature-File Graph Display",
+      "community_name": "Feature-First Graph Workspace Shell",
       "norm_label": "dev mode",
       "id": "feature_files_feature_file_graph_display_dev_mode"
     },
@@ -12462,7 +12462,7 @@
       "source_location": "L41",
       "_origin": "ast",
       "community": 9,
-      "community_name": "Feature-File Graph Display",
+      "community_name": "Feature-First Graph Workspace Shell",
       "norm_label": "state log",
       "id": "feature_files_feature_file_graph_display_state_log"
     },
@@ -12550,7 +12550,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "community": 9,
-      "community_name": "Feature Search / Fuzzy Finder",
+      "community_name": "Feature-First Graph Workspace Shell",
       "norm_label": "feature-search-fuzzy-finder.md",
       "id": "feature_files_feature_search_fuzzy_finder"
     },
@@ -12561,7 +12561,7 @@
       "source_location": "L3",
       "_origin": "ast",
       "community": 9,
-      "community_name": "Feature Search / Fuzzy Finder",
+      "community_name": "Feature-First Graph Workspace Shell",
       "norm_label": "summary",
       "id": "feature_files_feature_search_fuzzy_finder_summary"
     },
@@ -12572,7 +12572,7 @@
       "source_location": "L6",
       "_origin": "ast",
       "community": 9,
-      "community_name": "Feature Search / Fuzzy Finder",
+      "community_name": "Feature-First Graph Workspace Shell",
       "norm_label": "key points",
       "id": "feature_files_feature_search_fuzzy_finder_key_points"
     },
@@ -12583,7 +12583,7 @@
       "source_location": "L14",
       "_origin": "ast",
       "community": 9,
-      "community_name": "Feature Search / Fuzzy Finder",
+      "community_name": "Feature-First Graph Workspace Shell",
       "norm_label": "relevant files",
       "id": "feature_files_feature_search_fuzzy_finder_relevant_files"
     },
@@ -12594,7 +12594,7 @@
       "source_location": "L23",
       "_origin": "ast",
       "community": 9,
-      "community_name": "Feature Search / Fuzzy Finder",
+      "community_name": "Feature-First Graph Workspace Shell",
       "norm_label": "dev mode",
       "id": "feature_files_feature_search_fuzzy_finder_dev_mode"
     },
@@ -12605,7 +12605,7 @@
       "source_location": "L26",
       "_origin": "ast",
       "community": 9,
-      "community_name": "Feature Search / Fuzzy Finder",
+      "community_name": "Feature-First Graph Workspace Shell",
       "norm_label": "state log",
       "id": "feature_files_feature_search_fuzzy_finder_state_log"
     },
@@ -13386,7 +13386,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "community": 65,
-      "community_name": "README.md",
+      "community_name": "Shared Database Artifacts",
       "norm_label": "readme.md",
       "id": "shared_database_readme"
     },
@@ -13397,7 +13397,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "community": 65,
-      "community_name": "README.md",
+      "community_name": "Shared Database Artifacts",
       "norm_label": "shared database artifacts",
       "id": "shared_database_readme_shared_database_artifacts"
     },
@@ -13408,7 +13408,7 @@
       "source_location": "L13",
       "_origin": "ast",
       "community": 65,
-      "community_name": "README.md",
+      "community_name": "Shared Database Artifacts",
       "norm_label": "automated deployment bootstrap",
       "id": "shared_database_readme_automated_deployment_bootstrap"
     },
@@ -13419,7 +13419,7 @@
       "source_location": "L38",
       "_origin": "ast",
       "community": 65,
-      "community_name": "README.md",
+      "community_name": "Shared Database Artifacts",
       "norm_label": "task-integration cutover",
       "id": "shared_database_readme_task_integration_cutover"
     },
