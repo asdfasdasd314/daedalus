@@ -82,7 +82,7 @@ class MigrationDeploymentTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertIn(["supabase", "link", "--project-ref", "project-a"], commands)
         self.assertIn(["supabase", "migration", "list", "--linked"], commands)
-        self.assertIn(["supabase", "db", "push", "--linked"], commands)
+        self.assertIn(["supabase", "db", "push", "--linked", "--yes"], commands)
 
     def test_non_pending_dry_run_never_pushes(self):
         commands = []
@@ -102,7 +102,43 @@ class MigrationDeploymentTests(unittest.TestCase):
             result = deploy_pending_migrations(directory, directory, "base", settings, runner)
 
         self.assertEqual(result["state"], "no_pending")
-        self.assertNotIn(["supabase", "db", "push", "--linked"], commands)
+        self.assertNotIn(["supabase", "db", "push", "--linked", "--yes"], commands)
+
+    def test_preflight_failure_is_not_agent_retryable(self):
+        def runner(_directory, command, _timeout):
+            if command[:3] == ["git", "diff", "--name-only"]:
+                return {"command": command, "returncode": 0, "stdout": "supabase/migrations/037_new.sql\n", "stderr": ""}
+            return {"command": command, "returncode": 1, "stdout": "", "stderr": "login required"}
+
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory, "supabase/migrations").mkdir(parents=True)
+            Path(directory, "supabase/migrations/037_new.sql").write_text("-- new", encoding="utf-8")
+            settings = {"enabled": True, "allowedMappings": [str(Path(directory).resolve()) + "::project-a"], "commandTimeoutSeconds": 1, "requireDryRun": True, "resolverAttemptLimit": 3}
+            result = deploy_pending_migrations(directory, directory, "base", settings, runner)
+
+        self.assertFalse(result["ok"])
+        self.assertFalse(result["retryable"])
+        self.assertEqual(result["error"], "Supabase preflight failed.")
+
+    def test_live_push_failure_is_agent_retryable(self):
+        def runner(_directory, command, _timeout):
+            if command[:3] == ["git", "diff", "--name-only"]:
+                return {"command": command, "returncode": 0, "stdout": "supabase/migrations/037_new.sql\n", "stderr": ""}
+            if command == ["supabase", "db", "push", "--dry-run", "--linked"]:
+                return {"command": command, "returncode": 0, "stdout": "Would push these migrations:\n • 037_new.sql", "stderr": ""}
+            if command == ["supabase", "db", "push", "--linked", "--yes"]:
+                return {"command": command, "returncode": 1, "stdout": "", "stderr": "migration failed"}
+            return {"command": command, "returncode": 0, "stdout": "", "stderr": ""}
+
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory, "supabase/migrations").mkdir(parents=True)
+            Path(directory, "supabase/migrations/037_new.sql").write_text("-- new", encoding="utf-8")
+            settings = {"enabled": True, "allowedMappings": [str(Path(directory).resolve()) + "::project-a"], "commandTimeoutSeconds": 1, "requireDryRun": True, "resolverAttemptLimit": 3}
+            result = deploy_pending_migrations(directory, directory, "base", settings, runner)
+
+        self.assertFalse(result["ok"])
+        self.assertTrue(result["retryable"])
+        self.assertEqual(result["diagnostics"][-1]["command"], ["supabase", "db", "push", "--linked", "--yes"])
 
     def test_unlisted_repository_is_blocked_before_supabase_preflight(self):
         commands = []

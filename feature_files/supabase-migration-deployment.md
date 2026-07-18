@@ -8,6 +8,7 @@ The local daemon owns the final, serialized Supabase CLI deployment stage for ve
 - **Safe scope**: The parameter file selects the sole project ref paired with an exactly resolved repository path; an unlisted repository or multiple configured project refs is blocked with its resolved path in the diagnostic. Tokens and database credentials remain daemon-local environment variables, never TOML values.
 - **Forward-only repair**: Resolver agents receive bounded CLI diagnostics and may alter confirmed-unapplied migrations or add a corrective migration; they must never edit an applied migration or run migration-history repair.
 - **Serialization and recovery**: A process-local lock serializes pushes per project. A restart blocks retained integrations, and cancellation during a push is treated as an uncertain remote state requiring manual history reconciliation.
+- **Non-interactive repair cycle**: Live pushes use the Supabase CLI confirmation flag; retryable migration failures launch a schema-aware resolver with the latest redacted diagnostics before verification and deployment are retried.
 
 ## Relevant Files
 - `local-daemon/src/daedalus_daemon/migration_deployment.py`: Validation, CLI execution, redaction, diagnostics, and project locking.
@@ -33,3 +34,4 @@ TESTING
 - 2026-07-18: Recognize the Supabase CLI dry-run wording “Would push these migrations” so pending migrations proceed to the live push rather than being incorrectly skipped.
 - 2026-07-18: Repaired unapplied migration 039 and its schema snapshot to keep `conversation_id` confined to task and agent-output history records, removing its erroneous daemon-event projection.
 - 2026-07-18: Repaired migration 039’s event-type cutover by retaining historical `batch_completed` audit rows as neutral `status` events before removing the legacy type.
+- 2026-07-18: Hardened daemon migration deployment with non-interactive pushes and schema-aware resolver retries that receive each attempt’s latest failure diagnostics.

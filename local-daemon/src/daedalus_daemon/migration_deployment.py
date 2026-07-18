@@ -143,7 +143,11 @@ def deploy_pending_migrations(
             return {"ok": True, "state": "no_pending", "diagnostics": diagnostics}
         if cancelled():
             return blocked("Cancellation occurred after preflight; no live push was started.", diagnostics)
-        result = runner(worktree_path, ["supabase", "db", "push", "--linked"], settings["commandTimeoutSeconds"])
+        result = runner(
+            worktree_path,
+            ["supabase", "db", "push", "--linked", "--yes"],
+            settings["commandTimeoutSeconds"],
+        )
         diagnostics.append(redact_diagnostic(result))
         if cancelled():
             return blocked("Cancellation occurred during Supabase push; remote migration history must be reconciled before retry.", diagnostics)

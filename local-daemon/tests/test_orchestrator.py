@@ -12,6 +12,7 @@ from daedalus_daemon.communications import SupabaseUnavailableError
 from daedalus_daemon.orchestrator import (
     CANCELLED_BY_USER,
     GitWorktreeOrchestrator,
+    build_migration_resolver_prompt,
     build_resolver_prompt,
     build_task_repair_prompt,
     build_task_prompt,
@@ -253,6 +254,61 @@ class PerTaskIntegrationTests(unittest.TestCase):
         ))
         self.assertEqual(deploy.call_args.args[2], "main123")
 
+    def test_repaired_migration_deployment_retries_before_primary_promotion(self):
+        orchestrator = GitWorktreeOrchestrator({}, lambda *a: "ok", lambda *a: "ok")
+        task = {
+            "id": "task-1", "repository": "/repo", "status": "integrating",
+            "queue_sequence": 1, "worktree_path": "/tmp/task",
+            "branch_name": "agent/task-1", "resolver_attempts": 0,
+            "prompt": "Apply migration 039", "provider": "codex",
+            "model": "model", "reasoning": "medium",
+        }
+        success = unittest.mock.Mock(returncode=0, stdout="", stderr="")
+        settings = {
+            "primaryBranch": "main", "verificationCommands": [],
+            "resolverAttemptLimit": 3,
+        }
+        deployment_failure = {
+            "ok": False, "state": "blocked", "retryable": True,
+            "error": "Supabase migration deployment failed.",
+            "diagnostics": [{
+                "command": ["supabase", "db", "push", "--linked", "--yes"],
+                "returncode": 1, "stdout": "", "stderr": "first SQL error",
+            }],
+        }
+        deployment_success = {"ok": True, "state": "succeeded", "diagnostics": []}
+
+        with (
+            patch("daedalus_daemon.orchestrator.retained_task_worktree_valid", return_value=True),
+            patch("daedalus_daemon.orchestrator.validate_primary_worktree"),
+            patch.object(orchestrator, "_integration_cancelled", return_value=False),
+            patch.object(orchestrator, "_run_resolver_agent", return_value="resolved") as resolver,
+            patch("daedalus_daemon.orchestrator.git_output", side_effect=["main123", "", "", "main", "main123"]),
+            patch("daedalus_daemon.orchestrator.run_process", return_value=success) as run_process,
+            patch("daedalus_daemon.orchestrator.commit_worktree_changes"),
+            patch("daedalus_daemon.orchestrator.reconcile_migration_numbers"),
+            patch("daedalus_daemon.orchestrator.verification_commands_for_worktree", return_value=[]),
+            patch("daedalus_daemon.orchestrator.run_verification", return_value={"ok": True, "output": ""}),
+            patch("daedalus_daemon.orchestrator.update_agent_task"),
+            patch("daedalus_daemon.orchestrator.record_daemon_event"),
+            patch("daedalus_daemon.orchestrator.load_deployment_settings", return_value={"resolverAttemptLimit": 3}),
+            patch(
+                "daedalus_daemon.orchestrator.deploy_pending_migrations",
+                side_effect=[deployment_failure, deployment_success],
+            ) as deploy,
+        ):
+            outcome = orchestrator._integrate_task(task, settings)
+
+        self.assertTrue(outcome["ok"])
+        self.assertEqual(deploy.call_count, 2)
+        resolver.assert_called_once()
+        resolver_prompt = resolver.call_args.args[3]
+        self.assertIn("read shared/database/schema.sql completely", resolver_prompt)
+        self.assertIn("first SQL error", resolver_prompt)
+        self.assertEqual(run_process.call_args_list[-1].args, (
+            "/repo", ["git", "merge", "--ff-only", "agent/task-1"],
+        ))
+
     def test_success_event_is_published_before_task_branch_cleanup(self):
         orchestrator = GitWorktreeOrchestrator({}, lambda *a: "ok", lambda *a: "ok")
         future = Future()
@@ -301,6 +357,62 @@ class PromptTests(unittest.TestCase):
         self.assertTrue(prompt.startswith("TASK_MODE: integrating"))
         self.assertIn("First goal", prompt)
         self.assertIn("merge conflict", prompt)
+
+    def test_migration_resolver_prompt_requires_schema_review_and_forward_only_repair(self):
+        prompt = build_migration_resolver_prompt(
+            {"id": "task", "prompt": "Add the database feature"},
+            "ERROR: constraint is violated by some row",
+        )
+
+        self.assertTrue(prompt.startswith("TASK_MODE: integrating"))
+        self.assertIn("read shared/database/schema.sql completely", prompt)
+        self.assertIn("Add the database feature", prompt)
+        self.assertIn("constraint is violated by some row", prompt)
+        self.assertIn("only migrations confirmed unapplied", prompt)
+        self.assertIn("never edit an applied migration", prompt)
+        self.assertIn("never", prompt.lower())
+
+
+class MigrationResolverLoopTests(unittest.TestCase):
+    def test_each_repair_attempt_receives_the_latest_deployment_failure(self):
+        orchestrator = GitWorktreeOrchestrator({}, lambda *a: "ok", lambda *a: "ok")
+        task = {
+            "id": "task-1", "repository": "/repo", "status": "integrating",
+            "prompt": "Apply migration 039", "provider": "codex",
+            "model": "model", "reasoning": "medium",
+        }
+        prompts = []
+        deployment_results = iter(["second deployment failure", ""])
+
+        with (
+            patch.object(orchestrator, "_integration_cancelled", return_value=False),
+            patch.object(
+                orchestrator, "_run_resolver_agent",
+                side_effect=lambda _path, _task, _settings, prompt: prompts.append(prompt) or "resolved",
+            ),
+            patch("daedalus_daemon.orchestrator.update_agent_task"),
+            patch("daedalus_daemon.orchestrator.record_daemon_event"),
+            patch("daedalus_daemon.orchestrator.commit_worktree_changes"),
+            patch("daedalus_daemon.orchestrator.reconcile_migration_numbers"),
+            patch("daedalus_daemon.orchestrator.verification_commands_for_worktree", return_value=[]),
+            patch("daedalus_daemon.orchestrator.run_verification", return_value={"ok": True, "output": ""}),
+        ):
+            failure, attempts = orchestrator._run_resolver_loop(
+                task,
+                {"resolverAttemptLimit": 3, "verificationCommands": []},
+                "/worktree",
+                "first deployment failure",
+                0,
+                post_validation=lambda: next(deployment_results),
+                prompt_builder=build_migration_resolver_prompt,
+            )
+
+        self.assertEqual(failure, "")
+        self.assertEqual(attempts, 2)
+        self.assertEqual(len(prompts), 2)
+        self.assertIn("first deployment failure", prompts[0])
+        self.assertNotIn("second deployment failure", prompts[0])
+        self.assertIn("second deployment failure", prompts[1])
 
 
 class CancelOrchestratorTests(unittest.TestCase):

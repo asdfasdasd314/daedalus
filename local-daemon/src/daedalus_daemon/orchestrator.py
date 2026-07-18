@@ -695,6 +695,7 @@ class GitWorktreeOrchestrator:
                 task, settings, worktree_path, failure, attempts,
                 post_validation=deploy,
                 limit=deployment_settings["resolverAttemptLimit"],
+                prompt_builder=build_migration_resolver_prompt,
             )
         if failure:
             return self._integration_failure(
@@ -738,8 +739,10 @@ class GitWorktreeOrchestrator:
         attempts: int,
         post_validation=None,
         limit: int | None = None,
+        prompt_builder=None,
     ) -> tuple[str, int]:
         limit = limit or settings["resolverAttemptLimit"]
+        prompt_builder = prompt_builder or build_resolver_prompt
         while failure and attempts < limit:
             if self._integration_cancelled(task):
                 return CANCELLED_BY_USER, attempts
@@ -754,7 +757,7 @@ class GitWorktreeOrchestrator:
                 task_id=str(task["id"]),
             )
             resolver_reply = self._run_resolver_agent(
-                worktree_path, task, settings, build_resolver_prompt(task, failure)
+                worktree_path, task, settings, prompt_builder(task, failure)
             )
             if reply_indicates_failure(resolver_reply):
                 failure = resolver_reply
@@ -1133,6 +1136,22 @@ def build_resolver_prompt(task: dict, failure: str) -> str:
         "Do not switch branches or push. For Supabase deployment failures, modify only migrations confirmed unapplied "
         "or add a corrective migration; never edit an applied migration or invoke migration-history repair.\n\n"
         f"Task goal:\n{task['prompt']}\n\nFailure details:\n{failure}"
+    )
+
+
+def build_migration_resolver_prompt(task: dict, failure: str) -> str:
+    return (
+        "TASK_MODE: integrating\n\n"
+        "Resolve the Supabase migration deployment failure while preserving the task's intent. "
+        "Before editing anything, read shared/database/schema.sql completely and use it as the canonical "
+        "readable snapshot of the current database structure. Cross-check that snapshot against the relevant "
+        "unapplied migrations and the latest deployment diagnostics below. Make the smallest compatible fix, "
+        "run relevant checks, and commit the resolution. If your sandbox cannot commit, leave the completed "
+        "resolution for Daedalus to commit. Do not switch branches, push a Git remote, or run Supabase deployment "
+        "commands yourself. Modify only migrations confirmed unapplied or add a corrective migration; never edit "
+        "an applied migration or invoke migration-history repair. Treat the latest diagnostics as authoritative "
+        "for live data-dependent failures that the schema snapshot cannot represent.\n\n"
+        f"Task goal:\n{task['prompt']}\n\nLatest deployment diagnostics:\n{failure}"
     )
 
 
