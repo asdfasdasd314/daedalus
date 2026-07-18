@@ -11,6 +11,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from daedalus_daemon.architecture import (
     build_architecture_prompt,
+    architecture_document_path,
+    architecture_log_path,
     classify_architecture_result,
     collect_changed_files,
     collect_graph_community_evidence,
@@ -80,7 +82,8 @@ class ArchitectureEvidenceTests(unittest.TestCase):
         })
         self.assertEqual(result["status"], "completed")
         self.assertEqual(calls[0][0][2:4], ("gpt-5.6-terra", "high"))
-        self.assertTrue(calls[0][1]["ask_mode"])
+        self.assertFalse(calls[0][1]["ask_mode"])
+        self.assertEqual(calls[0][1]["writable_directories"], ["/repo"])
 
     def test_collects_file_only_diff_and_excludes_graphify_outputs(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -153,13 +156,43 @@ class ArchitectureEvidenceTests(unittest.TestCase):
             [{"status": "M", "path": "src/owned.py"}],
             ["feature_files/owned.md"],
             [{"community": 4, "members": []}],
+            Path("/repo/shared/architecture/architecture-view-view-1-generation-1.json"),
         )
 
         self.assertIn('"$schema": "https://json-schema.org/draft/2020-12/schema"', prompt)
         self.assertIn('"source_system_id"', prompt)
         self.assertIn("never describe the changes", prompt)
-        self.assertIn("one complete raw JSON object", prompt)
-        self.assertIn("Do not use Markdown fences", prompt)
+        self.assertIn("Write one complete raw JSON object", prompt)
+        self.assertIn("After writing the file", prompt)
+
+    def test_reads_model_document_artifact_and_records_each_interaction(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Path(directory)
+
+            def run_codex(*arguments, **_keywords):
+                document_path = architecture_document_path(repository, "view-1", 1)
+                document_path.parent.mkdir(parents=True)
+                document_path.write_text(valid_architecture_response(), encoding="utf-8")
+                return "Document written."
+
+            with (
+                patch("daedalus_daemon.architecture.collect_changed_files", return_value=[]),
+                patch("daedalus_daemon.architecture.add_snapshot_worktree"),
+                patch("daedalus_daemon.architecture.remove_snapshot_worktree"),
+                patch("daedalus_daemon.architecture.collect_relevant_feature_files", return_value=[]),
+                patch("daedalus_daemon.architecture.collect_graph_community_evidence", return_value=[]),
+            ):
+                result = generate_architecture_view({
+                    "id": "view-1", "repository": str(repository), "base_commit": "base",
+                    "final_commit": "final", "generation": 1, "targeted_feature_paths": [],
+                }, load_architecture_settings(), run_codex)
+
+            log = json.loads(architecture_log_path(repository, "view-1", 1, 1).read_text())
+
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(log["modelStdout"], "Document written.")
+        self.assertEqual(log["documentResponse"], valid_architecture_response())
+        self.assertTrue(log["usedDocumentArtifact"])
 
     def test_validation_retries_succeed_on_third_attempt_with_corrective_details(self):
         calls = []

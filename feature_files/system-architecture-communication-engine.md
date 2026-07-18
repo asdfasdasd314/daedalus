@@ -30,3 +30,4 @@ HACKING
 - 2026-07-17: Added generation-stage failure diagnostics, bounded tracebacks, daemon error events, and durable failure-detail persistence so architecture generation faults are visible in daemon logs, client state, and the database.
 - 2026-07-17: Added generation-scoped durable Architecture View progress events at claim, snapshot, evidence, document, validation, correction, and finalization boundaries without changing generation or terminal-result guards.
 - 2026-07-17: Resolved the integration by retaining both durable progress delivery and generation-stage failure diagnostics across daemon publication and terminal persistence.
+- 2026-07-17: Directed architecture agents to write their raw JSON document into the requested repository while recording each generation attempt's prompt, terminal response, and consumed document response.

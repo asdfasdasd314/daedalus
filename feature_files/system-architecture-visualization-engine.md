@@ -29,3 +29,4 @@ HACKING
 - 2026-07-17: Rendered persisted Architecture View failure stage, exception type, and traceback details in the visualization error state for actionable regeneration diagnostics.
 - 2026-07-17: Added a generation-aware durable progress stepper that exposes snapshot, evidence, document validation, correction retries, and finalization while retaining the existing terminal canvas actions.
 - 2026-07-17: Resolved the integration by displaying durable progress alongside persisted architecture-generation failure diagnostics.
+- 2026-07-17: Added repository-local raw architecture JSON artifacts and per-attempt prompt/response logs so validation failures can be inspected without relying on terminal formatting.
