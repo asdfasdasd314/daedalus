@@ -27,7 +27,8 @@ version with `supabase migration repair --status applied <version>`. Never use `
 automated resolver action and never mark a version applied merely to make a push succeed.
 
 The daemon invokes the local Supabase CLI directly and uses its existing local
-login/session. After the baseline is accepted, set `enabled = true` and add the exact
+login/session. Before each task-worktree deployment, it links that worktree with
+the allowlisted project ref. After the baseline is accepted, set `enabled = true` and add the exact
 `resolved-repository-path::project-ref` mapping to the deployment parameter file; that
 mapping selects the project ref for deployment. Run one controlled dry run before enabling a live
 push. Deployment events are recorded as `migration_deployment_*`; a blocked task

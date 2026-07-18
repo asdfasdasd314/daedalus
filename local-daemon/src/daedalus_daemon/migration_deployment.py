@@ -128,7 +128,10 @@ def deploy_pending_migrations(
         return blocked(mapping_error)
     diagnostics = []
     with project_lock(project_ref):
-        preflight_commands = [["supabase", "migration", "list", "--linked"]]
+        preflight_commands = [
+            ["supabase", "link", "--project-ref", project_ref],
+            ["supabase", "migration", "list", "--linked"],
+        ]
         if settings["requireDryRun"]:
             preflight_commands.append(["supabase", "db", "push", "--dry-run", "--linked"])
         for command in preflight_commands:
