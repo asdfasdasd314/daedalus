@@ -412,9 +412,10 @@ export default function AgentOutputViewer({
         setArchiveError(archiveResult.reason instanceof Error ? archiveResult.reason.message : "Unable to refresh history.");
       }
       if (detailResult.status === "fulfilled") {
-        if (refreshedConversationId && detailResult.value) {
-          conversationCacheRef.current.set(refreshedConversationId, detailResult.value);
-          setArchive((current) => dedupeAgentOutputs([...current, ...detailResult.value]));
+        const refreshedConversation = detailResult.value;
+        if (refreshedConversationId && refreshedConversation) {
+          conversationCacheRef.current.set(refreshedConversationId, refreshedConversation);
+          setArchive((current) => dedupeAgentOutputs([...current, ...refreshedConversation]));
         }
         setDetailError("");
       } else {
