@@ -32,3 +32,4 @@ HACKING
 - 2026-07-17: Resolved the integration by displaying durable progress alongside persisted architecture-generation failure diagnostics.
 - 2026-07-17: Added repository-local raw architecture JSON artifacts and per-attempt prompt/response logs so validation failures can be inspected without relying on terminal formatting.
 - 2026-07-18: Replaced the fixed scrollable architecture SVG with a fitted pannable and zoomable viewport and moved channel labels into accessible hover/focus detail cards.
+- 2026-07-18: Guarded the deferred viewport-resize measurement against a cleared SVG ref so the client component type-checks during production builds.

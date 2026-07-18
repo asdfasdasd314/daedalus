@@ -130,7 +130,9 @@ function ArchitectureCanvas({ document, regenerationWarning, view }: {
     if (!svg || typeof ResizeObserver === "undefined") return;
 
     function syncViewportSize() {
-      const rect = svg.getBoundingClientRect();
+      const observedSvg = svgRef.current;
+      if (!observedSvg) return;
+      const rect = observedSvg.getBoundingClientRect();
       const nextSize = { width: Math.max(1, rect.width), height: Math.max(1, rect.height) };
       const previousSize = viewportSizeRef.current;
       if (Math.abs(nextSize.width - previousSize.width) < 0.5 && Math.abs(nextSize.height - previousSize.height) < 0.5) return;
