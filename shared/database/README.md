@@ -20,16 +20,16 @@ confirmed historical versions as applied with Supabase migration-history tooling
 Do not run a bulk `supabase db push` against an unknown live history. A mismatch is
 a blocked setup condition for human review, not an automated repair.
 
-The one-time operator sequence is: `supabase link --project-ref "$DAEDALUS_SUPABASE_PROJECT_REF"`,
+The one-time operator sequence is: `supabase link --project-ref "<project-ref-from-the-mapping>"`,
 `supabase migration list --linked`, and a schema comparison such as `supabase db diff --linked`.
 Only after those outputs have been reviewed may the operator record each verified historical
 version with `supabase migration repair --status applied <version>`. Never use `repair` as an
 automated resolver action and never mark a version applied merely to make a push succeed.
 
-The daemon environment needs `DAEDALUS_SUPABASE_PROJECT_REF`,
-`SUPABASE_ACCESS_TOKEN`, and `SUPABASE_DB_PASSWORD`. After the baseline is accepted,
-set `enabled = true` and add the exact `resolved-repository-path::project-ref` mapping
-to the deployment parameter file. Run one controlled dry run before enabling a live
+The daemon environment needs only `SUPABASE_ACCESS_TOKEN` and `SUPABASE_DB_PASSWORD`.
+After the baseline is accepted, set `enabled = true` and add the exact
+`resolved-repository-path::project-ref` mapping to the deployment parameter file; that
+mapping selects the project ref for deployment. Run one controlled dry run before enabling a live
 push. Deployment events are recorded as `migration_deployment_*`; a blocked task
 retains its worktree and diagnostics. Production schema changes must use
 committed files in `supabase/migrations/`; Dashboard SQL bypasses migration history

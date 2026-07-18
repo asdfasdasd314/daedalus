@@ -24,7 +24,10 @@ def load_deployment_settings(path: Path = DEPLOYMENT_PARAMETER_FILE) -> dict:
     with path.open("rb") as parameter_file:
         values = tomllib.load(parameter_file)
     mappings = values.get("allowed_repository_project_mappings", [])
-    if not isinstance(mappings, list) or any(not isinstance(item, str) or "::" not in item for item in mappings):
+    if not isinstance(mappings, list) or any(
+        not isinstance(item, str) or item.count("::") != 1 or not all(item.split("::", 1))
+        for item in mappings
+    ):
         raise RuntimeError("allowed_repository_project_mappings must contain repository::project-ref strings.")
     timeout = values.get("command_timeout_seconds", 120)
     if isinstance(timeout, bool) or not isinstance(timeout, int) or timeout <= 0:
@@ -71,9 +74,25 @@ def validate_migrations(worktree_path: str) -> str:
     return ""
 
 
-def repository_project_allowed(repository: str, project_ref: str, mappings: list[str]) -> bool:
-    resolved = str(Path(repository).resolve())
-    return f"{resolved}::{project_ref}" in mappings
+def project_ref_for_repository(repository: str, mappings: list[str]) -> tuple[str | None, str]:
+    """Select the sole configured project for an exactly resolved repository."""
+    resolved_repository = str(Path(repository).resolve())
+    project_refs = {
+        project_ref
+        for mapping_repository, project_ref in (mapping.split("::", 1) for mapping in mappings)
+        if mapping_repository == resolved_repository
+    }
+    if not project_refs:
+        return None, (
+            "No allowlisted Supabase project mapping for resolved repository: "
+            f"{resolved_repository}."
+        )
+    if len(project_refs) > 1:
+        return None, (
+            "Ambiguous Supabase project mappings for resolved repository: "
+            f"{resolved_repository}. Configure exactly one project ref."
+        )
+    return project_refs.pop(), ""
 
 
 def project_lock(project_ref: str) -> threading.Lock:
@@ -103,11 +122,11 @@ def deploy_pending_migrations(
     validation_error = validate_migrations(worktree_path)
     if validation_error:
         return blocked(validation_error, retryable=True)
-    project_ref = os.environ.get("DAEDALUS_SUPABASE_PROJECT_REF", "")
     if not settings["enabled"]:
         return blocked("Automatic deployment is disabled pending Supabase history/schema baseline review.")
-    if not project_ref or not repository_project_allowed(repository, project_ref, settings["allowedMappings"]):
-        return blocked("Repository/project mapping is not allowlisted for automatic Supabase deployment.")
+    project_ref, mapping_error = project_ref_for_repository(repository, settings["allowedMappings"])
+    if mapping_error:
+        return blocked(mapping_error)
     missing = [key for key in ("SUPABASE_ACCESS_TOKEN", "SUPABASE_DB_PASSWORD") if not os.environ.get(key)]
     if missing:
         return blocked("Missing daemon-local Supabase credentials: " + ", ".join(missing) + ".")
