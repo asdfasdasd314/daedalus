@@ -211,6 +211,8 @@ test("agent output history is refreshed only on demand", () => {
   assert.doesNotMatch(historySource, /window\.setInterval\(refresh/);
   assert.match(historySource, /refreshHistory/);
   assert.match(historySource, /fetchRecentAgentOutputHistory/);
+  assert.match(historySource, /conversationCacheRef\.current\.delete\(refreshedConversationId\)/);
+  assert.match(historySource, /fetchAgentOutputConversation\([\s\S]*refreshedConversationId/);
   assert.match(historySource, /onRefreshLiveTasks/);
 });
 

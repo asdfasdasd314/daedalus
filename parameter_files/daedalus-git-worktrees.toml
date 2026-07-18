@@ -1,9 +1,10 @@
 max_agents_per_repository = 4
 resolver_attempt_limit = 3
-# "auto" uses the provider selected for the task being integrated. Set to
-# "codex" or "cursor" to reserve the resolver for that provider.
+# "auto" uses the provider selected for the task being integrated and, for
+# Codex tasks, inherits that task's model and reasoning level. Set to "codex"
+# or "cursor" to reserve the resolver for that provider.
 resolver_provider = "auto"
-# Used only when resolver_provider = "codex".
+# Used only when resolver_provider is pinned to "codex".
 resolver_model = "gpt-5.6-terra"
 resolver_reasoning = "medium"
 task_verification_attempt_limit = 3

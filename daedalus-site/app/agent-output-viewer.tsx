@@ -376,16 +376,29 @@ export default function AgentOutputViewer({
   async function refreshHistory() {
     if (refreshPromiseRef.current) return refreshPromiseRef.current;
     const generation = ++historyRequestGenerationRef.current;
+    const refreshedConversationId = selected?.conversationId ?? "";
+    // Summary refreshes intentionally omit prompt/output bodies. Drop the selected
+    // conversation's prior detail and request it again so Refresh shows a newly
+    // completed plan or response without requiring a browser reload.
+    if (refreshedConversationId) {
+      conversationCacheRef.current.delete(refreshedConversationId);
+      detailRequestGenerationRef.current += 1;
+    }
     logViewerRequest("refresh-started", { generation });
     setLoading(false);
     const refreshPromise = (async () => {
       setRefreshing(true);
       setArchiveError("");
       setLiveStateError("");
-      const [archiveResult, liveResult, summaryResult] = await Promise.allSettled([
+      const [archiveResult, liveResult, summaryResult, detailResult] = await Promise.allSettled([
         fetchRecentAgentOutputHistory(supabaseUrl, supabasePublishableKey, accessToken),
         refreshLiveTasksRef.current?.() ?? Promise.resolve(),
         fetchAgentOutputFeatureSummaries(supabaseUrl, supabasePublishableKey, accessToken),
+        refreshedConversationId
+          ? fetchAgentOutputConversation(
+            supabaseUrl, supabasePublishableKey, accessToken, refreshedConversationId,
+          )
+          : Promise.resolve(null),
       ]);
       if (generation !== historyRequestGenerationRef.current) {
         logViewerRequest("refresh-discarded", { generation });
@@ -398,6 +411,15 @@ export default function AgentOutputViewer({
       } else {
         setArchiveError(archiveResult.reason instanceof Error ? archiveResult.reason.message : "Unable to refresh history.");
       }
+      if (detailResult.status === "fulfilled") {
+        if (refreshedConversationId && detailResult.value) {
+          conversationCacheRef.current.set(refreshedConversationId, detailResult.value);
+          setArchive((current) => dedupeAgentOutputs([...current, ...detailResult.value]));
+        }
+        setDetailError("");
+      } else {
+        setDetailError(detailResult.reason instanceof Error ? detailResult.reason.message : "Unable to refresh this conversation.");
+      }
       if (liveResult.status === "fulfilled") {
         setLiveStateSynchronizedAt(synchronizedAt);
       } else {
@@ -409,7 +431,8 @@ export default function AgentOutputViewer({
         ));
       }
       logViewerRequest("refresh-accepted", {
-        generation, archive: archiveResult.status, live: liveResult.status, summaries: summaryResult.status,
+        generation, archive: archiveResult.status, detail: detailResult.status,
+        live: liveResult.status, summaries: summaryResult.status,
       });
     })();
     refreshPromiseRef.current = refreshPromise;
@@ -494,7 +517,7 @@ export default function AgentOutputViewer({
             </div>
           </div>
           <div className="mt-2 text-[10px] text-slate-500" aria-live="polite">
-            {refreshing ? "Refreshing archive and live state." : archiveError || liveStateError
+            {refreshing ? "Refreshing archive, selected content, and live state." : archiveError || detailError || liveStateError
               ? "Refresh completed with retryable errors; loaded results remain available."
               : archiveSynchronizedAt || liveStateSynchronizedAt
                 ? `Archive synced ${archiveSynchronizedAt ? formatTime(archiveSynchronizedAt) : "not yet"} · Live state synced ${liveStateSynchronizedAt ? formatTime(liveStateSynchronizedAt) : "not yet"}`

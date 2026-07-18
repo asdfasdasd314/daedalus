@@ -79,3 +79,4 @@ TESTING
 - 2026-07-17: Preserved manual integration retries on their existing batch worktree, rejected missing retained worktrees instead of creating replacements, and reset the new retry's three-attempt resolver budget.
 - 2026-07-18: Removed batch cards, hydration, tombstones, and recovery controls so integration progress and recovery are owned by each durable task.
 - 2026-07-18: Reloaded finalized durable tasks before deletion so the guarded cleanup RPC receives the authoritative task revision rather than a potentially stale archive timestamp.
+- 2026-07-18: Made manual Refresh invalidate and re-fetch the selected conversation's full Supabase detail alongside archive and live-task state, so completed plans and responses render without a page reload.
