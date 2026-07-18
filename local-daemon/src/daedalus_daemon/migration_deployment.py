@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 import re
 import subprocess
@@ -127,10 +126,6 @@ def deploy_pending_migrations(
     project_ref, mapping_error = project_ref_for_repository(repository, settings["allowedMappings"])
     if mapping_error:
         return blocked(mapping_error)
-    missing = [key for key in ("SUPABASE_ACCESS_TOKEN", "SUPABASE_DB_PASSWORD") if not os.environ.get(key)]
-    if missing:
-        return blocked("Missing daemon-local Supabase credentials: " + ", ".join(missing) + ".")
-
     diagnostics = []
     with project_lock(project_ref):
         preflight_commands = [["supabase", "migration", "list", "--linked"]]
