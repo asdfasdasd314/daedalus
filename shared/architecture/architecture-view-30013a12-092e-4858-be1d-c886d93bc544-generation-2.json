@@ -1,0 +1,733 @@
+{
+  "schema_version": "1.0",
+  "summary": "Daedalus is an authenticated local-development workspace in which a Next.js client and local daemon coordinate through Supabase. The daemon discovers feature and parameter files, supervises feature processes and agent worktrees, records durable outcomes, and generates validated Architecture Views; the client presents those states with ventures and operational controls.",
+  "systems": [
+    {
+      "id": "supabase_coordination",
+      "name": "Supabase Communication and Review Protocol",
+      "summary": "User-scoped Supabase tables, RPCs, row-level policies, and recipient-review states provide the durable coordination plane for browser, daemon, and daemon-manager work while bounding recurrent payload transfer.",
+      "files": [
+        "supabase/migrations/008_auth_scoped_daedalus.sql",
+        "supabase/migrations/013_recurrent_row_review_protocol.sql",
+        "supabase/migrations/014_complete_recurrent_row_review_protocol.sql",
+        "supabase/migrations/023_complete_recurrent_supabase_read_hardening.sql",
+        "supabase/migrations/027_recurrent_supabase_egress_remediation.sql",
+        "shared/database/schema.sql",
+        "local-daemon/src/daedalus_daemon/communications.py",
+        "feature_files/auth-scoped-supabase-access.md",
+        "feature_files/feature-file-communications-system.md",
+        "feature_files/recurrent-row-review-protocol.md"
+      ]
+    },
+    {
+      "id": "workspace_discovery",
+      "name": "Workspace Discovery and Feature Graph",
+      "summary": "The local daemon scans canonical project feature and parameter files, and the workspace renders feature-only graph navigation with paired parameter editing and project-qualified feature selection.",
+      "files": [
+        "local-daemon/src/daedalus_daemon/scanner.py",
+        "daedalus-site/app/feature-files-dashboard.tsx",
+        "daedalus-site/app/feature-file-graph.tsx",
+        "daedalus-site/app/parameter-variable-selector.tsx",
+        "daedalus-site/lib/feature-file-cache.ts",
+        "daedalus-site/lib/parameter-file-cache.ts",
+        "daedalus-site/lib/parameter-file-parser.ts",
+        "feature_files/dev-environment-parameter-file-loading.md",
+        "feature_files/feature-file-graph-display.md"
+      ]
+    },
+    {
+      "id": "agent_prompt_chat",
+      "name": "Agent Prompt Chat",
+      "summary": "The Edit surface composes and submits standard, planning, and ask prompts with model, reasoning, project, and feature targeting; it delegates status, response, and archive presentation to the output viewer.",
+      "files": [
+        "daedalus-site/app/agent-session-panel.tsx",
+        "daedalus-site/app/feature-files-dashboard.tsx",
+        "daedalus-site/app/feature-search-dialog.tsx",
+        "daedalus-site/lib/agent-models.ts",
+        "daedalus-site/config/agent_models.json",
+        "feature_files/agent-prompt-chat.md"
+      ]
+    },
+    {
+      "id": "agent_worktree_orchestration",
+      "name": "Daedalus Git Worktrees",
+      "summary": "A durable daemon orchestrator admits standard agent tasks into isolated Git worktrees, runs repair and verification loops, coordinates task cohorts and integration branches, and promotes only verified local main-line results.",
+      "files": [
+        "local-daemon/src/daedalus_daemon/orchestrator.py",
+        "local-daemon/src/daedalus_daemon/main.py",
+        "local-daemon/src/daedalus_daemon/communications.py",
+        "parameter_files/daedalus-git-worktrees.toml",
+        "supabase/migrations/009_git_worktree_orchestrator.sql",
+        "supabase/migrations/030_task_and_batch_failure_recovery.sql",
+        "supabase/migrations/034_blocked_batch_task_reservation.sql",
+        "supabase/migrations/036_preserve_batch_retry_worktree.sql",
+        "feature_files/daedalus-git-worktrees.md"
+      ]
+    },
+    {
+      "id": "migration_deployment",
+      "name": "Supabase Migration Deployment",
+      "summary": "For a verified integration batch, the daemon validates canonical migration files and, when explicitly enabled and allowlisted, serializes Supabase CLI preflight and deployment with redacted diagnostics and recovery-aware blocking behavior.",
+      "files": [
+        "local-daemon/src/daedalus_daemon/migration_deployment.py",
+        "local-daemon/src/daedalus_daemon/orchestrator.py",
+        "parameter_files/supabase-migration-deployment.toml",
+        "supabase/config.toml",
+        "supabase/migrations/",
+        "shared/database/README.md",
+        "feature_files/supabase-migration-deployment.md"
+      ]
+    },
+    {
+      "id": "feature_execution",
+      "name": "Feature Execution System",
+      "summary": "The daemon validates a feature-owned Python entry point, supervises its process asynchronously, captures bounded diagnostics, and persists independently cancellable execution-run lifecycle state.",
+      "files": [
+        "local-daemon/src/daedalus_daemon/execution.py",
+        "local-daemon/src/daedalus_daemon/main.py",
+        "local-daemon/src/daedalus_daemon/communications.py",
+        "daedalus-site/app/entry-point-picker.tsx",
+        "daedalus-site/app/feature-workspace-utils.ts",
+        "supabase/migrations/017_feature_execution_runs.sql",
+        "supabase/migrations/018_feature_execution_entry_point_metadata.sql",
+        "feature_files/feature-execution-system.md"
+      ]
+    },
+    {
+      "id": "git_sync",
+      "name": "Git Sync",
+      "summary": "The workspace submits explicit commit, sync, and status requests for a selected repository, and the local daemon executes fixed Git command arrays and returns requested status or failure diagnostics through the coordination plane.",
+      "files": [
+        "daedalus-site/app/git-sync-panel.tsx",
+        "daedalus-site/app/git-sync-utils.ts",
+        "local-daemon/src/daedalus_daemon/main.py",
+        "local-daemon/src/daedalus_daemon/communications.py",
+        "supabase/migrations/012_allow_git_sync_results.sql",
+        "feature_files/git-sync.md"
+      ]
+    },
+    {
+      "id": "daemon_management",
+      "name": "Local Daemon Manager",
+      "summary": "A lease-backed supervisor owns the execution daemon process lifecycle, admission gating, restart draining, crash recovery, and health publication for a user-scoped local execution layer.",
+      "files": [
+        "local-daemon-manager/src/daedalus_daemon_manager/",
+        "daedalus-site/app/daemon-manager-panel.tsx",
+        "parameter_files/local-daemon-manager.toml",
+        "supabase/migrations/021_local_daemon_manager.sql",
+        "feature_files/local-daemon-manager.md"
+      ]
+    },
+    {
+      "id": "agent_output_viewer",
+      "name": "Agent Output Viewer",
+      "summary": "The authenticated history workspace merges active prompt and task state with durable per-prompt archive records, keeping implementation output, planning exchanges, terminal errors, retries, and blocked integration batches distinct.",
+      "files": [
+        "daedalus-site/app/agent-output-viewer.tsx",
+        "daedalus-site/app/agent-output-detail.tsx",
+        "daedalus-site/lib/agent-output-history.ts",
+        "supabase/migrations/019_agent_output_history.sql",
+        "supabase/migrations/020_allow_agent_output_history_delete.sql",
+        "supabase/migrations/022_planning_conversation_history.sql",
+        "supabase/migrations/035_agent_output_viewer_reliability.sql",
+        "feature_files/agent-output-viewer.md"
+      ]
+    },
+    {
+      "id": "architecture_generation",
+      "name": "System Architecture Communication Engine",
+      "summary": "The daemon creates task-scoped Architecture View requests from immutable task commit boundaries, feature-file ownership candidates, and Graphify evidence, then manages generation-scoped progress and persistence handoff.",
+      "files": [
+        "local-daemon/src/daedalus_daemon/architecture.py",
+        "local-daemon/src/daedalus_daemon/architecture_document.py",
+        "parameter_files/system-architecture-communication-engine.toml",
+        "supabase/migrations/028_system_architecture_communication_engine.sql",
+        "feature_files/system-architecture-communication-engine.md"
+      ]
+    },
+    {
+      "id": "architecture_visualization",
+      "name": "System Architecture Visualization Engine",
+      "summary": "A strict versioned architecture-document contract validates normalized system and channel data, and the workspace deterministically lays it out as an SVG diagram with current-generation progress states.",
+      "files": [
+        "shared/schemas/software-architecture-v1.schema.json",
+        "local-daemon/src/daedalus_daemon/architecture_document.py",
+        "daedalus-site/lib/architecture-view.ts",
+        "daedalus-site/lib/architecture-layout.ts",
+        "daedalus-site/app/architecture-visualization.tsx",
+        "parameter_files/system-architecture-visualization-engine.toml",
+        "supabase/migrations/029_system_architecture_visualization_engine.sql",
+        "feature_files/system-architecture-visualization-engine.md"
+      ]
+    },
+    {
+      "id": "ventures",
+      "name": "Ventures",
+      "summary": "The workspace provides an authenticated drawer for user-owned venture records, including progress, project and feature-file tags, optional details, and guarded clearing of completed entries.",
+      "files": [
+        "daedalus-site/app/feature-files-dashboard.tsx",
+        "parameter_files/ventures.toml",
+        "supabase/migrations/004_create_ventures_table.sql",
+        "supabase/migrations/006_add_project_directory_to_ventures.sql",
+        "supabase/migrations/007_add_feature_file_paths_to_ventures.sql",
+        "feature_files/ventures.md"
+      ]
+    }
+  ],
+  "channels": [
+    {
+      "id": "workspace_load_requests",
+      "name": "Workspace Discovery Requests",
+      "summary": "The workspace requests feature and parameter inventories through user-scoped communication rows that the daemon consumes as reviewable work.",
+      "source_system_id": "workspace_discovery",
+      "target_system_id": "supabase_coordination",
+      "fields": [
+        {
+          "name": "purpose",
+          "summary": "Identifies feature-file or parameter-file loading work.",
+          "type": "string"
+        },
+        {
+          "name": "user_id",
+          "summary": "Authenticated owner of the request.",
+          "type": "string"
+        },
+        {
+          "name": "message",
+          "summary": "Recipient-review protocol state.",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "id": "workspace_payload_delivery",
+      "name": "Workspace Inventory Delivery",
+      "summary": "Daemon-scanned feature and parameter payloads are delivered through bounded client-review records for rendering and paired-file resolution.",
+      "source_system_id": "supabase_coordination",
+      "target_system_id": "workspace_discovery",
+      "fields": [
+        {
+          "name": "payload_kind",
+          "summary": "Distinguishes feature-file and parameter-file payloads.",
+          "type": "string"
+        },
+        {
+          "name": "project_directory",
+          "summary": "Project root associated with the inventory.",
+          "type": "string"
+        },
+        {
+          "name": "files",
+          "summary": "Project-relative file inventory and contents.",
+          "type": "array",
+          "items": {
+            "name": "file",
+            "summary": "One discovered feature or parameter file.",
+            "type": "object",
+            "fields": [
+              {
+                "name": "path",
+                "summary": "Project-relative file path.",
+                "type": "string"
+              },
+              {
+                "name": "content",
+                "summary": "Delivered file text.",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        {
+          "name": "updated_at",
+          "summary": "Generation guard for acknowledgement.",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "id": "prompt_submission",
+      "name": "Prompt Submission",
+      "summary": "The Edit surface stores standard durable task requests and planning or ask communication requests for daemon pickup.",
+      "source_system_id": "agent_prompt_chat",
+      "target_system_id": "supabase_coordination",
+      "fields": [
+        {
+          "name": "prompt_id",
+          "summary": "Stable identifier joining request and history.",
+          "type": "string"
+        },
+        {
+          "name": "mode",
+          "summary": "Standard, planning, or ask prompt mode.",
+          "type": "string"
+        },
+        {
+          "name": "prompt",
+          "summary": "User-composed request text.",
+          "type": "string"
+        },
+        {
+          "name": "target_feature_paths",
+          "summary": "Repository-qualified targeted feature paths.",
+          "type": "array",
+          "items": {
+            "name": "feature_path",
+            "summary": "One selected feature path.",
+            "type": "string"
+          }
+        },
+        {
+          "name": "provider",
+          "summary": "Selected agent provider.",
+          "type": "string"
+        },
+        {
+          "name": "model",
+          "summary": "Selected provider model.",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "id": "worktree_lifecycle",
+      "name": "Durable Task and Batch Lifecycle",
+      "summary": "The worktree orchestrator reads admitted work and conditionally projects task, batch, cancellation, verified-commit, and daemon-event lifecycle changes.",
+      "source_system_id": "agent_worktree_orchestration",
+      "target_system_id": "supabase_coordination",
+      "fields": [
+        {
+          "name": "task_id",
+          "summary": "Durable agent-task identifier.",
+          "type": "string"
+        },
+        {
+          "name": "status",
+          "summary": "Current task or batch lifecycle status.",
+          "type": "string"
+        },
+        {
+          "name": "worktree_path",
+          "summary": "Retained or active local worktree location.",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "final_verified_commit",
+          "summary": "Task-branch commit captured after verification.",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "error",
+          "summary": "Terminal or blocking diagnostic.",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "message",
+          "summary": "Recipient-review state for durable projection.",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "id": "migration_deployment_request",
+      "name": "Verified Integration Migration Deployment",
+      "summary": "The worktree orchestrator passes a verified integration workspace and base state to the serialized migration deployment stage.",
+      "source_system_id": "agent_worktree_orchestration",
+      "target_system_id": "migration_deployment",
+      "fields": [
+        {
+          "name": "worktree_path",
+          "summary": "Verified integration worktree used as the CLI working directory.",
+          "type": "string"
+        },
+        {
+          "name": "repository",
+          "summary": "Resolved managed repository path checked against the allowlist.",
+          "type": "string"
+        },
+        {
+          "name": "base_commit",
+          "summary": "Commit boundary used to determine whether migrations changed.",
+          "type": "string"
+        },
+        {
+          "name": "cancel_requested",
+          "summary": "Cancellation signal checked before and during deployment.",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "id": "migration_deployment_result",
+      "name": "Migration Deployment Result",
+      "summary": "The deployment stage returns success, no-pending, or blocked state with bounded redacted CLI diagnostics for batch handling and event publication.",
+      "source_system_id": "migration_deployment",
+      "target_system_id": "agent_worktree_orchestration",
+      "fields": [
+        {
+          "name": "ok",
+          "summary": "Whether deployment processing completed without a block.",
+          "type": "boolean"
+        },
+        {
+          "name": "state",
+          "summary": "Deployment outcome such as no_pending, succeeded, or blocked.",
+          "type": "string"
+        },
+        {
+          "name": "diagnostics",
+          "summary": "Redacted Supabase CLI command results.",
+          "type": "array",
+          "items": {
+            "name": "diagnostic",
+            "summary": "One bounded command diagnostic.",
+            "type": "object",
+            "fields": [
+              {
+                "name": "returncode",
+                "summary": "CLI exit status.",
+                "type": "integer"
+              },
+              {
+                "name": "stdout",
+                "summary": "Redacted standard output.",
+                "type": "string"
+              },
+              {
+                "name": "stderr",
+                "summary": "Redacted standard error.",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        {
+          "name": "error",
+          "summary": "Blocking reason when deployment cannot safely proceed.",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "retryable",
+          "summary": "Whether the blocked outcome may enter resolver recovery.",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "id": "feature_run_requests",
+      "name": "Feature Run Requests",
+      "summary": "The workspace stores feature execution requests whose entry point is resolved and validated by the daemon rather than supplied as a shell command.",
+      "source_system_id": "feature_execution",
+      "target_system_id": "supabase_coordination",
+      "fields": [
+        {
+          "name": "run_id",
+          "summary": "Durable feature-run identifier.",
+          "type": "string"
+        },
+        {
+          "name": "project_directory",
+          "summary": "Scanned project root containing the feature.",
+          "type": "string"
+        },
+        {
+          "name": "feature_file_path",
+          "summary": "Selected project-relative feature file.",
+          "type": "string"
+        },
+        {
+          "name": "status",
+          "summary": "Queued, running, terminal, or cancellation lifecycle state.",
+          "type": "string"
+        },
+        {
+          "name": "cancel_requested",
+          "summary": "Requested run cancellation.",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "id": "git_sync_requests",
+      "name": "Git Sync Requests and Results",
+      "summary": "Git Sync uses a scoped communications request and payload result exchange for commit, sync, and status operations.",
+      "source_system_id": "git_sync",
+      "target_system_id": "supabase_coordination",
+      "fields": [
+        {
+          "name": "operation",
+          "summary": "Explicit commit, sync, or status operation.",
+          "type": "string"
+        },
+        {
+          "name": "project_directory",
+          "summary": "Selected repository directory.",
+          "type": "string"
+        },
+        {
+          "name": "request_id",
+          "summary": "Identifier correlating request and result.",
+          "type": "string"
+        },
+        {
+          "name": "output",
+          "summary": "Requested status output or command failure diagnostic.",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "daemon_manager_control",
+      "name": "Daemon Manager Control and Health",
+      "summary": "Manager restart, admission, heartbeat, and drain state are exchanged through lease-checked control-plane rows.",
+      "source_system_id": "daemon_management",
+      "target_system_id": "supabase_coordination",
+      "fields": [
+        {
+          "name": "lease_owner",
+          "summary": "Manager instance holding the supervision lease.",
+          "type": "string"
+        },
+        {
+          "name": "admission_open",
+          "summary": "Global signal permitting new work admission.",
+          "type": "boolean"
+        },
+        {
+          "name": "restart_requested",
+          "summary": "Whether a graceful daemon replacement was requested.",
+          "type": "boolean"
+        },
+        {
+          "name": "updated_at",
+          "summary": "Generation timestamp used for guarded acknowledgement.",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "id": "agent_history_delivery",
+      "name": "Agent History and Live-State Delivery",
+      "summary": "Durable history records and bounded current lifecycle snapshots are made available to the output viewer through authenticated reads and client-review inbox delivery.",
+      "source_system_id": "supabase_coordination",
+      "target_system_id": "agent_output_viewer",
+      "fields": [
+        {
+          "name": "prompt_id",
+          "summary": "Stable prompt and archive key.",
+          "type": "string"
+        },
+        {
+          "name": "status",
+          "summary": "Current or terminal task lifecycle status.",
+          "type": "string"
+        },
+        {
+          "name": "output",
+          "summary": "Full archived agent output returned on bounded detail request.",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "terminal_error",
+          "summary": "Stored terminal failure or block detail.",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "completed_at",
+          "summary": "Terminal completion timestamp.",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "final_verified_commit",
+          "summary": "Architecture View eligibility boundary for completed durable work.",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "architecture_view_requests",
+      "name": "Architecture View Generation Requests",
+      "summary": "The output viewer requests or regenerates a task-scoped Architecture View through durable, generation-guarded records.",
+      "source_system_id": "agent_output_viewer",
+      "target_system_id": "supabase_coordination",
+      "fields": [
+        {
+          "name": "prompt_id",
+          "summary": "Completed durable exchange to visualize.",
+          "type": "string"
+        },
+        {
+          "name": "generation",
+          "summary": "Monotonic Architecture View generation.",
+          "type": "integer"
+        },
+        {
+          "name": "user_id",
+          "summary": "Authenticated document owner.",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "id": "architecture_generation_work",
+      "name": "Architecture Generation Work Snapshot",
+      "summary": "The coordination plane supplies bounded Architecture View requests and immutable task commit scope to the daemon generation engine.",
+      "source_system_id": "supabase_coordination",
+      "target_system_id": "architecture_generation",
+      "fields": [
+        {
+          "name": "architecture_view_id",
+          "summary": "Durable Architecture View record identifier.",
+          "type": "string"
+        },
+        {
+          "name": "generation",
+          "summary": "Requested generation number.",
+          "type": "integer"
+        },
+        {
+          "name": "admission_commit",
+          "summary": "Immutable task base commit.",
+          "type": "string"
+        },
+        {
+          "name": "final_verified_commit",
+          "summary": "Immutable final task commit to inspect.",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "id": "architecture_document_validation",
+      "name": "Validated Architecture Document Handoff",
+      "summary": "The communication engine passes model output to the visualization contract validator before only normalized Architecture View documents can be persisted.",
+      "source_system_id": "architecture_generation",
+      "target_system_id": "architecture_visualization",
+      "fields": [
+        {
+          "name": "schema_version",
+          "summary": "Published document contract version.",
+          "type": "string"
+        },
+        {
+          "name": "summary",
+          "summary": "Final-state architecture summary.",
+          "type": "string"
+        },
+        {
+          "name": "systems",
+          "summary": "Validated system definitions.",
+          "type": "array",
+          "items": {
+            "name": "system",
+            "summary": "One architecture system.",
+            "type": "object",
+            "fields": [
+              {
+                "name": "id",
+                "summary": "System identifier.",
+                "type": "string"
+              },
+              {
+                "name": "name",
+                "summary": "System display name.",
+                "type": "string"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "architecture_view_delivery",
+      "name": "Architecture View Delivery",
+      "summary": "Validated documents and generation-stage events are delivered through the authenticated output-viewer lifecycle for deterministic diagram rendering.",
+      "source_system_id": "architecture_visualization",
+      "target_system_id": "agent_output_viewer",
+      "fields": [
+        {
+          "name": "generation",
+          "summary": "Current Architecture View generation.",
+          "type": "integer"
+        },
+        {
+          "name": "stage",
+          "summary": "Generation progress stage.",
+          "type": "string"
+        },
+        {
+          "name": "architecture_document",
+          "summary": "Validated structured document used by the SVG renderer.",
+          "type": "object",
+          "fields": [
+            {
+              "name": "schema_version",
+              "summary": "Document schema version.",
+              "type": "string"
+            },
+            {
+              "name": "summary",
+              "summary": "Architecture summary.",
+              "type": "string"
+            }
+          ]
+        },
+        {
+          "name": "updated_at",
+          "summary": "Timestamp used to reject stale delivery.",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "id": "venture_crud",
+      "name": "Authenticated Venture CRUD",
+      "summary": "The Ventures drawer reads and mutates only its authenticated owner's venture rows through Supabase REST and row-level policy enforcement.",
+      "source_system_id": "ventures",
+      "target_system_id": "supabase_coordination",
+      "fields": [
+        {
+          "name": "id",
+          "summary": "Venture identifier.",
+          "type": "string"
+        },
+        {
+          "name": "venture_name",
+          "summary": "User-provided venture name.",
+          "type": "string"
+        },
+        {
+          "name": "progress_state",
+          "summary": "Idle, in progress, or completed venture state.",
+          "type": "string"
+        },
+        {
+          "name": "project_directory",
+          "summary": "Optional tagged project directory.",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "feature_file_paths",
+          "summary": "Optional tagged project-relative feature files.",
+          "type": "array",
+          "required": false,
+          "items": {
+            "name": "feature_file_path",
+            "summary": "One tagged feature-file path.",
+            "type": "string"
+          }
+        }
+      ]
+    }
+  ]
+}
