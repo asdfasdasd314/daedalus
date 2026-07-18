@@ -100,6 +100,7 @@ export default function AgentOutputViewer({
   const [architectureLoadingPromptId, setArchitectureLoadingPromptId] = useState("");
   const [architectureError, setArchitectureError] = useState("");
   const [retryingPromptId, setRetryingPromptId] = useState("");
+  const [resumingTaskId, setResumingTaskId] = useState("");
   const [checkedArchitecturePromptIds, setCheckedArchitecturePromptIds] = useState<string[]>([]);
   const publishedPlanningPromptRef = useRef("");
   const historyOpenLoadKeyRef = useRef("");
@@ -502,6 +503,19 @@ export default function AgentOutputViewer({
     }
   }
 
+  async function resumeDurableTask(exchange: AgentOutputExchange) {
+    if (resumingTaskId || !exchange.taskId) return;
+    setResumingTaskId(exchange.taskId);
+    setFetchError("");
+    try {
+      await onRetryDurableTask(exchange);
+    } catch (error) {
+      setFetchError(error instanceof Error ? error.message : "Unable to resume this task.");
+    } finally {
+      setResumingTaskId("");
+    }
+  }
+
   if (!isOpen) return null;
 
   return (
@@ -635,7 +649,7 @@ export default function AgentOutputViewer({
               {selected.mode === "planning" && parsedPlanning && !planningQuestion ? <section className="grid gap-3 rounded-xl border border-cyan-300/20 bg-cyan-300/[0.05] p-4"><h3 className="font-semibold text-white">Planning workflow</h3>{canImplement ? <button type="button" onClick={onImplementPlan} className="w-fit rounded-full bg-cyan-300 px-4 py-2 text-sm font-semibold text-slate-950">Implement Plan</button> : <p className="text-sm text-slate-400">The selected plan is ready for review.</p>}</section> : null}
               <div className="flex flex-wrap gap-2 border-t border-white/10 pt-4">
                 {canCancel ? <button type="button" onClick={() => onCancelDurableTask(selected)} className="rounded-full border border-rose-400/25 bg-rose-500/10 px-4 py-2 text-xs font-semibold text-rose-100">Cancel task</button> : null}
-                {selected.source === "durable_task" && ["failed", "blocked"].includes(selected.status) ? <button type="button" onClick={() => void onRetryDurableTask(selected)} className="rounded-full border border-cyan-300/25 px-4 py-2 text-xs font-semibold text-cyan-100">Resume task</button> : null}
+                {selected.source === "durable_task" && ["failed", "blocked"].includes(selected.status) ? <button type="button" disabled={resumingTaskId === selected.taskId} onClick={() => void resumeDurableTask(selected)} className="rounded-full border border-cyan-300/25 px-4 py-2 text-xs font-semibold text-cyan-100 disabled:cursor-wait disabled:opacity-50">{resumingTaskId === selected.taskId ? "Resuming…" : "Resume task"}</button> : null}
                 {canRetry ? <button
                   type="button"
                   disabled={retryingPromptId === selected.promptId}

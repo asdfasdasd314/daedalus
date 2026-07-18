@@ -2930,9 +2930,23 @@ export default function FeatureFilesDashboard({
         }}
         onRetryDirectPrompt={retryHistoryDirectPrompt}
         onRetryDurableTask={async (exchange) => {
-          if (!exchange.taskId || !currentUser || !accessToken) return;
-          const accepted = await requestDurableTaskRetry(supabaseUrl, supabasePublishableKey, accessToken, exchange.taskId, exchange.updatedAt);
+          if (!exchange.taskId || !currentUser || !accessToken) {
+            throw new Error("This durable task is unavailable for recovery.");
+          }
+          // Archive rows have their own updated_at value. The recovery RPC instead
+          // guards on agent_tasks.updated_at, so reload the authoritative task
+          // revision before requesting a resume.
+          const currentTask = await fetchAgentTaskById(
+            supabaseUrl, supabasePublishableKey, accessToken, currentUserId, exchange.taskId,
+          );
+          if (!currentTask || !["failed", "blocked"].includes(currentTask.status)) {
+            throw new Error("This task is no longer available for recovery.");
+          }
+          const accepted = await requestDurableTaskRetry(
+            supabaseUrl, supabasePublishableKey, accessToken, currentTask.id, currentTask.updated_at,
+          );
           if (!accepted) throw new Error("Task changed before retry could be requested.");
+          await rehydrateDurableAgentTasks();
           setPromptStatus("Task recovery requested.");
         }}
         onSelectedPromptIdChange={selectHistoryPrompt}
