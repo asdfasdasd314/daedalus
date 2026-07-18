@@ -104,10 +104,15 @@ class GitWorktreeOrchestrator:
             self.recovered_persisted_work = True
         self._handle_cancel_requests(tasks, batches)
         self._finish_tasks(tasks)
-        self._finish_batches(tasks, batches)
+        finished_batch = self._finish_batches(tasks, batches)
+        self._remove_orphaned_collecting_batches(tasks, batches)
         self._resume_requested_batch_retries(tasks, batches)
 
         self._cleanup_reclaimable_worktrees(tasks, batches)
+        # Batch completion changes durable task and batch state. Do not admit or
+        # collect from this pre-completion snapshot; the next poll is authoritative.
+        if finished_batch:
+            return
         repositories = sorted({str(task["repository"]) for task in tasks})
 
         for repository in repositories:
@@ -770,6 +775,26 @@ class GitWorktreeOrchestrator:
                 self._integrate_batch, collecting, selected, settings
             )
 
+    def _remove_orphaned_collecting_batches(
+        self, tasks: list[dict], batches: list[dict]
+    ) -> None:
+        tasks_by_id = {str(task["id"]): task for task in tasks}
+        for batch in batches:
+            if batch["status"] != "collecting" or batch.get("integration_worktree_path"):
+                continue
+            members = [tasks_by_id.get(str(task_id)) for task_id in batch["task_ids"]]
+            if not members:
+                continue
+            all_members_completed = all(
+                task is not None and task["status"] == "completed"
+                for task in members
+            )
+            if not all_members_completed:
+                continue
+            batch.update({"status": "completed", "completed_at": utc_now()})
+            upsert_orchestration_batch(self.config, batch)
+            delete_orchestration_batch(self.config, str(batch["id"]))
+
     def _integrate_batch(self, batch: dict, tasks: list[dict], settings: dict) -> dict:
         repository = str(batch["repository"])
         batch_id = str(batch["id"])
@@ -999,11 +1024,13 @@ class GitWorktreeOrchestrator:
                 failure = post_validation()
         return failure, attempts
 
-    def _finish_batches(self, tasks: list[dict], batches: list[dict]) -> None:
+    def _finish_batches(self, tasks: list[dict], batches: list[dict]) -> bool:
         batches_by_id = {str(batch["id"]): batch for batch in batches}
+        finished_batch = False
         for batch_id, future in list(self.batch_futures.items()):
             if not future.done():
                 continue
+            finished_batch = True
             del self.batch_futures[batch_id]
             batch = batches_by_id.get(batch_id)
             if batch is None:
@@ -1063,6 +1090,7 @@ class GitWorktreeOrchestrator:
                 remove_worktree(str(task["repository"]), str(task["worktree_path"]))
             remove_worktree(str(batch["repository"]), outcome["worktree"])
             delete_orchestration_batch(self.config, batch_id)
+        return finished_batch
 
 
 def load_worktree_settings() -> dict:

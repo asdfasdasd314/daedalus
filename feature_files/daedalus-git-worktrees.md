@@ -62,3 +62,4 @@ HACKING
 - 2026-07-16: Recovered blocked batch `de42f513-83d8-4405-9a50-61beac599016` by merging the user's newer primary commit into its integration branch and fast-forwarding the clean combined history to `main`.
 - 2026-07-16: Separated implementation completion from batch integration failure, preserving recoverable task worktrees and adding guarded batch-only retries with successful batch cleanup.
 - 2026-07-17: Added the final daemon-owned Supabase migration deployment gate, forwarding bounded preflight diagnostics through the existing resolver loop while retaining blocked integration worktrees.
+- 2026-07-17: Prevented a just-finalized batch from being recreated as collecting by deferring admission and collection until the daemon polls fresh durable state, and reclaim orphaned collecting rows whose completed task branches have no integration worktree.
