@@ -236,7 +236,11 @@ create table daemon_events (
   batch_id uuid,
   batch_generation integer,
   severity text not null check (severity in ('info', 'warning', 'error')),
-  event_type text not null default 'status' check (event_type in ('status', 'batch_completed')),
+  event_type text not null default 'status' check (event_type in (
+    'status', 'batch_completed', 'migration_deployment_started',
+    'migration_deployment_no_pending', 'migration_deployment_succeeded',
+    'migration_deployment_blocked'
+  )),
   message text not null check (message in ('daemon_review', 'client_review', 'client_complete', 'daemon_complete')),
   content text not null,
   created_at timestamptz not null default now(),
@@ -636,7 +640,11 @@ create or replace function daemon_record_event(
 returns void language plpgsql security definer set search_path = public as $$
 declare event_generation integer;
 begin
-  if p_event_type not in ('status', 'batch_completed') then raise exception 'Unsupported daemon event type: %', p_event_type; end if;
+  if p_event_type not in (
+    'status', 'batch_completed', 'migration_deployment_started',
+    'migration_deployment_no_pending', 'migration_deployment_succeeded',
+    'migration_deployment_blocked'
+  ) then raise exception 'Unsupported daemon event type: %', p_event_type; end if;
   if p_batch_id is not null then
     select retry_generation into event_generation from orchestration_batches where id=p_batch_id and user_id=p_user_id;
   end if;

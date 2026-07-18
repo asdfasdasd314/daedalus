@@ -38,6 +38,10 @@ const batchRetryMigrationSource = readFileSync(
   new URL("../../supabase/migrations/036_preserve_batch_retry_worktree.sql", import.meta.url),
   "utf8",
 );
+const migrationDeploymentEventsSource = readFileSync(
+  new URL("../../supabase/migrations/037_allow_migration_deployment_events.sql", import.meta.url),
+  "utf8",
+);
 const orchestratorSource = readFileSync(
   new URL("../../local-daemon/src/daedalus_daemon/orchestrator.py", import.meta.url),
   "utf8",
@@ -84,6 +88,16 @@ test("daemon publishes durable batch completion evidence before transient cleanu
   );
   assert.ok(finish.indexOf('event_type="batch_completed"') > -1);
   assert.ok(finish.indexOf('event_type="batch_completed"') < finish.indexOf("delete_orchestration_batch"));
+});
+
+test("migration deployment telemetry is supported by the daemon event RPC", () => {
+  for (const eventType of [
+    "migration_deployment_started",
+    "migration_deployment_no_pending",
+    "migration_deployment_succeeded",
+    "migration_deployment_blocked",
+  ]) assert.match(migrationDeploymentEventsSource, new RegExp(eventType));
+  assert.match(migrationDeploymentEventsSource, /create or replace function daemon_record_event/);
 });
 
 test("manual batch retries preserve their retained workspace and project retry state", () => {

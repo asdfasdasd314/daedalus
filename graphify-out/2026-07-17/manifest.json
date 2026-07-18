@@ -50,8 +50,8 @@
     "semantic_hash": "eb708572688fbc0c243f038a1dcd39bb"
   },
   "daedalus-site/app/feature-files-dashboard.tsx": {
-    "mtime": 1784266130.6979878,
-    "ast_hash": "42f7d047c47283bac9e59fee88447529",
+    "mtime": 1784344640.0161462,
+    "ast_hash": "85d7aa8899592316f2ce3a75670f24a3",
     "semantic_hash": ""
   },
   "daedalus-site/app/feature-search-dialog.tsx": {
@@ -95,8 +95,8 @@
     "semantic_hash": "adb51e29a07dd29c1c202a6977f72a08"
   },
   "daedalus-site/app/recurrent-supabase-queries.test.ts": {
-    "mtime": 1784333150.009196,
-    "ast_hash": "43989200c5d57bc0a7ad203ddd562f8d",
+    "mtime": 1784344640.318471,
+    "ast_hash": "ec8f69bf28848f6cdcaa722a3e994b9a",
     "semantic_hash": ""
   },
   "daedalus-site/config/agent_models.json": {
@@ -235,8 +235,8 @@
     "semantic_hash": ""
   },
   "local-daemon/src/daedalus_daemon/orchestrator.py": {
-    "mtime": 1784342936.0997145,
-    "ast_hash": "339686c626de62af71b16a8789ff2a1f",
+    "mtime": 1784344639.733059,
+    "ast_hash": "cf4276e4e9c68002b340cea0765c8527",
     "semantic_hash": ""
   },
   "local-daemon/src/daedalus_daemon/scanner.py": {
@@ -265,8 +265,8 @@
     "semantic_hash": ""
   },
   "local-daemon/tests/test_orchestrator.py": {
-    "mtime": 1784342955.3740182,
-    "ast_hash": "4ee85ef49ca9ced23696e8e81a7102cf",
+    "mtime": 1784344651.95968,
+    "ast_hash": "b30243dc677a06f67beaa7dc511a1536",
     "semantic_hash": ""
   },
   "local-daemon/tests/test_scanner.py": {
@@ -275,8 +275,8 @@
     "semantic_hash": "9232ec7285fc84f358a5aa95599ae952"
   },
   "shared/database/schema.sql": {
-    "mtime": 1784309185.7948606,
-    "ast_hash": "1581e9bc3fd32aded9331ba0982c12da",
+    "mtime": 1784344695.7105443,
+    "ast_hash": "09ce288ce52021763b62f9cebbe1a701",
     "semantic_hash": ""
   },
   "AGENTS.md": {
@@ -460,8 +460,8 @@
     "semantic_hash": ""
   },
   "local-daemon/src/daedalus_daemon/architecture.py": {
-    "mtime": 1784342936.36296,
-    "ast_hash": "59a94522332f2b60879abc51ce6bcbf8",
+    "mtime": 1784343450.0956085,
+    "ast_hash": "f3177e88b2c30ea38f262cca72af3890",
     "semantic_hash": ""
   },
   "local-daemon/src/daedalus_daemon/architecture_document.py": {
@@ -470,8 +470,8 @@
     "semantic_hash": ""
   },
   "local-daemon/tests/test_architecture.py": {
-    "mtime": 1784342956.0945623,
-    "ast_hash": "75b51e714e86e37a72c13cd3bcc8e958",
+    "mtime": 1784343473.653725,
+    "ast_hash": "dcd066c0f4d56380b66df54279fa3880",
     "semantic_hash": ""
   },
   "local-daemon/tests/test_architecture_document.py": {
@@ -485,8 +485,8 @@
     "semantic_hash": ""
   },
   "feature_files/system-architecture-communication-engine.md": {
-    "mtime": 1784342957.9908273,
-    "ast_hash": "d12718e759d4cc3fbecfbcf8bf381100",
+    "mtime": 1784343479.7004836,
+    "ast_hash": "9db1e67366250e6dbbcda6616c8e53a1",
     "semantic_hash": ""
   },
   "feature_files/system-architecture-visualization-engine.md": {
@@ -715,8 +715,13 @@
     "semantic_hash": ""
   },
   "feature_files/supabase-migration-deployment.md": {
-    "mtime": 1784333150.0127795,
-    "ast_hash": "d076b27a8340038bb861cc1a6257a014",
+    "mtime": 1784344640.457963,
+    "ast_hash": "e160e2f640d73fbb096cc48c7eff96d2",
+    "semantic_hash": ""
+  },
+  "supabase/migrations/037_allow_migration_deployment_events.sql": {
+    "mtime": 1784344639.591734,
+    "ast_hash": "0c2f48710af49ca74d86fbdf3d823c7a",
     "semantic_hash": ""
   }
 }

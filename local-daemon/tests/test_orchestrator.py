@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from daedalus_daemon.communications import SupabaseUnavailableError
 from daedalus_daemon.orchestrator import (
     CANCELLED_BY_USER,
     GitWorktreeOrchestrator,
@@ -22,9 +23,23 @@ from daedalus_daemon.orchestrator import (
     remove_empty_worktree_directories,
     remove_worktree,
     reply_indicates_cancel,
+    record_migration_deployment_event,
     run_verification,
     verification_commands_for_worktree,
 )
+
+
+class MigrationDeploymentEventTests(unittest.TestCase):
+    def test_does_not_block_migration_deployment_when_telemetry_is_rejected(self):
+        with patch(
+            "daedalus_daemon.orchestrator.record_daemon_event",
+            side_effect=SupabaseUnavailableError("HTTP Error 400"),
+        ) as record_event:
+            record_migration_deployment_event(
+                {"daemonUserId": "user-1"}, "/repo", "info", "Starting.",
+                "batch-1", "migration_deployment_started",
+            )
+        record_event.assert_called_once()
 
 
 class WorktreeSettingsTests(unittest.TestCase):

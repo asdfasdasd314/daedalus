@@ -22,3 +22,5 @@ TESTING
 ## State Log
 - 2026-07-17: Initialized daemon-owned Supabase migration deployment with safe-disabled bootstrap policy and canonical CLI migration ownership.
 - 2026-07-17: Implemented allowlisted, per-project serialized CLI preflight/push behavior with redacted diagnostics and integration-resolver retries.
+- 2026-07-17: Added a forward-only daemon-event RPC allowlist repair and made migration telemetry non-blocking so it cannot prevent deployment of the repair.
+- 2026-07-17: Added an operator-confirmed baseline script for manually applied migrations 001–036 before pushing migration 037.

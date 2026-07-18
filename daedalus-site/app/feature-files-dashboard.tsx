@@ -211,7 +211,13 @@ type BatchDeletionRequestRow = { id: string; batch_id: string; status: "complete
 
 type DaemonEventRow = {
   id: number;
-  event_type: "status" | "batch_completed";
+  event_type:
+    | "status"
+    | "batch_completed"
+    | "migration_deployment_started"
+    | "migration_deployment_no_pending"
+    | "migration_deployment_succeeded"
+    | "migration_deployment_blocked";
   batch_id: string | null;
   batch_generation: number | null;
   severity: "info" | "warning" | "error";

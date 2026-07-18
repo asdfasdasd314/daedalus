@@ -1,16 +1,16 @@
 # Graph Report - daedalus  (2026-07-17)
 
 ## Corpus Check
-- 138 files · ~117,642 words
+- 140 files · ~118,211 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1248 nodes · 2280 edges · 81 communities (68 shown, 13 thin omitted)
-- Extraction: 92% EXTRACTED · 8% INFERRED · 0% AMBIGUOUS · INFERRED: 184 edges (avg confidence: 0.76)
+- 1258 nodes · 2307 edges · 87 communities (73 shown, 14 thin omitted)
+- Extraction: 91% EXTRACTED · 9% INFERRED · 0% AMBIGUOUS · INFERRED: 197 edges (avg confidence: 0.74)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `c708b6b5`
+- Built from commit: `a94194ab`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -30,9 +30,12 @@
 - main.py
 - communications.py
 - planning-questionnaire.ts
+- planning-questionnaire.ts
 - architecture-view.ts
 - SupabaseUnavailableError
+- FakeResponse
 - update_execution_entry_point_in_toml
+- GitWorktreeOrchestrator
 - __init__.py
 - page.tsx
 - run_git_sync_cycle
@@ -67,6 +70,7 @@
 - Ventures
 - Daedalus Workspace
 - README.md
+- record_daemon_event
 - $defs
 - properties
 - $ref
@@ -76,7 +80,9 @@
 - architecture.md
 - entry-point-picker.tsx
 - integrating.md
-- getGraphZoomSettings
+- update_execution_entry_point_in_toml
+- plan_migration_renames
+- baseline_supabase_migration_history.py
 - Agent Task Notifications
 - Auth-Scoped Supabase Access
 - Cursor Agent
@@ -95,16 +101,16 @@
 - README.md
 
 ## God Nodes (most connected - your core abstractions)
-1. `GitWorktreeOrchestrator` - 45 edges
+1. `GitWorktreeOrchestrator` - 47 edges
 2. `FeatureFilesDashboard()` - 31 edges
 3. `getAuthenticatedSupabaseHeaders()` - 31 edges
 4. `call_daemon_rpc()` - 24 edges
 5. `generate_architecture_view()` - 23 edges
-6. `AgentOutputViewer()` - 20 edges
-7. `run_agent_prompt_cycle()` - 19 edges
-8. `run_cursor_exec()` - 19 edges
-9. `main()` - 18 edges
-10. `compilerOptions` - 16 edges
+6. `SupabaseUnavailableError` - 21 edges
+7. `AgentOutputViewer()` - 20 edges
+8. `run_agent_prompt_cycle()` - 19 edges
+9. `run_cursor_exec()` - 19 edges
+10. `main()` - 18 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `extractFeatureFileReferences()` --indirect_call--> `normalizeFeatureFilePath()`  [INFERRED]
@@ -115,17 +121,17 @@
   local-daemon/src/daedalus_daemon/main.py → local-daemon/src/daedalus_daemon/architecture.py
 - `DirectPromptSupervisor` --uses--> `SupabaseUnavailableError`  [INFERRED]
   local-daemon/src/daedalus_daemon/main.py → local-daemon/src/daedalus_daemon/communications.py
-- `DirectPromptSupervisor` --uses--> `FeatureExecutionSupervisor`  [INFERRED]
-  local-daemon/src/daedalus_daemon/main.py → local-daemon/src/daedalus_daemon/execution.py
+- `GitWorktreeOrchestrator` --uses--> `SupabaseUnavailableError`  [INFERRED]
+  local-daemon/src/daedalus_daemon/orchestrator.py → local-daemon/src/daedalus_daemon/communications.py
 
 ## Import Cycles
 - None detected.
 
-## Communities (81 total, 13 thin omitted)
+## Communities (87 total, 14 thin omitted)
 
 ### Community 0 - "orchestrator.py"
-Cohesion: 0.06
-Nodes (47): complete_batch_deletion(), delete_orchestration_batch(), get_agent_task_control(), list_batch_deletion_requests(), record_daemon_event(), update_agent_task(), upsert_orchestration_batch(), build_resolver_prompt() (+39 more)
+Cohesion: 0.15
+Nodes (26): build_resolver_prompt(), build_task_prompt(), build_task_repair_prompt(), commit_worktree_changes(), create_integration_worktree(), create_task_worktree(), find_migration_directories(), format_process_failure() (+18 more)
 
 ### Community 1 - "parameter-file-parser.ts"
 Cohesion: 0.17
@@ -133,11 +139,11 @@ Nodes (20): ParameterVariableSelector(), ParameterVariableSelectorProps, Executi
 
 ### Community 2 - "feature-file-graph.tsx"
 Cohesion: 0.05
-Nodes (51): applyNodeVisualMetrics(), applyZoomAtPoint(), buildGraphData(), buildProjectFeatureLayout(), centerGraphViewport(), clamp(), ClientPoint, ClusterColor (+43 more)
+Nodes (52): applyNodeVisualMetrics(), applyZoomAtPoint(), buildGraphData(), buildProjectFeatureLayout(), centerGraphViewport(), clamp(), ClientPoint, ClusterColor (+44 more)
 
 ### Community 3 - "agent-output-viewer.tsx"
-Cohesion: 0.07
-Nodes (58): AgentOutputDetailProps, AgentOutputViewer(), AgentOutputViewerPresentation, AgentOutputViewerProps, architectureActionLabel(), architectureProgressLabel(), formatTime(), integrationBatchStatusLabel() (+50 more)
+Cohesion: 0.08
+Nodes (51): AgentOutputDetailProps, AgentOutputViewer(), AgentOutputViewerPresentation, AgentOutputViewerProps, architectureActionLabel(), architectureProgressLabel(), formatTime(), integrationBatchStatusLabel() (+43 more)
 
 ### Community 4 - "run_cursor_exec"
 Cohesion: 0.22
@@ -153,7 +159,7 @@ Nodes (40): dependencies, fuse.js, next, react, react-dom, react-markdown, remar
 
 ### Community 7 - "feature-files-dashboard.tsx"
 Cohesion: 0.04
-Nodes (74): acknowledgeClientReviews(), AgentPromptPayload, AgentPromptQueueEntry, AgentPromptQueueStatus, AgentTaskRow, AuthMode, BatchDeletionRequestRow, callRecoveryRpc() (+66 more)
+Nodes (79): acknowledgeClientReviews(), AgentPromptPayload, AgentPromptQueueEntry, AgentPromptQueueStatus, AgentTaskRow, AuthMode, BatchDeletionRequestRow, callRecoveryRpc() (+71 more)
 
 ### Community 8 - "compilerOptions"
 Cohesion: 0.07
@@ -172,36 +178,48 @@ Cohesion: 0.12
 Nodes (13): BaseModel, ArchitectureDocumentModel, ArrayFieldDefinition, ChannelDefinition, load_published_architecture_schema(), NamedFieldDefinition, ObjectFieldDefinition, parse_and_validate_architecture_response() (+5 more)
 
 ### Community 12 - "main.py"
-Cohesion: 0.13
-Nodes (20): apply_entry_point_update(), apply_parameter_file_update(), build_entry_point_update_state_message(), build_parameter_file_update_state_message(), build_skipped_push_step(), execute_git_sync_operation(), is_toml_float(), is_toml_string() (+12 more)
+Cohesion: 0.16
+Nodes (17): snapshot_communication_messages(), build_entry_point_update_state_message(), build_parameter_file_update_state_message(), build_skipped_push_step(), DirectPromptSupervisor, execute_git_sync_operation(), is_toml_float(), is_toml_string() (+9 more)
 
 ### Community 13 - "communications.py"
-Cohesion: 0.07
-Nodes (28): call_daemon_rpc(), complete_architecture_view(), complete_task_deletion(), fetch_communication_rows(), fetch_current_message(), fetch_current_messages(), fetch_work_snapshot(), get_supabase_headers() (+20 more)
+Cohesion: 0.08
+Nodes (27): call_daemon_rpc(), complete_architecture_view(), complete_batch_deletion(), complete_task_deletion(), fetch_communication_rows(), fetch_current_message(), fetch_current_messages(), fetch_work_snapshot() (+19 more)
 
 ### Community 14 - "planning-questionnaire.ts"
 Cohesion: 0.14
 Nodes (15): blocked(), deploy_pending_migrations(), diagnostic_text(), load_deployment_settings(), migration_files_changed(), positive_int(), project_lock(), Path (+7 more)
 
+### Community 15 - "planning-questionnaire.ts"
+Cohesion: 0.17
+Nodes (11): PlanningResponse(), AgentChatExchange, TargetedFeature, buildImplementationPrompt(), buildPlanningAnswersSuffix(), parsePlanningReply(), parseQuestionSection(), PlanningAnswer (+3 more)
+
 ### Community 16 - "architecture-view.ts"
 Cohesion: 0.09
-Nodes (35): architectureFailureDetail(), ArchitectureProgressStepper(), ArchitectureVisualization(), ArchitectureVisualizationProps, PROGRESS_PHASES, stageOrder(), truncate(), wrapName() (+27 more)
+Nodes (34): architectureFailureDetail(), ArchitectureProgressStepper(), ArchitectureVisualization(), ArchitectureVisualizationProps, PROGRESS_PHASES, stageOrder(), truncate(), wrapName() (+26 more)
 
 ### Community 17 - "SupabaseUnavailableError"
 Cohesion: 0.15
 Nodes (15): properties, system_definition, $ref, $ref, id, name, source_system_id, summary (+7 more)
 
+### Community 18 - "FakeResponse"
+Cohesion: 0.15
+Nodes (7): Exception, SupabaseUnavailableError, Publish optional deployment telemetry without blocking a database repair., record_migration_deployment_event(), FakeResponse, PostGitSyncResultTests, MigrationDeploymentEventTests
+
 ### Community 19 - "update_execution_entry_point_in_toml"
 Cohesion: 0.29
 Nodes (6): 4-Stage Development Lifecycle, Alignment, Debugging, Execution Boundaries (CRITICAL), Feature File Automation, Parameter File Centralization
 
+### Community 20 - "GitWorktreeOrchestrator"
+Cohesion: 0.11
+Nodes (7): GitWorktreeOrchestrator, BatchCompletionDeliveryTests, BatchDeletionTests, CancelOrchestratorTests, PromptTests, VerificationTests, WorktreeSettingsTests
+
 ### Community 21 - "__init__.py"
-Cohesion: 0.15
-Nodes (10): snapshot_communication_messages(), DirectPromptSupervisor, kill_agent_process(), main(), run_cycle_safely(), run_parameter_file_poll_cycle(), run_poll_cycle(), run_project_load_cycle() (+2 more)
+Cohesion: 0.27
+Nodes (5): run_parameter_file_poll_cycle(), run_poll_cycle(), run_project_load_cycle(), RunParameterFilePollCycleTests, RunPollCycleTests
 
 ### Community 22 - "page.tsx"
-Cohesion: 0.33
-Nodes (6): Home(), AgentModel, AgentModelsConfig, loadAgentModels(), FrontendConfig, loadFrontendConfig()
+Cohesion: 0.39
+Nodes (5): Home(), AgentModel, loadAgentModels(), FrontendConfig, loadFrontendConfig()
 
 ### Community 23 - "run_git_sync_cycle"
 Cohesion: 0.39
@@ -216,8 +234,8 @@ Cohesion: 0.33
 Nodes (5): DaemonManagerPanel(), DaemonManagerRequest, DaemonManagerStatus, formatTime(), Props
 
 ### Community 26 - "recurrent-supabase-queries.test.ts"
-Cohesion: 0.15
-Nodes (11): architectureViewSource, batchRetryMigrationSource, daemonMainSource, dashboardSource, historySource, managerSource, migrationSource, orchestratorSource (+3 more)
+Cohesion: 0.14
+Nodes (12): architectureViewSource, batchRetryMigrationSource, daemonMainSource, dashboardSource, historySource, managerSource, migrationDeploymentEventsSource, migrationSource (+4 more)
 
 ### Community 27 - "layout.tsx"
 Cohesion: 0.40
@@ -236,8 +254,8 @@ Cohesion: 0.50
 Nodes (3): Daedalus Project Instructions, graphify, Task mode
 
 ### Community 45 - "feature-workspace-utils.ts"
-Cohesion: 0.16
-Nodes (17): FeatureGraphSelection, FeatureSearchDialog(), FeatureSearchDialogProps, FeatureSearchMode, buildFeatureExecutionRequest(), buildFeatureSearchRecords(), FeatureSearchRecord, getFeatureNameFromMarkdown() (+9 more)
+Cohesion: 0.15
+Nodes (23): AgentPromptMode, AgentSessionPanel(), AgentSessionPanelProps, FeatureGraphSelection, FeatureSearchDialog(), FeatureSearchDialogProps, FeatureSearchMode, buildFeatureExecutionRequest() (+15 more)
 
 ### Community 46 - "README.md"
 Cohesion: 0.10
@@ -252,8 +270,8 @@ Cohesion: 0.12
 Nodes (10): build_agent_prompt_state_message(), filter_targeted_feature_paths(), parse_agent_prompt_message(), run_agent_prompt_cycle(), AgentOutputHistoryPublicationTests, CursorProviderRoutingTests, FakeGitProcess, FilterTargetedFeaturePathsTests (+2 more)
 
 ### Community 49 - "getProjectLabel"
-Cohesion: 0.13
-Nodes (17): AgentPromptMode, AgentSessionPanel(), AgentSessionPanelProps, getCompactProjectLabel(), getProjectLabel(), getSharedProjectRoot(), GitSyncPanel(), GitSyncPanelProps (+9 more)
+Cohesion: 0.29
+Nodes (8): GitSyncPanelProps, GitSyncOperation, GitSyncResult, GitSyncStep, ParsedGitSyncRow, formatGitSyncOutput(), formatStepOutput(), parseGitSyncRowMessage()
 
 ### Community 50 - "build_codex_prompt"
 Cohesion: 0.26
@@ -278,6 +296,10 @@ Nodes (6): Dev Mode, Frontend Supabase Config, Key Points, Relevant Files, State
 ### Community 55 - "Ventures"
 Cohesion: 0.29
 Nodes (6): Dev Mode, Key Points, Relevant Files, State Log, Summary, Ventures
+
+### Community 58 - "record_daemon_event"
+Cohesion: 0.26
+Nodes (9): delete_orchestration_batch(), record_daemon_event(), update_agent_task(), upsert_orchestration_batch(), load_worktree_settings(), non_negative_number(), positive_int(), remove_worktree() (+1 more)
 
 ### Community 59 - "$defs"
 Cohesion: 0.12
@@ -315,9 +337,13 @@ Nodes (6): EntryPointPicker(), Props, getRelevantFileEntryPointSuggestions(), no
 Cohesion: 0.40
 Nodes (4): 4-Stage Development Lifecycle, Execution Boundaries (CRITICAL), Feature File Automation, Parameter File Centralization
 
-### Community 68 - "getGraphZoomSettings"
-Cohesion: 0.40
-Nodes (5): clampNumber(), findParameterFileByPath(), getGraphZoomSettings(), getNumericParameterValue(), normalizeParameterFilePath()
+### Community 68 - "update_execution_entry_point_in_toml"
+Cohesion: 0.23
+Nodes (8): apply_entry_point_update(), apply_parameter_file_update(), Path, split_toml_value_and_comment(), update_execution_entry_point_in_toml(), update_parameter_variable_in_toml(), EntryPointTomlUpdateTests, ParameterFileUpdateTests
+
+### Community 70 - "baseline_supabase_migration_history.py"
+Cohesion: 0.60
+Nodes (4): main(), migration_versions(), Baseline manually applied Daedalus migrations, then push migration 037.  Run thi, run()
 
 ### Community 71 - "Agent Task Notifications"
 Cohesion: 0.29
@@ -384,24 +410,24 @@ Cohesion: 0.50
 Nodes (3): Deploy on Vercel, Getting Started, Learn More
 
 ## Knowledge Gaps
-- **366 isolated node(s):** `AgentOutputDetailProps`, `AgentOutputViewerProps`, `AgentOutputViewerPresentation`, `AgentPromptMode`, `AgentSessionPanelProps` (+361 more)
+- **367 isolated node(s):** `AgentOutputDetailProps`, `AgentOutputViewerProps`, `AgentOutputViewerPresentation`, `AgentPromptMode`, `AgentSessionPanelProps` (+362 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **13 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **14 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `GitWorktreeOrchestrator` connect `orchestrator.py` to `communications.py`, `main.py`, `__init__.py`?**
-  _High betweenness centrality (0.015) - this node is a cross-community bridge._
-- **Why does `record_daemon_event()` connect `orchestrator.py` to `architecture.py`, `communications.py`?**
-  _High betweenness centrality (0.009) - this node is a cross-community bridge._
-- **Why does `SupabaseUnavailableError` connect `communications.py` to `main.py`, `__init__.py`?**
-  _High betweenness centrality (0.008) - this node is a cross-community bridge._
-- **Are the 19 inferred relationships involving `GitWorktreeOrchestrator` (e.g. with `DirectPromptSupervisor` and `BatchCompletionDeliveryTests`) actually correct?**
-  _`GitWorktreeOrchestrator` has 19 INFERRED edges - model-reasoned connections that need verification._
+- **Why does `GitWorktreeOrchestrator` connect `GitWorktreeOrchestrator` to `orchestrator.py`, `plan_migration_renames`, `main.py`, `communications.py`, `FakeResponse`, `record_daemon_event`?**
+  _High betweenness centrality (0.017) - this node is a cross-community bridge._
+- **Why does `SupabaseUnavailableError` connect `FakeResponse` to `orchestrator.py`, `plan_migration_renames`, `main.py`, `communications.py`, `GitWorktreeOrchestrator`?**
+  _High betweenness centrality (0.014) - this node is a cross-community bridge._
+- **Are the 21 inferred relationships involving `GitWorktreeOrchestrator` (e.g. with `DirectPromptSupervisor` and `SupabaseUnavailableError`) actually correct?**
+  _`GitWorktreeOrchestrator` has 21 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 2 inferred relationships involving `FeatureFilesDashboard()` (e.g. with `mapAgentTaskRowToQueueEntry()` and `exchange()`) actually correct?**
   _`FeatureFilesDashboard()` has 2 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 8 inferred relationships involving `generate_architecture_view()` (e.g. with `.run_cycle()` and `.test_dedicated_codex_settings_and_read_only_generation()`) actually correct?**
   _`generate_architecture_view()` has 8 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `AgentOutputDetailProps`, `AgentOutputViewerProps`, `AgentOutputViewerPresentation` to the rest of the system?**
-  _366 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _367 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **Should `orchestrator.py` be split into smaller, more focused modules?**
+  _Cohesion score 0.14761904761904762 - nodes in this community are weakly interconnected._

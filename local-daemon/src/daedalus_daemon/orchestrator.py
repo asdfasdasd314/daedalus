@@ -9,6 +9,7 @@ import tomllib
 import uuid
 
 from .communications import (
+    SupabaseUnavailableError,
     get_agent_task_control,
     complete_batch_deletion,
     complete_task_deletion,
@@ -44,6 +45,20 @@ CANCEL_REPLY_PREFIXES = (
 CANCELLED_BY_USER = "Cancelled by user"
 MIGRATION_FILE_RE = re.compile(r"^(\d+)_(.+)\.sql$")
 MIGRATION_WALK_SKIP_DIRS = {".git", "node_modules", ".daedalus-worktrees"}
+
+
+def record_migration_deployment_event(
+    config: dict, repository: str, severity: str, message: str,
+    batch_id: str, event_type: str,
+) -> None:
+    """Publish optional deployment telemetry without blocking a database repair."""
+    try:
+        record_daemon_event(
+            config, repository, severity, message,
+            batch_id=batch_id, event_type=event_type,
+        )
+    except SupabaseUnavailableError as error:
+        print(f"Supabase migration deployment telemetry could not be published: {error}")
 
 
 class GitWorktreeOrchestrator:
@@ -893,7 +908,7 @@ class GitWorktreeOrchestrator:
             nonlocal deployment_retryable
             if batch_id in self.cancelled_batch_ids:
                 return CANCELLED_BY_USER
-            record_daemon_event(
+            record_migration_deployment_event(
                 self.config, repository, "info", "Supabase migration deployment started.",
                 batch_id=batch_id, event_type="migration_deployment_started",
             )
@@ -905,12 +920,12 @@ class GitWorktreeOrchestrator:
             diagnostics = result.get("diagnostics", [])
             if result["ok"]:
                 if result["state"] == "no_pending":
-                    record_daemon_event(
+                    record_migration_deployment_event(
                         self.config, repository, "info", "No pending Supabase migrations.",
                         batch_id=batch_id, event_type="migration_deployment_no_pending",
                     )
                 else:
-                    record_daemon_event(
+                    record_migration_deployment_event(
                         self.config, repository, "info", "Supabase migration deployment succeeded.",
                         batch_id=batch_id, event_type="migration_deployment_succeeded",
                     )
@@ -918,7 +933,7 @@ class GitWorktreeOrchestrator:
             failure_details = result["error"]
             if diagnostics:
                 failure_details += "\n\nDeployment diagnostics:\n" + json.dumps(diagnostics, indent=2)
-            record_daemon_event(
+            record_migration_deployment_event(
                 self.config, repository, "error", "Supabase migration deployment blocked: " + failure_details,
                 batch_id=batch_id, event_type="migration_deployment_blocked",
             )
