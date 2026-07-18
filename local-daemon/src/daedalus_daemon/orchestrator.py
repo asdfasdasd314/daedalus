@@ -123,9 +123,13 @@ class GitWorktreeOrchestrator:
 
         for task in tasks:
             worktree_path = str(task.get("worktree_path") or "")
-            if not worktree_path:
-                continue
-            if task["status"] in {"completed", "cancelled"} and Path(worktree_path).is_dir():
+            if task["status"] == "completed":
+                remove_task_worktree_and_branch(
+                    str(task["repository"]),
+                    worktree_path,
+                    str(task.get("branch_name") or ""),
+                )
+            elif task["status"] == "cancelled" and worktree_path and Path(worktree_path).is_dir():
                 remove_worktree(str(task["repository"]), worktree_path, force=True)
 
         for repository in repositories:
@@ -818,7 +822,11 @@ class GitWorktreeOrchestrator:
                 "Task integrated successfully into the repository.", task_id=task_id,
                 event_type="task_integrated",
             )
-            remove_worktree(repository, str(task.get("worktree_path") or ""))
+            remove_task_worktree_and_branch(
+                repository,
+                str(task.get("worktree_path") or ""),
+                str(task.get("branch_name") or ""),
+            )
         return finished
 
 
@@ -942,14 +950,28 @@ def worktree_root_path(repository: str) -> Path:
     return Path(repository).resolve().parent / ".daedalus-worktrees" / Path(repository).name
 
 
-def remove_worktree(repository: str, worktree_path: str, force: bool = False) -> None:
+def remove_worktree(repository: str, worktree_path: str, force: bool = False) -> bool:
     if not worktree_path:
-        return
+        return True
     arguments = ["git", "worktree", "remove"]
     if force:
         arguments.append("--force")
     arguments.append(worktree_path)
-    run_process(repository, arguments)
+    return run_process(repository, arguments).returncode == 0
+
+
+def delete_merged_branch(repository: str, branch_name: str) -> bool:
+    if not branch_name:
+        return True
+    return run_process(repository, ["git", "branch", "--delete", branch_name]).returncode == 0
+
+
+def remove_task_worktree_and_branch(
+    repository: str, worktree_path: str, branch_name: str
+) -> bool:
+    if not remove_worktree(repository, worktree_path):
+        return False
+    return delete_merged_branch(repository, branch_name)
 
 
 def is_clean_worktree(worktree_path: str) -> bool:

@@ -10,7 +10,7 @@ Daedalus Git Worktrees isolates agent-mode prompts on task branches and uses a d
 - **Durable Progress**: Every task insert and lifecycle update atomically projects status, result, error, metadata, and timestamps into Agent Output Viewer history.
 - **Daemon-Owned Commits**: When an agent sandbox cannot reach Git's shared worktree metadata, the daemon stages and commits the completed isolated changes before verification.
 - **Verified Commit Provenance**: Successful tasks persist the final verified task-branch commit after all repair attempts so dependent systems can reconstruct the exact task state after worktree cleanup.
-- **Reclaimable Workspaces**: Completed and cancelled worktrees are removed; failed and blocked worktrees remain available for implementation or integration recovery.
+- **Reclaimable Workspaces**: Completed task worktrees and their safely merged branches are removed; cancelled worktrees are removed while failed and blocked worktrees remain available for implementation or integration recovery.
 - **Task Repair Loop**: Individual verification suites receive up to three total attempts in the same isolated worktree, with later agent repairs informed by the captured failure before a durable terminal error is reported.
 - **Immediate Task Integration**: Each verified task enters a repository-serialized integration queue immediately; blocked tasks do not prevent later ready tasks from integrating.
 - **Safe Promotion**: The latest `main` is merged into the existing task branch, the combined state is tested there, and local `main` advances only by a verified fast-forward; no remote push occurs.
@@ -24,6 +24,7 @@ Daedalus Git Worktrees isolates agent-mode prompts on task branches and uses a d
 
 ## Relevant Files
 - `local-daemon/src/daedalus_daemon/orchestrator.py`: Git worktree lifecycle, verification, task-scoped integration, resolver attempts, hard cancel, and promotion.
+- `scripts/prune-local-branches.sh`: Manually configured cleanup for removing secondary worktrees and every non-whitelisted local branch.
 - `local-daemon/src/daedalus_daemon/migration_deployment.py`: Serialized, allowlisted Supabase CLI preflight and deployment stage for verified tasks.
 - `local-daemon/src/daedalus_daemon/communications.py`: Durable task and event transport used by the daemon.
 - `local-daemon/src/daedalus_daemon/main.py`: Tracked agent subprocess registry and SIGTERM/SIGKILL cancel plumbing.
@@ -65,3 +66,4 @@ HACKING
 - 2026-07-17: Prevented a just-finalized batch from being recreated as collecting by deferring admission and collection until the daemon polls fresh durable state, and reclaim orphaned collecting rows whose completed task branches have no integration worktree.
 - 2026-07-17: Prepended TASK_MODE coding on task/repair prompts and TASK_MODE integrating on resolver prompts for AGENTS.md profile routing.
 - 2026-07-18: Replaced cohort batching and separate integration worktrees with immediate, repository-serialized integration in each retained task worktree.
+- 2026-07-18: Made successful task cleanup remove the merged task branch after its worktree, including restart recovery, and added a manually whitelisted local-branch pruning script for retired task and integration worktrees.
