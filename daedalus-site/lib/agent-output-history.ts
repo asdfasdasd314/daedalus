@@ -244,12 +244,23 @@ export function mergeAgentOutputRecords(
 export function reconcileRecentAgentOutputHistory(
   current: AgentOutputExchange[],
   recent: AgentOutputExchange[],
+  deletedPromptIds: Iterable<string> = [],
 ) {
+  const deleted = new Set(deletedPromptIds);
   const recentPromptIds = new Set(recent.map((exchange) => exchange.promptId));
   const durableOlderArchive = current.filter(
-    (exchange) => exchange.completedAt && !recentPromptIds.has(exchange.promptId),
+    (exchange) => exchange.completedAt && !recentPromptIds.has(exchange.promptId) && !deleted.has(exchange.promptId),
   );
-  return dedupeAgentOutputs([...recent, ...durableOlderArchive]);
+  return dedupeAgentOutputs([...recent, ...durableOlderArchive])
+    .filter((exchange) => !deleted.has(exchange.promptId));
+}
+
+export function removeDeletedAgentOutputHistory(
+  exchanges: AgentOutputExchange[],
+  deletedPromptIds: Iterable<string>,
+) {
+  const deleted = new Set(deletedPromptIds);
+  return exchanges.filter((exchange) => !deleted.has(exchange.promptId));
 }
 
 function featureLookup(projects: FeatureFileProjects) {

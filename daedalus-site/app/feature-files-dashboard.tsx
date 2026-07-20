@@ -317,6 +317,9 @@ export default function FeatureFilesDashboard({
     AgentPromptQueueEntry[]
   >([]);
   const [synchronizedDeletedPromptIds, setSynchronizedDeletedPromptIds] = useState<string[]>([]);
+  const [confirmedDeletedPromptIds, setConfirmedDeletedPromptIds] = useState<string[]>([]);
+  const [deletionRequestPromptIds, setDeletionRequestPromptIds] = useState<string[]>([]);
+  const [deletionRequestErrors, setDeletionRequestErrors] = useState<Record<string, string>>({});
   const [architectureViews, setArchitectureViews] = useState<
     Record<string, ArchitectureView>
   >({});
@@ -888,10 +891,24 @@ export default function FeatureFilesDashboard({
     if (!currentUser || !accessToken) return;
     const userId = currentUserId;
     const generation = ++taskHydrationGenerationRef.current;
-    const rows = await fetchActiveAgentTaskSummaries(
-      supabaseUrl, supabasePublishableKey, accessToken, userId,
-    );
+    const [rows, deletionRequests] = await Promise.all([
+      fetchActiveAgentTaskSummaries(supabaseUrl, supabasePublishableKey, accessToken, userId),
+      fetchDurableTaskDeletionRequests(supabaseUrl, supabasePublishableKey, accessToken, userId),
+    ]);
     if (generation !== taskHydrationGenerationRef.current || userId !== currentUserId) return;
+    const hiddenPromptIds = deletionRequests
+      .filter((request) => request.status === "requested" || request.status === "completed")
+      .map((request) => request.prompt_id);
+    const completedPromptIds = deletionRequests
+      .filter((request) => request.status === "completed")
+      .map((request) => request.prompt_id);
+    const rejectedErrors = Object.fromEntries(deletionRequests
+      .filter((request) => request.status === "rejected")
+      .map((request) => [request.prompt_id, request.error || "Task deletion was rejected."]));
+    setSynchronizedDeletedPromptIds(hiddenPromptIds);
+    setConfirmedDeletedPromptIds(completedPromptIds);
+    setDeletionRequestPromptIds(deletionRequests.map((request) => request.prompt_id));
+    setDeletionRequestErrors(rejectedErrors);
     const activeEntries = rows.map(mapAgentTaskRowToQueueEntry);
     setDurableAgentTasks(activeEntries.sort(
       (left, right) => left.enqueuedAt - right.enqueuedAt,
@@ -911,6 +928,10 @@ export default function FeatureFilesDashboard({
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setDurableAgentTasks([]);
+    setSynchronizedDeletedPromptIds([]);
+    setConfirmedDeletedPromptIds([]);
+    setDeletionRequestPromptIds([]);
+    setDeletionRequestErrors({});
     setArchitectureViews({});
     setArchitectureCanvasPromptId("");
     setSelectedHistoryPromptId("");
@@ -2890,6 +2911,9 @@ export default function FeatureFilesDashboard({
         activitySummary={lastIntegratedTaskStatus}
         architectureViews={architectureViews}
         deletedPromptIds={synchronizedDeletedPromptIds}
+        confirmedDeletedPromptIds={confirmedDeletedPromptIds}
+        deletionRequestErrors={deletionRequestErrors}
+        deletionRequestPromptIds={deletionRequestPromptIds}
         isOpen={workspaceView === "architecture" || isAgentOutputViewerOpen}
         liveExchanges={liveHistoryExchanges}
         onAbandonDirectPrompt={abandonQueuedAgentPrompt}
@@ -2915,6 +2939,7 @@ export default function FeatureFilesDashboard({
           await requestFinalizedTaskDeletion(
             supabaseUrl, supabasePublishableKey, accessToken, currentTask.id, currentTask.updated_at,
           );
+          await rehydrateDurableAgentTasks();
           setPromptStatus("Synchronized task deletion requested.");
         }}
         onImplementPlan={() => void implementPlanningSession()}
@@ -4792,6 +4817,24 @@ async function fetchActiveAgentTaskSummaries(
     );
   }
   return (await response.json()) as AgentTaskRow[];
+}
+
+async function fetchDurableTaskDeletionRequests(
+  supabaseUrl: string, supabasePublishableKey: string, accessToken: string, userId: string,
+) {
+  const url = new URL("/rest/v1/agent_task_deletion_requests", supabaseUrl);
+  const recentSince = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  url.searchParams.set("select", "id,task_id,prompt_id,status,error,updated_at");
+  url.searchParams.set("user_id", `eq.${userId}`);
+  url.searchParams.set("or", `(status.eq.requested,updated_at.gte.${recentSince})`);
+  url.searchParams.set("order", "updated_at.desc,id.desc");
+  url.searchParams.set("limit", "100");
+  const response = await fetch(url, { headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken), cache: "no-store" });
+  if (!response.ok) {
+    const detail = (await response.text()).trim();
+    throw new Error(detail ? `task deletion hydration query failed (${response.status}): ${detail}` : `task deletion hydration query failed (${response.status})`);
+  }
+  return (await response.json()) as TaskDeletionRequestRow[];
 }
 
 async function fetchAgentTaskById(

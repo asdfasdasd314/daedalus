@@ -952,6 +952,12 @@ create table if not exists agent_task_deletion_requests (
 alter table agent_task_deletion_requests enable row level security;
 create policy "authenticated users can read own task deletion requests" on agent_task_deletion_requests for select to authenticated using (user_id = auth.uid());
 create index if not exists agent_task_deletion_requests_daemon_review_idx on agent_task_deletion_requests (user_id, created_at, id) where message='daemon_review';
+-- Browser deletion-refresh read model.  Reads remain protected by the owner-only
+-- policy above; this only supports bounded unresolved/recent lifecycle queries.
+create index if not exists agent_task_deletion_requests_viewer_state_idx
+  on agent_task_deletion_requests (user_id, updated_at desc, id)
+  where status in ('requested', 'completed', 'rejected');
+grant select on agent_task_deletion_requests to authenticated;
 -- Final Architecture View progress inbox/acknowledgement overrides.
 alter function get_client_review_inbox() rename to get_client_review_inbox_032_previous;
 create function get_client_review_inbox() returns jsonb language sql stable security definer set search_path=public as $$

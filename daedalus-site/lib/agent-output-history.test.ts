@@ -6,6 +6,7 @@ import {
   canDeleteAgentOutput,
   groupAgentOutputsByFeature,
   mergeAgentOutputRecords,
+  removeDeletedAgentOutputHistory,
   reconcileRecentAgentOutputHistory,
   rerankAgentOutputSearch,
   type AgentOutputExchange,
@@ -216,4 +217,11 @@ test("recent archive refresh retains hydrated older history and replaces matchin
   assert.equal(result.find((item) => item.promptId === "older")?.output, "Full older output");
   assert.equal(result.find((item) => item.promptId === "prompt-1")?.status, "failed");
   assert.equal(result.find((item) => item.promptId === "prompt-1")?.output, "Done");
+});
+
+test("confirmed durable deletion cannot be resurrected by a late archive refresh", () => {
+  const deleted = ["prompt-1"];
+  const result = reconcileRecentAgentOutputHistory([exchange()], [exchange()], deleted);
+  assert.equal(result.some((item) => item.promptId === "prompt-1"), false);
+  assert.deepEqual(removeDeletedAgentOutputHistory([exchange()], deleted), []);
 });

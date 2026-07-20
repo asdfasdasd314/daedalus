@@ -10,6 +10,7 @@ The Agent Output Viewer is the durable, authenticated history and live-status su
 - **Unified Read Model**: Active direct prompts and durable tasks supply current lifecycle state while history supplies archived content; records merge by prompt ID.
 - **Deterministic Request Generations**: Initial load, manual refresh, search, active snapshots, and selected-conversation detail each reject late generations; refresh keeps visible history and reports archive, live-state, and detail failures independently.
 - **Snapshot and Event Reconciliation**: User-triggered active task hydration uses replacement semantics, while task-scoped integration events report successful promotion.
+- **Server-Authoritative Deletion State**: Durable deletion requests are rehydrated with live tasks; requested/completed requests hide their prompt, completed requests purge archive/detail caches, and rejected requests restore the task with the daemon reason.
 - **Single Browser Review Owner**: The completion-scheduled client-review inbox is the only recurrent owner of terminal task and daemon-event rows; it applies transitions before conditionally acknowledging the exact `updated_at` generation.
 - **Terminal Invariant**: Completed, failed, blocked, and cancelled durable tasks receive `completed_at` and archive projection before transient cleanup.
 - **Feature Discovery**: A multi-feature prompt remains one database record and is presented beneath every repository-qualified targeted feature, with separate All activity and Unscoped groups.
@@ -29,6 +30,7 @@ The Agent Output Viewer is the durable, authenticated history and live-status su
 - `supabase/migrations/024_repair_agent_tasks_cancel_requested.sql`: Idempotent repair when live `agent_tasks` is missing `cancel_requested` (breaks History hydration selects).
 - `shared/database/schema.sql`: Current database schema snapshot.
 - `supabase/migrations/039_remove_legacy_batch_persistence.sql`: Final task-only inbox, acknowledgement, event, retry, and cleanup contract.
+- `supabase/migrations/040_durable_task_deletion_refresh_state.sql`: Indexed owner-scoped deletion-request read model for viewer refreshes.
 - `parameter_files/agent-output-viewer.toml`: Viewer-owned tunable settings.
 - `local-daemon/src/daedalus_daemon/communications.py`: Narrow direct-prompt history upsert transport.
 - `local-daemon/src/daedalus_daemon/main.py`: Direct planning and ask execution publication.
@@ -82,3 +84,4 @@ TESTING
 - 2026-07-18: Made manual Refresh invalidate and re-fetch the selected conversation's full Supabase detail alongside archive and live-task state, so completed plans and responses render without a page reload.
 - 2026-07-18: Preserved the refreshed conversation's non-null detail result in a local constant before archive merging so the viewer refresh path type-checks under Next.js production builds.
 - 2026-07-18: Resumed durable tasks using a freshly loaded `agent_tasks` revision rather than the archive timestamp, then rehydrated live state and exposed pending/error feedback for recovery requests.
+- 2026-07-20: Made durable deletion state server-authoritative across browser hydration and Refresh, purging confirmed archive caches while restoring rejected tasks with their daemon error.

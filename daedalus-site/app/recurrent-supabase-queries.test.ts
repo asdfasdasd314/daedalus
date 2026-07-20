@@ -42,6 +42,10 @@ const batchCleanupMigrationSource = readFileSync(
   new URL("../../supabase/migrations/039_remove_legacy_batch_persistence.sql", import.meta.url),
   "utf8",
 );
+const deletionRefreshMigrationSource = readFileSync(
+  new URL("../../supabase/migrations/040_durable_task_deletion_refresh_state.sql", import.meta.url),
+  "utf8",
+);
 const canonicalSchemaSource = readFileSync(
   new URL("../../shared/database/schema.sql", import.meta.url),
   "utf8",
@@ -249,6 +253,17 @@ test("viewer loads and refreshes by accepted generation without blanking visible
   assert.match(historySource, /Refreshing…/);
   assert.doesNotMatch(historySource, /disabled=\{loading\}[^>]*>Refresh/);
   assert.match(historySource, /loading && archive\.length === 0/);
+});
+
+test("durable deletion refresh reads server state and purges confirmed archive caches", () => {
+  assert.match(dashboardSource, /fetchDurableTaskDeletionRequests/);
+  assert.match(dashboardSource, /Promise\.all\(\[\s*fetchActiveAgentTaskSummaries[\s\S]*fetchDurableTaskDeletionRequests/);
+  assert.match(dashboardSource, /request\.status === "requested" \|\| request\.status === "completed"/);
+  assert.match(dashboardSource, /request\.status === "rejected"/);
+  assert.match(historySource, /removeDeletedAgentOutputHistory/);
+  assert.match(historySource, /setPendingDurableDeletionPromptIds/);
+  assert.match(deletionRefreshMigrationSource, /agent_task_deletion_requests_viewer_state_idx/);
+  assert.match(deletionRefreshMigrationSource, /grant select on agent_task_deletion_requests to authenticated/);
 });
 
 test("completed durable outputs expose a persistent architecture rail action", () => {

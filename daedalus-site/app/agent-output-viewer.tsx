@@ -26,6 +26,7 @@ import {
   groupAgentOutputsByFeature,
   mergeAgentOutputRecords,
   reconcileRecentAgentOutputHistory,
+  removeDeletedAgentOutputHistory,
   rerankAgentOutputSearch,
   searchAgentOutputArchive,
   type AgentOutputCursor,
@@ -39,6 +40,9 @@ type AgentOutputViewerProps = {
   activitySummary: string;
   architectureViews: Record<string, ArchitectureView>;
   deletedPromptIds?: string[];
+  confirmedDeletedPromptIds?: string[];
+  deletionRequestErrors?: Record<string, string>;
+  deletionRequestPromptIds?: string[];
   isOpen: boolean;
   liveExchanges: AgentOutputExchange[];
   onAbandonDirectPrompt: (promptId: string) => void;
@@ -68,7 +72,8 @@ type AgentOutputViewerProps = {
 export type AgentOutputViewerPresentation = "drawer" | "architecture-rail";
 
 export default function AgentOutputViewer({
-  accessToken, activitySummary, architectureViews, deletedPromptIds: synchronizedDeletedPromptIds = [], isOpen, liveExchanges, onAbandonDirectPrompt,
+  accessToken, activitySummary, architectureViews, deletedPromptIds: synchronizedDeletedPromptIds = [],
+  confirmedDeletedPromptIds = [], deletionRequestErrors = {}, deletionRequestPromptIds = [], isOpen, liveExchanges, onAbandonDirectPrompt,
   onAnswerPlanningQuestion, onArchitectureCanvasPromptChange, onArchitectureViewChange, onCancelDurableTask, onClearFinalizedTasks,
   onClose, onDeletedExchange, onDeleteDurableTask, onImplementPlan, onPlanningReply, onRefreshLiveTasks,
   onRetryDirectPrompt, onRetryDurableTask, onSelectedPromptIdChange, planningSession, presentation, projects,
@@ -150,7 +155,7 @@ export default function AgentOutputViewer({
       const synchronizedAt = new Date().toISOString();
       if (archiveResult.status === "fulfilled") {
         const page = archiveResult.value;
-        setArchive(dedupeAgentOutputs(page.exchanges));
+        setArchive(removeDeletedAgentOutputHistory(dedupeAgentOutputs(page.exchanges), confirmedDeletedPromptIds));
         setCursor(page.cursor);
         setHasMore(page.hasMore);
         setArchiveSynchronizedAt(synchronizedAt);
@@ -175,13 +180,36 @@ export default function AgentOutputViewer({
         generation, archive: archiveResult.status, live: liveResult.status, summaries: summaryResult.status,
       });
     });
-  }, [accessToken, isOpen, supabasePublishableKey, supabaseUrl]);
+  }, [accessToken, confirmedDeletedPromptIds, isOpen, supabasePublishableKey, supabaseUrl]);
 
   useEffect(() => {
     conversationCacheRef.current.clear();
     setArchive([]);
     setSearchResults(null);
   }, [accessToken]);
+
+  // Optimistic durable deletion only lasts until the next server snapshot. A
+  // rejected request must become visible again; requested/completed remain hidden
+  // through the dashboard's server-authoritative prop.
+  useEffect(() => {
+    if (!deletionRequestPromptIds.length) return;
+    const synchronized = new Set(deletionRequestPromptIds);
+    setPendingDurableDeletionPromptIds((current) => current.filter((promptId) => !synchronized.has(promptId)));
+  }, [deletionRequestPromptIds]);
+
+  // Completed deletion is stronger than filtering: remove stale archive, search,
+  // detail, and conversation-cache records so later responses cannot revive it.
+  useEffect(() => {
+    if (!confirmedDeletedPromptIds.length) return;
+    const deleted = new Set(confirmedDeletedPromptIds);
+    setArchive((current) => removeDeletedAgentOutputHistory(current, deleted));
+    setSearchResults((current) => current ? removeDeletedAgentOutputHistory(current, deleted) : null);
+    for (const [conversationId, turns] of conversationCacheRef.current) {
+      const retained = removeDeletedAgentOutputHistory(turns, deleted);
+      if (retained.length) conversationCacheRef.current.set(conversationId, retained);
+      else conversationCacheRef.current.delete(conversationId);
+    }
+  }, [confirmedDeletedPromptIds]);
 
   useEffect(() => {
     if (!isOpen || !search.trim()) {
@@ -195,7 +223,9 @@ export default function AgentOutputViewer({
       void searchAgentOutputArchive(supabaseUrl, supabasePublishableKey, accessToken, search, featurePaths)
         .then((results) => {
           if (generation === searchRequestGenerationRef.current) {
-            setSearchResults(rerankAgentOutputSearch(search, results, projects));
+            setSearchResults(removeDeletedAgentOutputHistory(
+              rerankAgentOutputSearch(search, results, projects), confirmedDeletedPromptIds,
+            ));
           }
         })
         .catch((error) => {
@@ -208,7 +238,7 @@ export default function AgentOutputViewer({
       window.clearTimeout(timer);
       searchRequestGenerationRef.current += 1;
     };
-  }, [accessToken, isOpen, projects, search, supabasePublishableKey, supabaseUrl]);
+  }, [accessToken, confirmedDeletedPromptIds, isOpen, projects, search, supabasePublishableKey, supabaseUrl]);
 
   const deletedPromptIdSet = useMemo(
     () => new Set([
@@ -218,10 +248,11 @@ export default function AgentOutputViewer({
     ]),
     [deletedPromptIds, pendingDurableDeletionPromptIds, synchronizedDeletedPromptIds],
   );
-  const exchanges = useMemo(
-    () => mergeAgentOutputRecords(archive, liveExchanges).filter((exchange) => !deletedPromptIdSet.has(exchange.promptId)),
-    [archive, deletedPromptIdSet, liveExchanges],
-  );
+  const exchanges = useMemo(() => mergeAgentOutputRecords(archive, liveExchanges)
+    .filter((exchange) => !deletedPromptIdSet.has(exchange.promptId))
+    .map((exchange) => deletionRequestErrors[exchange.promptId]
+      ? { ...exchange, error: deletionRequestErrors[exchange.promptId], statusDetail: deletionRequestErrors[exchange.promptId] }
+      : exchange), [archive, deletedPromptIdSet, deletionRequestErrors, liveExchanges]);
   const activeSearchResults = search.trim() ? searchResults?.filter((exchange) => !deletedPromptIdSet.has(exchange.promptId)) ?? null : null;
   const visibleSource = useMemo(
     () => dedupeAgentOutputConversations(activeSearchResults ?? exchanges),
@@ -322,7 +353,9 @@ export default function AgentOutputViewer({
     const conversationId = selected.conversationId;
     const cached = conversationCacheRef.current.get(conversationId);
     if (cached) {
-      setArchive((current) => dedupeAgentOutputs([...current, ...cached]));
+      setArchive((current) => removeDeletedAgentOutputHistory(
+        dedupeAgentOutputs([...current, ...cached]), confirmedDeletedPromptIds,
+      ));
       setDetailError("");
       setDetailLoadingConversationId("");
       return;
@@ -336,7 +369,9 @@ export default function AgentOutputViewer({
     ).then((turns) => {
       if (generation !== detailRequestGenerationRef.current) return;
       conversationCacheRef.current.set(conversationId, turns);
-      setArchive((current) => dedupeAgentOutputs([...current, ...turns]));
+      setArchive((current) => removeDeletedAgentOutputHistory(
+        dedupeAgentOutputs([...current, ...turns]), confirmedDeletedPromptIds,
+      ));
       logViewerRequest("detail-load-accepted", { generation, conversationId });
     }).catch((error) => {
       if (generation === detailRequestGenerationRef.current) {
@@ -346,7 +381,7 @@ export default function AgentOutputViewer({
       if (generation === detailRequestGenerationRef.current) setDetailLoadingConversationId("");
     });
     return () => { detailRequestGenerationRef.current += 1; };
-  }, [accessToken, detailRetryGeneration, isOpen, selected?.conversationId, supabasePublishableKey, supabaseUrl]);
+  }, [accessToken, confirmedDeletedPromptIds, detailRetryGeneration, isOpen, selected?.conversationId, supabasePublishableKey, supabaseUrl]);
 
   useEffect(() => {
     if (selected?.mode === "planning" && selected.status === "completed" && selected.output &&
@@ -364,7 +399,9 @@ export default function AgentOutputViewer({
     try {
       const page = await fetchAgentOutputHistoryPage(supabaseUrl, supabasePublishableKey, accessToken, cursor);
       if (generation !== historyRequestGenerationRef.current) return;
-      setArchive((current) => dedupeAgentOutputs([...current, ...page.exchanges]));
+      setArchive((current) => removeDeletedAgentOutputHistory(
+        dedupeAgentOutputs([...current, ...page.exchanges]), confirmedDeletedPromptIds,
+      ));
       setCursor(page.cursor);
       setHasMore(page.hasMore);
     } catch (error) {
@@ -407,7 +444,7 @@ export default function AgentOutputViewer({
       }
       const synchronizedAt = new Date().toISOString();
       if (archiveResult.status === "fulfilled") {
-        setArchive((current) => reconcileRecentAgentOutputHistory(current, archiveResult.value));
+        setArchive((current) => reconcileRecentAgentOutputHistory(current, archiveResult.value, confirmedDeletedPromptIds));
         setArchiveSynchronizedAt(synchronizedAt);
       } else {
         setArchiveError(archiveResult.reason instanceof Error ? archiveResult.reason.message : "Unable to refresh history.");
@@ -416,7 +453,9 @@ export default function AgentOutputViewer({
         const refreshedConversation = detailResult.value;
         if (refreshedConversationId && refreshedConversation) {
           conversationCacheRef.current.set(refreshedConversationId, refreshedConversation);
-          setArchive((current) => dedupeAgentOutputs([...current, ...refreshedConversation]));
+          setArchive((current) => removeDeletedAgentOutputHistory(
+            dedupeAgentOutputs([...current, ...refreshedConversation]), confirmedDeletedPromptIds,
+          ));
         }
         setDetailError("");
       } else {
