@@ -262,7 +262,7 @@ returns jsonb language sql stable security definer set search_path=public as $$
       where feature_execution_runs.user_id=owner.user_id
         and feature_execution_runs.message='client_review' order by updated_at,id limit 50) r),'[]'),
     'daemonEvents',coalesce((select jsonb_agg(to_jsonb(r) order by created_at,id) from (
-      select id,event_type,task_id,conversation_id,severity,content,created_at,updated_at
+      select id,event_type,task_id,severity,content,created_at,updated_at
       from daemon_events,owner where daemon_events.user_id=owner.user_id
         and daemon_events.message='client_review' order by created_at,id limit 50) r),'[]'),
     'managerStatus',(select case when s.user_id is null then null else jsonb_build_object(
