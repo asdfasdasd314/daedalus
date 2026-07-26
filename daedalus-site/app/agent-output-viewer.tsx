@@ -365,7 +365,7 @@ export default function AgentOutputViewer({
     setDetailError("");
     setDetailLoadingConversationId(conversationId);
     void fetchAgentOutputConversation(
-      supabaseUrl, supabasePublishableKey, accessToken, conversationId,
+      supabaseUrl, supabasePublishableKey, accessToken, conversationId, selected.promptId,
     ).then((turns) => {
       if (generation !== detailRequestGenerationRef.current) return;
       conversationCacheRef.current.set(conversationId, turns);
@@ -415,6 +415,7 @@ export default function AgentOutputViewer({
     if (refreshPromiseRef.current) return refreshPromiseRef.current;
     const generation = ++historyRequestGenerationRef.current;
     const refreshedConversationId = selected?.conversationId ?? "";
+    const refreshedPromptId = selected?.promptId ?? "";
     // Summary refreshes intentionally omit prompt/output bodies. Drop the selected
     // conversation's prior detail and request it again so Refresh shows a newly
     // completed plan or response without requiring a browser reload.
@@ -434,7 +435,7 @@ export default function AgentOutputViewer({
         fetchAgentOutputFeatureSummaries(supabaseUrl, supabasePublishableKey, accessToken),
         refreshedConversationId
           ? fetchAgentOutputConversation(
-            supabaseUrl, supabasePublishableKey, accessToken, refreshedConversationId,
+            supabaseUrl, supabasePublishableKey, accessToken, refreshedConversationId, refreshedPromptId,
           )
           : Promise.resolve(null),
       ]);
@@ -680,7 +681,7 @@ export default function AgentOutputViewer({
                   {index === 0 ? <AgentOutputDetail collapsible={turn.mode === "planning"} label="Initial prompt" value={turn.prompt} /> : null}
                   {turn.mode === "planning" && index > 0 ? <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-cyan-200">Planning refinement</p> : null}
                   {turn.source === "durable_task" ? <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-200">Plan implementation</p> : null}
-                  {turn.output ? turn.mode === "planning" ? <PlanningResponse value={turn.output} activeQuestion={turn === selected ? planningQuestion : null} otherAnswer={otherAnswer} onOtherAnswerChange={setOtherAnswer} onAnswer={onAnswerPlanningQuestion} /> : <AgentOutputDetail label="Implementation response" value={turn.output} markdown /> : <p className="rounded-xl border border-dashed border-white/10 p-4 text-sm text-slate-400">{turn === selected ? "No output has been published yet." : "This stage ended before output was published."}</p>}
+                  {turn.output ? turn.mode === "planning" ? <PlanningResponse value={turn.output} activeQuestion={turn.promptId === planningSession?.questionPromptId ? planningQuestion : null} otherAnswer={otherAnswer} onOtherAnswerChange={setOtherAnswer} onAnswer={onAnswerPlanningQuestion} /> : <AgentOutputDetail label="Implementation response" value={turn.output} markdown /> : <p className="rounded-xl border border-dashed border-white/10 p-4 text-sm text-slate-400">{turn === selected ? "No output has been published yet." : "This stage ended before output was published."}</p>}
                   {turn.error ? <section className="rounded-xl border border-rose-400/25 bg-rose-500/10 p-4"><h3 className="text-[11px] uppercase tracking-[0.24em] text-rose-200">Terminal error</h3><pre className="mt-3 whitespace-pre-wrap break-words text-sm text-rose-100">{turn.error}</pre></section> : null}
                 </div>)}
               </div>

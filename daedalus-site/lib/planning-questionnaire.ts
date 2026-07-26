@@ -23,11 +23,13 @@ export type PlanningSession = {
   questionIndex: number;
   answers: PlanningAnswer[];
   activePlanningPromptId: string;
+  questionPromptId?: string;
 };
 
 const QUESTIONS_HEADING = /^## Questions\s*$/gim;
 const QUESTION_LINE = /^\s*\d+\.\s+\*\*(?:Question:\s*)?(.+?)\*\*:?\s*$/;
-const OPTION_LINE = /^\s*-\s+[a-z]\.\s+(.+?)\s*$/i;
+const OPTION_LINE = /^\s*(?:-\s+)?(?:[a-z]|\d+)[.)]\s+(.+?)\s*$/i;
+const BULLET_OPTION_LINE = /^\s*-\s+(.+?)\s*$/;
 
 function unwrapMarkdownCodeFence(reply: string) {
   const fencedReply = reply.match(/^\s*```[^\n]*\n([\s\S]*?)\n```\s*$/);
@@ -81,7 +83,7 @@ export function parseQuestionSection(section: string): PlanningQuestion[] {
       continue;
     }
 
-    const optionMatch = line.match(OPTION_LINE);
+    const optionMatch = line.match(OPTION_LINE) ?? line.match(BULLET_OPTION_LINE);
 
     if (optionMatch && currentQuestion) {
       currentQuestion.options.push(optionMatch[1].trim());
@@ -101,13 +103,9 @@ export function buildPlanningAnswersSuffix(answers: PlanningAnswer[]): string {
     return "";
   }
 
-  return [
-    "The following questions have been asked alongside their answers:",
-    "",
-    ...answers.map(
-      (answer, index) => `${index + 1}. ${answer.question} — ${answer.answer}`,
-    ),
-  ].join("\n");
+  return answers.map(
+    (answer, index) => `${answer.question}: ${index + 1}. ${answer.answer}`,
+  ).join("\n");
 }
 
 export function buildImplementationPrompt(

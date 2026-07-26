@@ -997,13 +997,10 @@ def build_planning_refinement_context(
             question = item.get("question")
             answer = item.get("answer")
             if isinstance(question, str) and isinstance(answer, str):
-                answers.append(f"{len(answers) + 1}. {question} — {answer}")
+                answers.append(f"{question}: {len(answers) + 1}. {answer}")
 
     if answers:
-        sections.append(
-            "The following questions have been asked alongside their answers:\n\n"
-            + "\n".join(answers),
-        )
+        sections.append("\n".join(answers))
 
     return "\n\n".join(sections)
 

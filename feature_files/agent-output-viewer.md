@@ -85,3 +85,4 @@ TESTING
 - 2026-07-18: Preserved the refreshed conversation's non-null detail result in a local constant before archive merging so the viewer refresh path type-checks under Next.js production builds.
 - 2026-07-18: Resumed durable tasks using a freshly loaded `agent_tasks` revision rather than the archive timestamp, then rehydrated live state and exposed pending/error feedback for recovery requests.
 - 2026-07-20: Made durable deletion state server-authoritative across browser hydration and Refresh, purging confirmed archive caches while restoring rejected tasks with their daemon error.
+- 2026-07-26: Made selected-conversation refresh retrieve full detail through both its conversation and prompt identities, and anchored questionnaire controls to the planning prompt that produced them so completed content and answer buttons survive refresh reconciliation.

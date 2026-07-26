@@ -39,3 +39,4 @@ HACKING
 - 2026-07-14: Resolved the integration merge by retaining both the Edit-form typography restoration and manual output-viewer handoff.
 - 2026-07-14: Diagnosed batch resolver failures caused by passing Cursor's empty reasoning setting into a Codex resolver invocation.
 - 2026-07-17: Prepended TASK_MODE routing lines on direct planning and coding chat prompts so AGENTS.md selects the matching agent profile.
+- 2026-07-26: Normalized planning-answer handoff to one newline-separated `{Question}: {index}. {Answer}` record per answer, matching the interactive questionnaire submission flow.

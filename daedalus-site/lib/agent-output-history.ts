@@ -398,13 +398,16 @@ export async function fetchAgentOutputConversation(
   publishableKey: string,
   accessToken: string,
   conversationId: string,
+  promptId: string = conversationId,
   cursor: { createdAt: string; id: string } | null = null,
 ) {
   const url = new URL("/rest/v1/agent_output_history", supabaseUrl);
   // This is user-triggered by selecting a conversation. Unlike archive pages and
   // searches, it intentionally retrieves the full prompt and response bodies.
+  // Include the selected prompt fallback because legacy/direct records can have
+  // a missing or stale conversation_id while still being the selected exchange.
   url.searchParams.set("select", AGENT_OUTPUT_DETAIL_COLUMNS);
-  url.searchParams.set("conversation_id", `eq.${conversationId}`);
+  url.searchParams.set("or", `(conversation_id.eq.${conversationId},prompt_id.eq.${promptId})`);
   url.searchParams.set("order", "created_at.desc,id.desc");
   url.searchParams.set("limit", String(AGENT_OUTPUT_PAGE_SIZE));
   if (cursor) {

@@ -46,6 +46,30 @@ test("parses terminal questions from a fenced planner response", () => {
   }]);
 });
 
+test("parses numbered or unlettered answer choices into interactive options", () => {
+  const parsed = parsePlanningReply(`## Plan
+
+Build the feature.
+
+## Questions
+
+1. **Which refresh behavior should be used?**
+   1. Re-fetch the selected exchange
+   2. Reload the whole page
+
+2. **Keep archived detail visible?**
+   - Yes
+   - No`);
+
+  assert.deepEqual(parsed.questions, [{
+    question: "Which refresh behavior should be used?",
+    options: ["Re-fetch the selected exchange", "Reload the whole page"],
+  }, {
+    question: "Keep archived detail visible?",
+    options: ["Yes", "No"],
+  }]);
+});
+
 test("keeps malformed question sections in the visible plan", () => {
   const reply = "## Plan\n\n## Questions\n\n1. **[Use a cache?]**:";
 
@@ -55,6 +79,6 @@ test("keeps malformed question sections in the visible plan", () => {
 test("formats accumulated question answers", () => {
   assert.equal(
     buildPlanningAnswersSuffix([{ question: "Use a cache?", answer: "Other" }]),
-    "The following questions have been asked alongside their answers:\n\n1. Use a cache? — Other",
+    "Use a cache?: 1. Other",
   );
 });

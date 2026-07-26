@@ -394,7 +394,7 @@ class BuildCodexPromptTests(unittest.TestCase):
 
         self.assertIn("Refine the following current implementation plan", prompt)
         self.assertIn("# Existing plan", prompt)
-        self.assertIn("1. Use cache? — Yes", prompt)
+        self.assertIn("Use cache?: 1. Yes", prompt)
 
     def test_omits_empty_planning_refinement_context(self):
         self.assertEqual(build_planning_refinement_context("", []), "")
@@ -1165,7 +1165,7 @@ class RunCursorExecTests(unittest.TestCase):
         self.assertTrue(prompt.startswith(TASK_MODE_PLANNING))
         self.assertIn(PLANNING_PROMPT_SUFFIX.rstrip(), prompt)
         self.assertIn("# Existing plan", prompt)
-        self.assertIn("1. Use cache? — Yes", prompt)
+        self.assertIn("Use cache?: 1. Yes", prompt)
         self.assertTrue(prompt.endswith("Build the feature"))
 
     def test_returns_actionable_response_for_invalid_cursor_json(self):

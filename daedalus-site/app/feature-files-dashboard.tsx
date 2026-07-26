@@ -1622,6 +1622,7 @@ export default function FeatureFilesDashboard({
       pendingQuestions: [],
       questionIndex: 0,
       activePlanningPromptId: promptId,
+      questionPromptId: "",
     });
     setPromptStatus("Answers saved. Refining the plan.");
     setSelectedHistoryPromptId(promptId);
@@ -1982,6 +1983,7 @@ export default function FeatureFilesDashboard({
         pendingQuestions: parsedReply.questions,
         questionIndex: 0,
         activePlanningPromptId: "",
+        questionPromptId: parsedReply.questions.length > 0 ? exchange.promptId : "",
       };
     });
     if (activePromptId.current === exchange.promptId) {
