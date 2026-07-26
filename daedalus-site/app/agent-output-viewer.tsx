@@ -28,6 +28,7 @@ import {
   reconcileRecentAgentOutputHistory,
   removeDeletedAgentOutputHistory,
   rerankAgentOutputSearch,
+  selectAgentOutputExchange,
   searchAgentOutputArchive,
   type AgentOutputCursor,
   type AgentOutputExchange,
@@ -87,7 +88,7 @@ export default function AgentOutputViewer({
   const [loadingMore, setLoadingMore] = useState(false);
   const [deletingPromptId, setDeletingPromptId] = useState("");
   const [deletedPromptIds, setDeletedPromptIds] = useState<string[]>([]);
-  const [pendingDurableDeletionPromptIds, setPendingDurableDeletionPromptIds] = useState<string[]>([]);
+  const [selectionClearedByDeletion, setSelectionClearedByDeletion] = useState(false);
   const [fetchError, setFetchError] = useState("");
   const [archiveError, setArchiveError] = useState("");
   const [liveStateError, setLiveStateError] = useState("");
@@ -243,10 +244,9 @@ export default function AgentOutputViewer({
   const deletedPromptIdSet = useMemo(
     () => new Set([
       ...deletedPromptIds,
-      ...pendingDurableDeletionPromptIds,
       ...synchronizedDeletedPromptIds,
     ]),
-    [deletedPromptIds, pendingDurableDeletionPromptIds, synchronizedDeletedPromptIds],
+    [deletedPromptIds, synchronizedDeletedPromptIds],
   );
   const exchanges = useMemo(() => mergeAgentOutputRecords(archive, liveExchanges)
     .filter((exchange) => !deletedPromptIdSet.has(exchange.promptId))
@@ -264,8 +264,12 @@ export default function AgentOutputViewer({
     : selectedGroupKey === "unscoped"
       ? visibleSource.filter((exchange) => exchange.targetedFeaturePaths.length === 0)
       : groups.find((group) => group.key === selectedGroupKey)?.exchanges ?? [];
-  const selected = exchanges.find((exchange) => exchange.promptId === selectedPromptId)
-    ?? visibleExchanges[0] ?? null;
+  const selected = selectAgentOutputExchange(
+    exchanges, visibleExchanges, selectedPromptId, selectionClearedByDeletion,
+  );
+  const serverPendingDurableDeletionCount = deletionRequestPromptIds.filter((promptId) => (
+    !confirmedDeletedPromptIds.includes(promptId) && !deletionRequestErrors[promptId]
+  )).length;
   const conversationTurns = useMemo(() => selected
     ? exchanges.filter((exchange) => exchange.conversationId === selected.conversationId)
       .sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt) || left.id.localeCompare(right.id))
@@ -492,9 +496,8 @@ export default function AgentOutputViewer({
     try {
       if (exchange.source === "durable_task" && exchange.taskId) {
         await onDeleteDurableTask(exchange);
-        setPendingDurableDeletionPromptIds((current) => current.includes(exchange.promptId)
-          ? current : [...current, exchange.promptId]);
         if (selectedPromptId === exchange.promptId) {
+          setSelectionClearedByDeletion(true);
           onSelectedPromptIdChange("");
           setMobileDetail(false);
         }
@@ -515,6 +518,7 @@ export default function AgentOutputViewer({
         return next;
       });
       if (selectedPromptId === exchange.promptId) {
+        setSelectionClearedByDeletion(true);
         onSelectedPromptIdChange("");
         setMobileDetail(false);
       }
@@ -612,7 +616,7 @@ export default function AgentOutputViewer({
                   ) : null}
                   <button
                     type="button"
-                    onClick={() => { setArchitectureError(""); onArchitectureCanvasPromptChange(""); onSelectedPromptIdChange(exchange.promptId); setMobileDetail(true); }}
+                    onClick={() => { setArchitectureError(""); setSelectionClearedByDeletion(false); onArchitectureCanvasPromptChange(""); onSelectedPromptIdChange(exchange.promptId); setMobileDetail(true); }}
                     className={`w-full min-w-0 p-3 text-left ${canDelete ? "pr-10" : ""}`}
                   >
                     <div className="flex items-center justify-between gap-2"><span className="rounded-full bg-white/8 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-100">{AGENT_OUTPUT_STATUS_LABELS[exchange.status]}</span><time className={`text-[10px] text-slate-500 ${canDelete ? "mr-6" : ""}`}>{formatTime(exchange.completedAt ?? exchange.updatedAt)}</time></div>
@@ -645,6 +649,7 @@ export default function AgentOutputViewer({
           <button type="button" onClick={onClose} className="hidden rounded-full border border-white/10 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10 md:block">Close</button>
         </div>
         <div className="agent-chat-scrollbar min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
+          {serverPendingDurableDeletionCount ? <p className="mb-4 rounded-xl border border-amber-400/20 bg-amber-500/10 p-3 text-sm text-amber-100">Deletion pending for {serverPendingDurableDeletionCount} durable {serverPendingDurableDeletionCount === 1 ? "task" : "tasks"}. The task remains hidden until daemon worktree cleanup finishes.</p> : null}
           {archiveError ? <p className="mb-4 rounded-xl border border-rose-400/20 bg-rose-500/10 p-3 text-sm text-rose-100">Archive: {archiveError} Loaded results remain available.</p> : null}
           {liveStateError ? <p className="mb-4 rounded-xl border border-amber-400/20 bg-amber-500/10 p-3 text-sm text-amber-100">Live state: {liveStateError} Archive results remain available.</p> : null}
           {fetchError ? <p className="mb-4 rounded-xl border border-rose-400/20 bg-rose-500/10 p-3 text-sm text-rose-100">{fetchError} Loaded results remain available.</p> : null}

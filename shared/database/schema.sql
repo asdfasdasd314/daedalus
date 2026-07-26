@@ -1070,6 +1070,23 @@ declare result jsonb;begin
  select jsonb_build_object('activeRequest',case when q.id is null then null else jsonb_build_object('id',q.id,'status',q.status,'updated_at',q.updated_at)end,'drainSummary',case when q.status<>'draining' then null else daemon_manager_get_drain_summary(p_user_id,p_manager_instance_id)end)into result from daemon_manager_state s left join daemon_manager_requests q on q.id=s.active_request_id and q.message='daemon_review' where s.user_id=p_user_id and s.manager_instance_id=p_manager_instance_id;return result;
 end; $$;
 
+-- Confirmed direct-prompt archive deletion.  A null return means that no owned,
+-- terminal direct-prompt history row was eligible for deletion.
+create or replace function delete_terminal_direct_prompt_agent_output_history(p_prompt_id text)
+returns text language plpgsql security definer set search_path = public as $$
+declare deleted_prompt_id text;
+begin
+ if auth.uid() is null then raise exception 'Authentication required'; end if;
+ delete from agent_output_history
+ where user_id=auth.uid() and prompt_id=p_prompt_id and source='direct_prompt'
+   and status in ('completed','failed','blocked','cancelled')
+ returning prompt_id into deleted_prompt_id;
+ return deleted_prompt_id;
+end;
+$$;
+revoke all on function delete_terminal_direct_prompt_agent_output_history(text) from public;
+grant execute on function delete_terminal_direct_prompt_agent_output_history(text) to authenticated;
+
 -- Task-scoped integration compatibility contract (migration 038 snapshot).
 create or replace function daemon_update_agent_task(p_user_id uuid,p_task_id uuid,p_expected_status text,p_updates jsonb)
 returns boolean language plpgsql security definer set search_path=public as $$

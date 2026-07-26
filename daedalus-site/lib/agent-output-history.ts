@@ -459,23 +459,35 @@ export function canDeleteAgentOutput(exchange: Pick<AgentOutputExchange, "status
   return TERMINAL_AGENT_OUTPUT_STATUSES.has(exchange.status);
 }
 
+export function selectAgentOutputExchange(
+  exchanges: AgentOutputExchange[],
+  visibleExchanges: AgentOutputExchange[],
+  selectedPromptId: string,
+  preserveEmptySelection = false,
+) {
+  return exchanges.find((exchange) => exchange.promptId === selectedPromptId)
+    ?? (preserveEmptySelection ? null : visibleExchanges[0] ?? null);
+}
+
 export async function deleteAgentOutputHistory(
   supabaseUrl: string,
   publishableKey: string,
   accessToken: string,
   promptId: string,
 ) {
-  const url = new URL("/rest/v1/agent_output_history", supabaseUrl);
-  url.searchParams.set("prompt_id", `eq.${promptId}`);
-  url.searchParams.set("status", "in.(completed,failed,blocked,cancelled)");
-  const response = await fetch(url, {
-    method: "DELETE",
+  const response = await fetch(new URL("/rest/v1/rpc/delete_terminal_direct_prompt_agent_output_history", supabaseUrl), {
+    method: "POST",
     headers: {
       ...historyHeaders(publishableKey, accessToken),
-      Prefer: "return=minimal",
+      "Content-Type": "application/json",
     },
+    body: JSON.stringify({ p_prompt_id: promptId }),
   });
   if (!response.ok) {
     throw new Error((await response.text()) || `History delete failed (${response.status}).`);
+  }
+  const deletedPromptId = await response.json() as unknown;
+  if (deletedPromptId !== promptId) {
+    throw new Error("This direct-prompt history entry was not deleted. Refresh and try again.");
   }
 }

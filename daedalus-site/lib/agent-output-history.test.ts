@@ -9,6 +9,8 @@ import {
   removeDeletedAgentOutputHistory,
   reconcileRecentAgentOutputHistory,
   rerankAgentOutputSearch,
+  deleteAgentOutputHistory,
+  selectAgentOutputExchange,
   type AgentOutputExchange,
 } from "./agent-output-history";
 
@@ -224,4 +226,41 @@ test("confirmed durable deletion cannot be resurrected by a late archive refresh
   const result = reconcileRecentAgentOutputHistory([exchange()], [exchange()], deleted);
   assert.equal(result.some((item) => item.promptId === "prompt-1"), false);
   assert.deepEqual(removeDeletedAgentOutputHistory([exchange()], deleted), []);
+});
+
+test("deleting the selected exchange preserves an intentionally empty detail pane", () => {
+  const remaining = exchange({ id: "row-2", promptId: "prompt-2" });
+  assert.equal(selectAgentOutputExchange([remaining], [remaining], "", true), null);
+  assert.equal(selectAgentOutputExchange([remaining], [remaining], "", false)?.promptId, "prompt-2");
+});
+
+test("direct deletion only succeeds when the RPC confirms the prompt id", async () => {
+  const originalFetch = globalThis.fetch;
+  let requestUrl = "";
+  let requestMethod = "";
+  globalThis.fetch = async (input, init) => {
+    requestUrl = String(input);
+    requestMethod = init?.method ?? "GET";
+    return new Response(JSON.stringify("prompt-1"), { status: 200 });
+  };
+  try {
+    await deleteAgentOutputHistory("https://example.supabase.co", "key", "token", "prompt-1");
+    assert.match(requestUrl, /rpc\/delete_terminal_direct_prompt_agent_output_history$/);
+    assert.equal(requestMethod, "POST");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("direct deletion keeps the exchange when the RPC reports no eligible row", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response("null", { status: 200 });
+  try {
+    await assert.rejects(
+      deleteAgentOutputHistory("https://example.supabase.co", "key", "token", "prompt-1"),
+      /was not deleted/,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

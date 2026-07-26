@@ -1,4 +1,5 @@
 import json
+import logging
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
@@ -70,14 +71,30 @@ class GitWorktreeOrchestrator:
     def _handle_task_deletion_requests(self, tasks: list[dict]) -> None:
         tasks_by_id = {str(task["id"]): task for task in tasks}
         for request in list_task_deletion_requests(self.config):
+            request_id = str(request["id"])
             task = tasks_by_id.get(str(request["task_id"]))
             if task is None:
-                complete_task_deletion(self.config, str(request["id"]), "Task is no longer available for deletion.")
+                completed = complete_task_deletion(self.config, request_id, "Task is no longer available for deletion.")
+                if not completed:
+                    logging.warning("Task deletion request completion was not accepted: request_id=%s", request_id)
                 continue
-            worktree_path = str(task.get("worktree_path") or "")
-            if worktree_path and Path(worktree_path).is_dir():
-                remove_worktree(str(task["repository"]), worktree_path, force=True)
-            complete_task_deletion(self.config, str(request["id"]))
+            try:
+                worktree_path = str(task.get("worktree_path") or "")
+                if worktree_path and Path(worktree_path).is_dir() and not remove_worktree(
+                    str(task["repository"]), worktree_path, force=True,
+                ):
+                    raise RuntimeError(f"Unable to remove task worktree: {worktree_path}")
+            except Exception as error:
+                completed = complete_task_deletion(self.config, request_id, str(error))
+                if not completed:
+                    logging.warning(
+                        "Task deletion rejection was not accepted: request_id=%s error=%s",
+                        request_id, error,
+                    )
+                continue
+            completed = complete_task_deletion(self.config, request_id)
+            if not completed:
+                logging.warning("Task deletion completion was not accepted: request_id=%s", request_id)
 
     def run_cycle(self, snapshot: dict | None = None) -> None:
         tasks = snapshot.get("agentTasks", []) if snapshot is not None else list_agent_tasks(self.config)

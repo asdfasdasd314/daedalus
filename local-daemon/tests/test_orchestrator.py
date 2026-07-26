@@ -44,6 +44,34 @@ class MigrationDeploymentEventTests(unittest.TestCase):
         record_event.assert_called_once()
 
 
+class TaskDeletionRequestTests(unittest.TestCase):
+    def test_worktree_removal_failure_rejects_the_request_without_completing_deletion(self):
+        orchestrator = GitWorktreeOrchestrator({"daemonUserId": "user-1"}, lambda *a: "ok", lambda *a: "ok")
+        request = {"id": "request-1", "task_id": "task-1"}
+        task = {"id": "task-1", "repository": "/repo", "worktree_path": "/worktree"}
+        with patch("daedalus_daemon.orchestrator.list_task_deletion_requests", return_value=[request]), \
+             patch("daedalus_daemon.orchestrator.Path.is_dir", return_value=True), \
+             patch("daedalus_daemon.orchestrator.remove_worktree", return_value=False), \
+             patch("daedalus_daemon.orchestrator.complete_task_deletion", return_value=True) as complete:
+            orchestrator._handle_task_deletion_requests([task])
+
+        complete.assert_called_once_with(
+            orchestrator.config, "request-1", "Unable to remove task worktree: /worktree",
+        )
+
+    def test_false_completion_is_logged_after_successful_worktree_cleanup(self):
+        orchestrator = GitWorktreeOrchestrator({"daemonUserId": "user-1"}, lambda *a: "ok", lambda *a: "ok")
+        request = {"id": "request-1", "task_id": "task-1"}
+        task = {"id": "task-1", "repository": "/repo", "worktree_path": ""}
+        with patch("daedalus_daemon.orchestrator.list_task_deletion_requests", return_value=[request]), \
+             patch("daedalus_daemon.orchestrator.complete_task_deletion", return_value=False) as complete, \
+             self.assertLogs("root", "WARNING") as logs:
+            orchestrator._handle_task_deletion_requests([task])
+
+        complete.assert_called_once_with(orchestrator.config, "request-1")
+        self.assertIn("completion was not accepted", "\n".join(logs.output))
+
+
 class WorktreeSettingsTests(unittest.TestCase):
     def test_loads_flat_shell_free_settings(self):
         with tempfile.TemporaryDirectory() as directory:
