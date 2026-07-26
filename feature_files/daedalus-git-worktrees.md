@@ -41,6 +41,8 @@ Daedalus Git Worktrees isolates agent-mode prompts on task branches and uses a d
 HACKING
 
 ## State Log
+
+- 2026-07-26: Made task-worktree cleanup idempotent with Git worktree validation and an absent-path postcondition before durable deletion is acknowledged.
 - 2026-07-11: Initialized the Git worktree isolation and durable agent orchestration feature.
 - 2026-07-11: Implemented durable task and batch storage, per-repository worktree scheduling, independent and combined verification, resolver retries, local fast-forward promotion, restart-safe blocking, and dashboard status reporting.
 - 2026-07-11: Centralized orchestrator configuration in Daedalus so managed repositories no longer require their own worktree parameter file.

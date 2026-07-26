@@ -118,6 +118,7 @@ export default function AgentOutputViewer({
   const refreshLiveTasksRef = useRef(onRefreshLiveTasks);
   const selectedPromptIdRef = useRef(selectedPromptId);
   const selectedPromptChangeRef = useRef(onSelectedPromptIdChange);
+  const confirmedDeletionRef = useRef(new Set<string>());
 
   useEffect(() => {
     refreshLiveTasksRef.current = onRefreshLiveTasks;
@@ -192,6 +193,7 @@ export default function AgentOutputViewer({
   // Completed deletion is stronger than filtering: remove stale archive, search,
   // detail, and conversation-cache records so later responses cannot revive it.
   useEffect(() => {
+    confirmedDeletionRef.current = new Set(confirmedDeletedPromptIds);
     if (!confirmedDeletedPromptIds.length) return;
     const deleted = new Set(confirmedDeletedPromptIds);
     setArchive((current) => removeDeletedAgentOutputHistory(current, deleted));
@@ -201,6 +203,7 @@ export default function AgentOutputViewer({
       if (retained.length) conversationCacheRef.current.set(conversationId, retained);
       else conversationCacheRef.current.delete(conversationId);
     }
+    detailRequestGenerationRef.current += 1;
   }, [confirmedDeletedPromptIds]);
 
   useEffect(() => {
@@ -363,6 +366,7 @@ export default function AgentOutputViewer({
       supabaseUrl, supabasePublishableKey, accessToken, conversationId, selected.promptId,
     ).then((turns) => {
       if (generation !== detailRequestGenerationRef.current) return;
+      if (turns.some((turn) => confirmedDeletionRef.current.has(turn.promptId))) return;
       conversationCacheRef.current.set(conversationId, turns);
       setArchive((current) => removeDeletedAgentOutputHistory(
         dedupeAgentOutputs([...current, ...turns]), confirmedDeletedPromptIds,
@@ -448,7 +452,9 @@ export default function AgentOutputViewer({
       if (detailResult.status === "fulfilled") {
         const refreshedConversation = detailResult.value;
         if (refreshedConversationId && refreshedConversation) {
-          conversationCacheRef.current.set(refreshedConversationId, refreshedConversation);
+          if (!refreshedConversation.some((turn) => confirmedDeletionRef.current.has(turn.promptId))) {
+            conversationCacheRef.current.set(refreshedConversationId, refreshedConversation);
+          }
           setArchive((current) => removeDeletedAgentOutputHistory(
             dedupeAgentOutputs([...current, ...refreshedConversation]), confirmedDeletedPromptIds,
           ));

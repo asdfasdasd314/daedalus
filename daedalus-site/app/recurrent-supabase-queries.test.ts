@@ -46,6 +46,10 @@ const deletionRefreshMigrationSource = readFileSync(
   new URL("../../supabase/migrations/040_durable_task_deletion_refresh_state.sql", import.meta.url),
   "utf8",
 );
+const deletionConfirmationMigrationSource = readFileSync(
+  new URL("../../supabase/migrations/041_confirm_worktree_cleanup_before_task_deletion.sql", import.meta.url),
+  "utf8",
+);
 const canonicalSchemaSource = readFileSync(
   new URL("../../shared/database/schema.sql", import.meta.url),
   "utf8",
@@ -264,6 +268,11 @@ test("durable deletion refresh reads server state and purges confirmed archive c
   assert.match(historySource, /serverPendingDurableDeletionCount/);
   assert.match(deletionRefreshMigrationSource, /agent_task_deletion_requests_viewer_state_idx/);
   assert.match(deletionRefreshMigrationSource, /grant select on agent_task_deletion_requests to authenticated/);
+  assert.match(deletionConfirmationMigrationSource, /daemon confirms the task worktree is absent/);
+  assert.match(deletionConfirmationMigrationSource, /updated_at=request_row.expected_updated_at/);
+  assert.match(dashboardSource, /task\.durableTaskId !== request\.task_id/);
+  assert.match(dashboardSource, /completedTaskIds\.includes\(entry\.durableTaskId/);
+  assert.match(historySource, /confirmedDeletionRef/);
 });
 
 test("completed durable outputs expose a persistent architecture rail action", () => {

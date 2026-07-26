@@ -17,6 +17,7 @@ from daedalus_daemon.orchestrator import (
     build_task_repair_prompt,
     build_task_prompt,
     commit_worktree_changes,
+    cleanup_task_worktree,
     create_task_worktree,
     is_clean_worktree,
     load_worktree_settings,
@@ -50,8 +51,7 @@ class TaskDeletionRequestTests(unittest.TestCase):
         request = {"id": "request-1", "task_id": "task-1"}
         task = {"id": "task-1", "repository": "/repo", "worktree_path": "/worktree"}
         with patch("daedalus_daemon.orchestrator.list_task_deletion_requests", return_value=[request]), \
-             patch("daedalus_daemon.orchestrator.Path.is_dir", return_value=True), \
-             patch("daedalus_daemon.orchestrator.remove_worktree", return_value=False), \
+             patch("daedalus_daemon.orchestrator.cleanup_task_worktree", return_value=False), \
              patch("daedalus_daemon.orchestrator.complete_task_deletion", return_value=True) as complete:
             orchestrator._handle_task_deletion_requests([task])
 
@@ -70,6 +70,20 @@ class TaskDeletionRequestTests(unittest.TestCase):
 
         complete.assert_called_once_with(orchestrator.config, "request-1")
         self.assertIn("completion was not accepted", "\n".join(logs.output))
+
+    def test_missing_worktree_is_already_cleaned_without_git_removal(self):
+        with patch("daedalus_daemon.orchestrator.Path.exists", return_value=False), \
+             patch("daedalus_daemon.orchestrator.remove_worktree") as remove:
+            self.assertTrue(cleanup_task_worktree("/repo", "/missing", force=True))
+        remove.assert_not_called()
+
+    def test_worktree_cleanup_requires_an_absent_postcondition(self):
+        with patch("daedalus_daemon.orchestrator.Path.exists", side_effect=[True, True]), \
+             patch("daedalus_daemon.orchestrator.Path.is_dir", return_value=True), \
+             patch("daedalus_daemon.orchestrator.Path.resolve", return_value=Path("/worktree")), \
+             patch("daedalus_daemon.orchestrator.git_output", return_value="/worktree"), \
+             patch("daedalus_daemon.orchestrator.remove_worktree", return_value=True):
+            self.assertFalse(cleanup_task_worktree("/repo", "/worktree", force=True))
 
 
 class WorktreeSettingsTests(unittest.TestCase):
@@ -449,12 +463,12 @@ class CancelOrchestratorTests(unittest.TestCase):
         self.assertTrue(reply_indicates_cancel("Codex was cancelled before execution"))
         self.assertFalse(reply_indicates_cancel("Cursor failed with exit code 1"))
 
-    @patch("daedalus_daemon.orchestrator.remove_worktree")
+    @patch("daedalus_daemon.orchestrator.cleanup_task_worktree")
     @patch("daedalus_daemon.orchestrator.record_daemon_event")
     @patch("daedalus_daemon.orchestrator.update_agent_task", return_value=True)
     @patch("daedalus_daemon.orchestrator.load_worktree_settings")
     def test_cancels_queued_task_before_admit(
-        self, mock_settings, mock_update, mock_event, mock_remove
+        self, mock_settings, mock_update, mock_event, mock_cleanup
     ):
         mock_settings.return_value = {"cancelKillGraceSeconds": 2}
         orchestrator = GitWorktreeOrchestrator({}, lambda *a: "", lambda *a: "")
@@ -473,14 +487,14 @@ class CancelOrchestratorTests(unittest.TestCase):
         self.assertEqual(mock_update.call_args[0][3]["status"], "cancelled")
         self.assertEqual(mock_update.call_args[0][3]["error"], CANCELLED_BY_USER)
         mock_event.assert_called_once()
-        mock_remove.assert_not_called()
+        mock_cleanup.assert_not_called()
 
-    @patch("daedalus_daemon.orchestrator.remove_worktree")
+    @patch("daedalus_daemon.orchestrator.cleanup_task_worktree")
     @patch("daedalus_daemon.orchestrator.record_daemon_event")
     @patch("daedalus_daemon.orchestrator.update_agent_task", return_value=True)
     @patch("daedalus_daemon.orchestrator.load_worktree_settings")
     def test_kills_running_task_and_marks_cancelled_when_no_future(
-        self, mock_settings, mock_update, mock_event, mock_remove
+        self, mock_settings, mock_update, mock_event, mock_cleanup
     ):
         mock_settings.return_value = {"cancelKillGraceSeconds": 1.5}
         killed = []
@@ -505,7 +519,7 @@ class CancelOrchestratorTests(unittest.TestCase):
         self.assertEqual(killed, [("task-2", 1.5)])
         mock_update.assert_called_once()
         self.assertEqual(mock_update.call_args[0][3]["status"], "cancelled")
-        mock_remove.assert_called_once_with("/repo", "/tmp/worktree", force=True)
+        mock_cleanup.assert_called_once_with("/repo", "/tmp/worktree", force=True)
         mock_event.assert_called_once()
 
     @patch("daedalus_daemon.orchestrator.get_agent_task_control")
@@ -549,12 +563,12 @@ class CancelOrchestratorTests(unittest.TestCase):
         self.assertTrue(outcome["cancelled"])
         self.assertEqual(outcome["error"], CANCELLED_BY_USER)
 
-    @patch("daedalus_daemon.orchestrator.remove_worktree")
+    @patch("daedalus_daemon.orchestrator.cleanup_task_worktree")
     @patch("daedalus_daemon.orchestrator.record_daemon_event")
     @patch("daedalus_daemon.orchestrator.update_agent_task", return_value=True)
     @patch("daedalus_daemon.orchestrator.load_worktree_settings")
     def test_ready_cancel_removes_only_the_task_worktree(
-        self, mock_settings, mock_update, mock_event, mock_remove
+        self, mock_settings, mock_update, mock_event, mock_cleanup
     ):
         mock_settings.return_value = {"cancelKillGraceSeconds": 2}
         orchestrator = GitWorktreeOrchestrator({}, lambda *a: "", lambda *a: "")
@@ -569,14 +583,14 @@ class CancelOrchestratorTests(unittest.TestCase):
         orchestrator._handle_cancel_requests([task])
 
         self.assertEqual(mock_update.call_args[0][3]["status"], "cancelled")
-        mock_remove.assert_called_once_with("/repo", "/tmp/worktree", force=True)
+        mock_cleanup.assert_called_once_with("/repo", "/tmp/worktree", force=True)
         mock_event.assert_called_once()
 
     @patch("daedalus_daemon.orchestrator.record_daemon_event")
     @patch("daedalus_daemon.orchestrator.update_agent_task", return_value=True)
-    @patch("daedalus_daemon.orchestrator.remove_worktree")
+    @patch("daedalus_daemon.orchestrator.cleanup_task_worktree")
     def test_restart_recovery_honors_cancel_requested(
-        self, mock_remove, mock_update, mock_event
+        self, mock_cleanup, mock_update, mock_event
     ):
         orchestrator = GitWorktreeOrchestrator({}, lambda *a: "", lambda *a: "")
         task = {
@@ -590,7 +604,7 @@ class CancelOrchestratorTests(unittest.TestCase):
         orchestrator._recover_interrupted_work([task])
 
         self.assertEqual(mock_update.call_args[0][3]["status"], "cancelled")
-        mock_remove.assert_called_once_with("/repo", "/tmp/worktree", force=True)
+        mock_cleanup.assert_called_once_with("/repo", "/tmp/worktree", force=True)
         mock_event.assert_called_once()
 
     @patch("daedalus_daemon.orchestrator.run_process")
@@ -602,34 +616,29 @@ class CancelOrchestratorTests(unittest.TestCase):
             ["git", "worktree", "remove", "--force", "/tmp/worktree"],
         )
 
-    @patch("daedalus_daemon.orchestrator.run_process")
-    def test_successful_task_cleanup_removes_worktree_then_merged_branch(self, mock_process):
-        mock_process.return_value.returncode = 0
+    @patch("daedalus_daemon.orchestrator.delete_merged_branch", return_value=True)
+    @patch("daedalus_daemon.orchestrator.cleanup_task_worktree", return_value=True)
+    def test_successful_task_cleanup_removes_worktree_then_merged_branch(self, mock_cleanup, mock_branch):
 
         cleaned = remove_task_worktree_and_branch(
             "/repo", "/tmp/worktree", "agent/task-1"
         )
 
         self.assertTrue(cleaned)
-        self.assertEqual(mock_process.call_args_list[0].args, (
-            "/repo", ["git", "worktree", "remove", "/tmp/worktree"],
-        ))
-        self.assertEqual(mock_process.call_args_list[1].args, (
-            "/repo", ["git", "branch", "--delete", "agent/task-1"],
-        ))
+        mock_cleanup.assert_called_once_with("/repo", "/tmp/worktree")
+        mock_branch.assert_called_once_with("/repo", "agent/task-1")
 
-    @patch("daedalus_daemon.orchestrator.run_process")
-    def test_does_not_delete_branch_when_worktree_cleanup_fails(self, mock_process):
-        mock_process.return_value.returncode = 1
+    @patch("daedalus_daemon.orchestrator.delete_merged_branch")
+    @patch("daedalus_daemon.orchestrator.cleanup_task_worktree", return_value=False)
+    def test_does_not_delete_branch_when_worktree_cleanup_fails(self, mock_cleanup, mock_branch):
 
         cleaned = remove_task_worktree_and_branch(
             "/repo", "/tmp/worktree", "agent/task-1"
         )
 
         self.assertFalse(cleaned)
-        mock_process.assert_called_once_with(
-            "/repo", ["git", "worktree", "remove", "/tmp/worktree"],
-        )
+        mock_cleanup.assert_called_once_with("/repo", "/tmp/worktree")
+        mock_branch.assert_not_called()
 
 
 class MigrationReconcileTests(unittest.TestCase):

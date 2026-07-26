@@ -168,6 +168,7 @@ type AgentPromptPayload = {
 };
 
 type AgentPromptQueueEntry = AgentPromptPayload & {
+  durableTaskId?: string;
   status: AgentPromptQueueStatus;
   enqueuedAt: number;
   sentAt?: number;
@@ -318,6 +319,7 @@ export default function FeatureFilesDashboard({
   >([]);
   const [synchronizedDeletedPromptIds, setSynchronizedDeletedPromptIds] = useState<string[]>([]);
   const [confirmedDeletedPromptIds, setConfirmedDeletedPromptIds] = useState<string[]>([]);
+  const [confirmedDeletedTaskIds, setConfirmedDeletedTaskIds] = useState<string[]>([]);
   const [deletionRequestPromptIds, setDeletionRequestPromptIds] = useState<string[]>([]);
   const [deletionRequestErrors, setDeletionRequestErrors] = useState<Record<string, string>>({});
   const [architectureViews, setArchitectureViews] = useState<
@@ -776,7 +778,7 @@ export default function FeatureFilesDashboard({
           }
           setDurableAgentTasks((current) => {
             const merged = new Map(current.map((row) => [row.promptId, row]));
-            for (const row of queue) merged.set(row.promptId, row);
+            for (const row of queue) if (!confirmedDeletedTaskIds.includes(row.durableTaskId ?? "")) merged.set(row.promptId, row);
             return [...merged.values()].sort((left, right) => left.enqueuedAt - right.enqueuedAt);
           });
           receipts.push(...inbox.agentTasks.map((row) => reviewReceipt("agentTasks", row.id, row.updated_at)));
@@ -786,7 +788,9 @@ export default function FeatureFilesDashboard({
             if (request.status === "completed") {
               setSynchronizedDeletedPromptIds((current) => current.includes(request.prompt_id)
                 ? current : [...current, request.prompt_id]);
-              setDurableAgentTasks((current) => current.filter((task) => task.promptId !== request.task_id));
+              setConfirmedDeletedTaskIds((current) => current.includes(request.task_id)
+                ? current : [...current, request.task_id]);
+              setDurableAgentTasks((current) => current.filter((task) => task.durableTaskId !== request.task_id));
             }
             if (request.status === "rejected") setPromptStatus(request.error || "Task deletion was rejected.");
           }
@@ -885,7 +889,7 @@ export default function FeatureFilesDashboard({
     fetchDaemonPayload<{ projects?: ParameterFileProjects }>(supabaseUrl, supabasePublishableKey, accessToken, currentUserId, PARAMETER_FILES_PAYLOAD_KIND)
       .then((body) => { if (body) setParameterProjects(body.projects ?? {}); setEntryPointUpdateError(""); setIsEntryPointUpdatePending(false); })
       .catch(() => { setEntryPointUpdateError("The entry point changed, but refreshed parameters were unavailable."); setIsEntryPointUpdatePending(false); });
-  }, [accessToken, currentUser, currentUserId, entryPointUpdateMessage, supabasePublishableKey, supabaseUrl]);
+  }, [accessToken, confirmedDeletedTaskIds, currentUser, currentUserId, entryPointUpdateMessage, supabasePublishableKey, supabaseUrl]);
 
   const rehydrateDurableAgentTasks = useCallback(async () => {
     if (!currentUser || !accessToken) return;
@@ -902,15 +906,19 @@ export default function FeatureFilesDashboard({
     const completedPromptIds = deletionRequests
       .filter((request) => request.status === "completed")
       .map((request) => request.prompt_id);
+    const completedTaskIds = deletionRequests
+      .filter((request) => request.status === "completed")
+      .map((request) => request.task_id);
     const rejectedErrors = Object.fromEntries(deletionRequests
       .filter((request) => request.status === "rejected")
       .map((request) => [request.prompt_id, request.error || "Task deletion was rejected."]));
     setSynchronizedDeletedPromptIds(hiddenPromptIds);
     setConfirmedDeletedPromptIds(completedPromptIds);
+    setConfirmedDeletedTaskIds(completedTaskIds);
     setDeletionRequestPromptIds(deletionRequests.map((request) => request.prompt_id));
     setDeletionRequestErrors(rejectedErrors);
     const activeEntries = rows.map(mapAgentTaskRowToQueueEntry);
-    setDurableAgentTasks(activeEntries.sort(
+    setDurableAgentTasks(activeEntries.filter((entry) => !completedTaskIds.includes(entry.durableTaskId ?? "")).sort(
       (left, right) => left.enqueuedAt - right.enqueuedAt,
     ));
     for (const row of rows) {
@@ -930,6 +938,7 @@ export default function FeatureFilesDashboard({
     setDurableAgentTasks([]);
     setSynchronizedDeletedPromptIds([]);
     setConfirmedDeletedPromptIds([]);
+    setConfirmedDeletedTaskIds([]);
     setDeletionRequestPromptIds([]);
     setDeletionRequestErrors({});
     setArchitectureViews({});
@@ -1914,7 +1923,7 @@ export default function FeatureFilesDashboard({
       currentQueue.filter((item) => item.promptId !== exchange.promptId),
     );
     setDurableAgentTasks((currentTasks) =>
-      currentTasks.filter((item) => item.promptId !== exchange.promptId && item.promptId !== exchange.taskId),
+      currentTasks.filter((item) => item.durableTaskId !== exchange.taskId),
     );
     setFinalizedDurableTaskCount((count) => Math.max(0, count - (exchange.taskId ? 1 : 0)));
 
@@ -1945,7 +1954,7 @@ export default function FeatureFilesDashboard({
     ): HistoryExchange => ({
       id: entry.promptId,
       promptId: entry.promptId,
-      taskId: source === "durable_task" ? entry.promptId : null,
+      taskId: source === "durable_task" ? entry.durableTaskId ?? null : null,
       repository: entry.directory,
       prompt: entry.prompt,
       output: "",
@@ -4500,6 +4509,7 @@ function parseAgentPromptRowMessage(message: string): ParsedAgentPromptRow | nul
 function mapAgentTaskRowToQueueEntry(row: AgentTaskRow): AgentPromptQueueEntry {
   return {
     promptId: row.id,
+    durableTaskId: row.id,
     directory: row.repository,
     prompt: row.prompt,
     provider: row.provider,

@@ -80,9 +80,7 @@ class GitWorktreeOrchestrator:
                 continue
             try:
                 worktree_path = str(task.get("worktree_path") or "")
-                if worktree_path and Path(worktree_path).is_dir() and not remove_worktree(
-                    str(task["repository"]), worktree_path, force=True,
-                ):
+                if not cleanup_task_worktree(str(task["repository"]), worktree_path, force=True):
                     raise RuntimeError(f"Unable to remove task worktree: {worktree_path}")
             except Exception as error:
                 completed = complete_task_deletion(self.config, request_id, str(error))
@@ -146,8 +144,8 @@ class GitWorktreeOrchestrator:
                     worktree_path,
                     str(task.get("branch_name") or ""),
                 )
-            elif task["status"] == "cancelled" and worktree_path and Path(worktree_path).is_dir():
-                remove_worktree(str(task["repository"]), worktree_path, force=True)
+            elif task["status"] == "cancelled":
+                cleanup_task_worktree(str(task["repository"]), worktree_path, force=True)
 
         for repository in repositories:
             prune_worktrees(repository)
@@ -226,7 +224,7 @@ class GitWorktreeOrchestrator:
             return False
         worktree_path = str(task.get("worktree_path") or "")
         if force_remove and worktree_path:
-            remove_worktree(str(task["repository"]), worktree_path, force=True)
+            cleanup_task_worktree(str(task["repository"]), worktree_path, force=True)
         self.task_futures.pop(task_id, None)
         record_daemon_event(
             self.config,
@@ -560,7 +558,7 @@ class GitWorktreeOrchestrator:
                     "error": CANCELLED_BY_USER,
                     "completed_at": utc_now(),
                 })
-                remove_worktree(
+                cleanup_task_worktree(
                     str(task["repository"]),
                     str(task.get("worktree_path") or ""),
                     force=True,
@@ -980,6 +978,25 @@ def remove_worktree(repository: str, worktree_path: str, force: bool = False) ->
     return run_process(repository, arguments).returncode == 0
 
 
+def cleanup_task_worktree(repository: str, worktree_path: str, force: bool = False) -> bool:
+    """Remove a task worktree once, accepting an already-absent workspace."""
+    if not worktree_path:
+        return True
+    path = Path(worktree_path)
+    if not path.exists():
+        return True
+    if not path.is_dir():
+        return False
+    try:
+        if git_output(worktree_path, ["rev-parse", "--show-toplevel"]) != str(path.resolve()):
+            return False
+    except RuntimeError:
+        return False
+    if not remove_worktree(repository, worktree_path, force=force):
+        return False
+    return not path.exists()
+
+
 def delete_merged_branch(repository: str, branch_name: str) -> bool:
     if not branch_name:
         return True
@@ -989,7 +1006,7 @@ def delete_merged_branch(repository: str, branch_name: str) -> bool:
 def remove_task_worktree_and_branch(
     repository: str, worktree_path: str, branch_name: str
 ) -> bool:
-    if not remove_worktree(repository, worktree_path):
+    if not cleanup_task_worktree(repository, worktree_path):
         return False
     return delete_merged_branch(repository, branch_name)
 
