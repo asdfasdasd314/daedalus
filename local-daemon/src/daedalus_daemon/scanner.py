@@ -100,21 +100,30 @@ def scan_project_files(
 def find_project_directories(scan_root: Path, directory_name: str) -> list[Path]:
     project_dirs: list[Path] = []
 
-    def scan_directory(current_directory: Path) -> None:
+    def scan_directory(current_directory: Path, allow_descent: bool = True) -> None:
         entries = sorted(os.scandir(current_directory), key=lambda entry: entry.name)
         directory_names = [entry.name for entry in entries if entry.is_dir()]
 
         if directory_name in directory_names:
             project_dirs.append(current_directory / directory_name)
 
-        if "feature_files" in directory_names:
+        is_project = "feature_files" in directory_names
+        if is_project and current_directory != scan_root:
             return
 
         child_directories = [
             Path(entry.path)
             for entry in entries
-            if entry.name != ".daedalus-worktrees" and entry.is_dir(follow_symlinks=False)
+            if entry.name != ".daedalus-worktrees"
+            and entry.is_dir(follow_symlinks=False)
+            and not (Path(entry.path) / ".git").is_file()
         ]
+        if is_project:
+            for child_directory in child_directories:
+                scan_directory(child_directory, allow_descent=False)
+            return
+        if not allow_descent:
+            return
         for child_directory in child_directories:
             scan_directory(child_directory)
 

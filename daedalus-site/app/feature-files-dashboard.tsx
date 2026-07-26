@@ -11,6 +11,15 @@ import AgentTaskNotifications, {
 import GitSyncPanel from "./git-sync-panel";
 import type { GitSyncResult } from "./git-sync-types";
 import { parseGitSyncRowMessage } from "./git-sync-utils";
+import ProjectInitializerPanel from "./project-initializer-panel";
+import type { ProjectInitializationResult } from "./project-initialization-types";
+import {
+  initializationStatusText,
+  isTerminalInitializationStatus,
+  serializeProjectInitializationRequest,
+  shouldApplyInitializationResult,
+  validateProjectName,
+} from "./project-initialization-utils";
 import FeatureFileGraph, {
   type FeatureGraphSelection,
 } from "./feature-file-graph";
@@ -74,9 +83,11 @@ const ENTRY_POINT_UPDATE_PURPOSE = "entry_point_update";
 const ENTRY_POINT_UPDATE_COMMAND = "entry_point_update";
 const AGENT_PROMPT_PURPOSE = "agent_prompt";
 const GIT_SYNC_PURPOSE = "git_sync_request";
+const PROJECT_INITIALIZATION_PURPOSE = "project_initialization_request";
 const FEATURE_FILES_PAYLOAD_KIND = "feature_files";
 const PARAMETER_FILES_PAYLOAD_KIND = "parameter_files";
 const GIT_SYNC_PAYLOAD_KIND = "git_sync_result";
+const PROJECT_INITIALIZATION_PAYLOAD_KIND = "project_initialization_result";
 const DEFAULT_PROJECT_DIRECTORY = "/Users/jameshollingsworth/Projects/daedalus";
 const AGENT_PROMPT_QUEUE_STORAGE_KEY = "agent-prompt-queue-v1";
 const PLANNING_SESSION_STORAGE_KEY = "planning-questionnaire-session-v1";
@@ -96,7 +107,7 @@ const DAEMON_ADMISSION_MESSAGE = "The execution daemon is draining for restart. 
 
 type AuthMode = "sign-in" | "sign-up";
 type DevEnvironmentState = "idle" | "loading" | "ready" | "error";
-type PrimaryOverlay = "feature-detail" | "new-feature" | "git-sync" | null;
+type PrimaryOverlay = "feature-detail" | "new-feature" | "git-sync" | "project-initialization" | null;
 type FeatureDetailTab = "edit" | "info" | "params";
 type WorkspaceView = "feature" | "architecture";
 type VentureProgressState = (typeof VENTURE_PROGRESS_STATES)[number];
@@ -371,6 +382,12 @@ export default function FeatureFilesDashboard({
   const [gitSyncStatus, setGitSyncStatus] = useState("");
   const [gitSyncResult, setGitSyncResult] = useState<GitSyncResult | null>(null);
   const [isGitSyncRequestInFlight, setIsGitSyncRequestInFlight] = useState(false);
+  const [projectInitializationName, setProjectInitializationName] = useState("");
+  const [projectInitializationCreateGitHub, setProjectInitializationCreateGitHub] = useState(false);
+  const [projectInitializationStatus, setProjectInitializationStatus] = useState("");
+  const [projectInitializationResult, setProjectInitializationResult] =
+    useState<ProjectInitializationResult | null>(null);
+  const [isProjectInitializationInFlight, setIsProjectInitializationInFlight] = useState(false);
   const [featureSearchMode, setFeatureSearchMode] =
     useState<FeatureSearchMode | null>(null);
   const [isGraphPhysicsEnabled, setIsGraphPhysicsEnabled] = useState(true);
@@ -419,6 +436,7 @@ export default function FeatureFilesDashboard({
   const initialDevEnvironmentUserIdRef = useRef("");
   const activePromptId = useRef("");
   const activeGitSyncRequestId = useRef("");
+  const activeProjectInitializationRequestId = useRef("");
   const agentPromptQueueRef = useRef<AgentPromptQueueEntry[]>([]);
   const graphZoomProfileRef = useRef("");
   const workspaceMenuRef = useRef<HTMLDivElement | null>(null);
@@ -437,6 +455,18 @@ export default function FeatureFilesDashboard({
   const daemonAcceptsWork = managerStatus === null
     ? true
     : managerOnline && managerStatus.accepts_work;
+
+  const applyProjectInitializationResult = useCallback((result: ProjectInitializationResult) => {
+    if (!shouldApplyInitializationResult(activeProjectInitializationRequestId.current, result)) {
+      return;
+    }
+    setProjectInitializationResult(result);
+    setProjectInitializationStatus(initializationStatusText(result));
+    if (isTerminalInitializationStatus(result.status)) {
+      setIsProjectInitializationInFlight(false);
+      activeProjectInitializationRequestId.current = "";
+    }
+  }, []);
   useEffect(() => {
     const timeout = window.setTimeout(() => {
       setManagerOnline(managerStatus ? isManagerHeartbeatCurrent(managerStatus) : false);
@@ -744,6 +774,8 @@ export default function FeatureFilesDashboard({
               setIsGitSyncRequestInFlight(false);
               activeGitSyncRequestId.current = "";
             }
+          } else if (review.kind === PROJECT_INITIALIZATION_PAYLOAD_KIND) {
+            applyProjectInitializationResult(review.payload as ProjectInitializationResult);
           }
           receipts.push(reviewReceipt("daemonPayloads", review.kind, review.updated_at));
         }
@@ -1115,6 +1147,8 @@ export default function FeatureFilesDashboard({
             setIsGitSyncRequestInFlight(false);
             activeGitSyncRequestId.current = "";
           }
+        } else if (review.kind === PROJECT_INITIALIZATION_PAYLOAD_KIND) {
+          applyProjectInitializationResult(review.payload as ProjectInitializationResult);
         }
         await completeDaemonPayloadReview(
           supabaseUrl, supabasePublishableKey, accessToken, currentUserId,
@@ -1123,11 +1157,19 @@ export default function FeatureFilesDashboard({
       }
     }
 
-    void pollProjectPayloads;
+    void pollProjectPayloads().catch(() => undefined);
     return () => {
       isMounted = false;
     };
-  }, [accessToken, currentUser, currentUserId, pollIntervalMs, supabasePublishableKey, supabaseUrl]);
+  }, [
+    accessToken,
+    applyProjectInitializationResult,
+    currentUser,
+    currentUserId,
+    pollIntervalMs,
+    supabasePublishableKey,
+    supabaseUrl,
+  ]);
 
   useEffect(() => {
     const projectDirectories = Object.keys(projects ?? {});
@@ -2287,6 +2329,62 @@ export default function FeatureFilesDashboard({
     );
   }
 
+  function openProjectInitializationOverlay() {
+    setIsAgentOutputViewerOpen(false);
+    closeWorkspaceMenu();
+    setVenturesDrawerOpen(false);
+    setSelectedFeatureSession(null);
+    setActivePrimaryOverlay("project-initialization");
+  }
+
+  function closeProjectInitializationOverlay() {
+    setActivePrimaryOverlay((currentOverlay) =>
+      currentOverlay === "project-initialization" ? null : currentOverlay,
+    );
+  }
+
+  async function sendProjectInitializationRequest() {
+    if (!currentUser || !accessToken || isProjectInitializationInFlight) return;
+    if (!daemonAcceptsWork) {
+      setProjectInitializationStatus(DAEMON_ADMISSION_MESSAGE);
+      return;
+    }
+    const validationError = validateProjectName(projectInitializationName);
+    if (validationError) {
+      setProjectInitializationStatus(validationError);
+      return;
+    }
+    const requestId = createPromptId();
+    activeProjectInitializationRequestId.current = requestId;
+    setIsProjectInitializationInFlight(true);
+    setProjectInitializationResult(null);
+    setProjectInitializationStatus("Sending initialization request to Supabase.");
+    try {
+      await updateMessage(
+        supabaseUrl,
+        supabasePublishableKey,
+        accessToken,
+        currentUserId,
+        PROJECT_INITIALIZATION_PURPOSE,
+        JSON.stringify(serializeProjectInitializationRequest(
+          requestId,
+          projectInitializationName,
+          projectInitializationCreateGitHub,
+        )),
+      );
+      refreshInboxRef.current();
+      setProjectInitializationStatus("Request queued. Waiting for daemon pickup.");
+    } catch (submissionError) {
+      activeProjectInitializationRequestId.current = "";
+      setIsProjectInitializationInFlight(false);
+      setProjectInitializationStatus(
+        submissionError instanceof Error
+          ? submissionError.message
+          : "Unable to send the initialization request.",
+      );
+    }
+  }
+
   async function sendGitSyncRequest(
     operation: "commit" | "sync" | "status",
     message = "",
@@ -3116,6 +3214,17 @@ export default function FeatureFilesDashboard({
                   <button
                     type="button"
                     role="menuitem"
+                    onClick={openProjectInitializationOverlay}
+                    className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-semibold text-slate-100 transition hover:bg-white/6"
+                  >
+                    <span>Initialize project</span>
+                    <span className="text-[11px] uppercase tracking-[0.2em] text-slate-400">
+                      New
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
                     onClick={openGitSyncOverlay}
                     className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-semibold text-slate-100 transition hover:bg-white/6"
                   >
@@ -3775,6 +3884,47 @@ export default function FeatureFilesDashboard({
           </section>
         ) : null}
 
+        {activePrimaryOverlay === "project-initialization" ? (
+          <section className={primaryOverlayClassName}>
+            <div className="flex items-start justify-between gap-4 border-b border-white/10 px-4 py-4 sm:px-5">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">
+                  Project initialization
+                </p>
+                <h2 className="mt-2 text-xl font-semibold text-white">
+                  Create a Daedalus project
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-slate-300">
+                  Create an initialized project beneath the daemon manager&apos;s execution root.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeProjectInitializationOverlay}
+                className="rounded-full border border-white/10 bg-white/6 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:bg-white/10"
+              >
+                X
+              </button>
+            </div>
+            <div className="agent-chat-scrollbar min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-4 sm:px-5">
+              <ProjectInitializerPanel
+                acceptsWork={daemonAcceptsWork}
+                authenticated={Boolean(currentUser && accessToken)}
+                createGitHubRepository={projectInitializationCreateGitHub}
+                executionRoot={managerStatus?.execution_root ?? null}
+                isManagerOnline={managerOnline}
+                isRequestInFlight={isProjectInitializationInFlight}
+                latestResult={projectInitializationResult}
+                onCreateGitHubRepositoryChange={setProjectInitializationCreateGitHub}
+                onInitialize={() => void sendProjectInitializationRequest()}
+                onProjectNameChange={setProjectInitializationName}
+                projectName={projectInitializationName}
+                statusText={projectInitializationStatus}
+              />
+            </div>
+          </section>
+        ) : null}
+
         {activePrimaryOverlay === "new-feature" ? (
           <section className={primaryOverlayClassName}>
             <div className="flex items-start justify-between gap-4 border-b border-white/10 px-4 py-4 sm:px-5">
@@ -4269,7 +4419,7 @@ async function fetchDaemonPayloadReviews(
   const url = new URL("/rest/v1/daemon_payloads", supabaseUrl);
   url.searchParams.set("select", "kind,payload,updated_at");
   url.searchParams.set("user_id", `eq.${userId}`);
-  url.searchParams.set("kind", `in.(${FEATURE_FILES_PAYLOAD_KIND},${PARAMETER_FILES_PAYLOAD_KIND},${GIT_SYNC_PAYLOAD_KIND})`);
+  url.searchParams.set("kind", `in.(${FEATURE_FILES_PAYLOAD_KIND},${PARAMETER_FILES_PAYLOAD_KIND},${GIT_SYNC_PAYLOAD_KIND},${PROJECT_INITIALIZATION_PAYLOAD_KIND})`);
   url.searchParams.set("message", `eq.${CLIENT_REVIEW}`);
   url.searchParams.set("limit", "10");
   const response = await fetch(url, {

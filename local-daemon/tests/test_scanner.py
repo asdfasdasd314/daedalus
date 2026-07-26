@@ -193,6 +193,22 @@ class ScanFeatureFileProjectsTests(unittest.TestCase):
                 },
             )
 
+    def test_project_execution_root_includes_only_direct_child_projects(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            child = root / "new-project"
+            deep = root / "data" / "nested-project"
+            (root / "feature_files").mkdir()
+            (child / "feature_files").mkdir(parents=True)
+            (deep / "feature_files").mkdir(parents=True)
+            (root / "feature_files" / "root.md").write_text("root", encoding="utf-8")
+            (child / "feature_files" / "child.md").write_text("child", encoding="utf-8")
+            (deep / "feature_files" / "deep.md").write_text("deep", encoding="utf-8")
+
+            result = scan_feature_file_projects(root)
+
+            self.assertEqual(set(result), {str(root.resolve()), str(child.resolve())})
+
 
 class ScanParameterFileProjectsTests(unittest.TestCase):
     def test_returns_two_projects_with_parameter_files(self):

@@ -21,6 +21,7 @@ export type DaemonManagerStatus = {
   execution_process_id: number | null;
   execution_generation: number;
   execution_started_at: string | null;
+  execution_root: string | null;
   last_successful_restart_at: string | null;
   status_detail: string | null;
   updated_at: string;

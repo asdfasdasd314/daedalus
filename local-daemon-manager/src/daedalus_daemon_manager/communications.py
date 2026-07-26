@@ -56,6 +56,7 @@ def acquire_lease(config: dict, instance_id: str) -> bool:
     return bool(call_manager_rpc(config, "daemon_manager_acquire_lease", {
         **lease_values(config, instance_id),
         "p_stale_after_seconds": max(1, config["heartbeatStaleAfterMs"] // 1000),
+        "p_execution_root": str(config["executionRoot"]),
     }))
 
 
@@ -68,6 +69,7 @@ def publish_heartbeat(
         "p_execution_process_id": process_id,
         "p_execution_started_at": started_at,
         "p_status_detail": status_detail,
+        "p_execution_root": str(config["executionRoot"]),
     }))
 
 
@@ -80,6 +82,7 @@ def manager_tick(
         "p_execution_process_id": process_id,
         "p_execution_started_at": started_at,
         "p_status_detail": status_detail,
+        "p_execution_root": str(config["executionRoot"]),
     })
     return result if isinstance(result, dict) else {
         "activeRequest": None, "drainSummary": None,

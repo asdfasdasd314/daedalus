@@ -8,6 +8,8 @@ from urllib.error import HTTPError, URLError
 AGENT_PROMPT_PURPOSE = "agent_prompt"
 GIT_SYNC_PAYLOAD_KIND = "git_sync_result"
 GIT_SYNC_PURPOSE = "git_sync_request"
+PROJECT_INITIALIZATION_PAYLOAD_KIND = "project_initialization_result"
+PROJECT_INITIALIZATION_PURPOSE = "project_initialization_request"
 DAEMON_REVIEW = "daemon_review"
 CLIENT_REVIEW = "client_review"
 DAEMON_COMPLETE = "daemon_complete"
@@ -156,6 +158,10 @@ def post_parameter_files(config: dict, projects: dict[str, list[dict[str, str]]]
 
 def post_git_sync_result(config: dict, result: dict) -> None:
     upsert_daemon_payload(config, GIT_SYNC_PAYLOAD_KIND, result)
+
+
+def post_project_initialization_result(config: dict, result: dict) -> None:
+    upsert_daemon_payload(config, PROJECT_INITIALIZATION_PAYLOAD_KIND, result)
 
 
 def upsert_agent_output_history(

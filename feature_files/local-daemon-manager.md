@@ -7,7 +7,7 @@ The local daemon manager is a small Python supervisor and Supabase-backed contro
 - **Single Owner**: A heartbeat lease prevents two current manager instances from supervising the same user's execution layer.
 - **Graceful Replacement**: Frontend restart requests atomically close admission, wait indefinitely for the database-authoritative drain summary to empty, and remain cancellable until replacement begins.
 - **Crash Recovery**: Unexpected child exits close admission and retry replacement without creating a user restart request.
-- **Invocation Root**: The manager keeps loading its own code and configuration from the Daedalus checkout, while the manager and its execution child use the directory where the manager command began as their working root.
+- **Invocation Root**: The manager keeps loading its own code and configuration from the Daedalus checkout, while the manager and its execution child use and publish the resolved directory where the manager command began.
 - **Compatibility**: Users without a manager state row continue accepting work until the manager is first registered or a restart is requested.
 - **Five-Second Tick**: Idle heartbeat publication and control retrieval share one lease-checked database tick aligned to the five-second stale-health cadence; drain details are returned only during draining.
 - **Task-Only Drain**: Restart blockers count durable tasks and active non-task subsystems; retired orchestration collections cannot contribute stale blocker totals.
@@ -33,3 +33,4 @@ HACKING
 - 2026-07-14: Consolidated idle heartbeat and restart-control reads into one five-second manager tick while retaining local child checks and generation-safe transitions.
 - 2026-07-16: Extended daemon restart draining and fallback blocker metadata to wait for active Architecture View generations.
 - 2026-07-18: Removed orchestration-batch fallback and presentation fields so task integration states alone drain execution restarts.
+- 2026-07-26: Published the resolved execution root through lease refreshes and manager status so authenticated clients can preview initializer destinations.

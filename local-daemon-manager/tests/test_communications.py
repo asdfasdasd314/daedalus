@@ -38,10 +38,13 @@ class ManagerTickTests(unittest.TestCase):
                 "supabasePublishableKey": "publishable-key",
                 "supabaseRequestTimeoutSeconds": 20,
                 "daemonUserId": "user-1",
+                "executionRoot": Path("/execution/root"),
             }, "instance-1", 123, "2026-07-14T00:00:00+00:00")
 
         self.assertEqual(len(requests), 1)
         self.assertTrue(requests[0].full_url.endswith("/rpc/daemon_manager_tick"))
+        body = json.loads(requests[0].data.decode("utf-8"))
+        self.assertEqual(body["p_execution_root"], "/execution/root")
         self.assertEqual(result, {"activeRequest": None, "drainSummary": None})
 
 

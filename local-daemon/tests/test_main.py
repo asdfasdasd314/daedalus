@@ -14,16 +14,59 @@ from daedalus_daemon import (
     DAEMON_RECEIVED_MESSAGE,
     FEATURE_FILE_LOAD_PURPOSE,
     GIT_SYNC_PURPOSE,
+    PROJECT_INITIALIZATION_PURPOSE,
     PARAMETER_FILE_LOAD_PURPOSE,
     PARAMETER_FILE_UPDATE_PURPOSE,
     run_agent_prompt_cycle,
     run_codex_exec,
     run_cursor_exec,
     run_git_sync_cycle,
+    run_project_initialization_cycle,
     run_parameter_file_poll_cycle,
     run_parameter_file_update_cycle,
     run_poll_cycle,
 )
+
+
+class RunProjectInitializationCycleTests(unittest.TestCase):
+    def test_publishes_progress_terminal_refreshes_then_completes(self):
+        events = []
+        request_id = "8f404d5d-99fb-4d5d-af5b-a9f51f83a0c6"
+
+        def initialize(request, progress):
+            progress({"requestId": request_id, "status": "running", "steps": []})
+            return {"requestId": request_id, "projectName": "example",
+                    "projectDirectory": "/root/example", "status": "success",
+                    "githubUrl": None, "error": None, "steps": []}
+
+        run_project_initialization_cycle(
+            {},
+            read_message=lambda _config, purpose: json.dumps({
+                "requestId": request_id, "projectName": "example",
+                "createGitHubRepository": False,
+            }) if purpose == PROJECT_INITIALIZATION_PURPOSE else None,
+            write_message=lambda _config, purpose, message: events.append(("complete", purpose, message)),
+            deliver_result=lambda _config, result: events.append(("result", result["status"])),
+            initialize=initialize,
+            scan_features=lambda: {"features": []},
+            scan_parameters=lambda: {"parameters": []},
+            deliver_features=lambda _config, payload: events.append(("features", payload)),
+            deliver_parameters=lambda _config, payload: events.append(("parameters", payload)),
+        )
+
+        self.assertEqual([event[0] for event in events],
+                         ["result", "result", "features", "parameters", "complete"])
+
+    def test_malformed_request_publishes_failure_before_completion(self):
+        events = []
+        run_project_initialization_cycle(
+            {},
+            read_message=lambda _config, _purpose: "{not-json",
+            write_message=lambda _config, _purpose, message: events.append(("complete", message)),
+            deliver_result=lambda _config, result: events.append(("result", result["status"])),
+            initialize=lambda *_args, **_kwargs: self.fail("initializer should not run"),
+        )
+        self.assertEqual(events, [("result", "failed"), ("complete", DAEMON_COMPLETE)])
 from daedalus_daemon.main import (
     ASK_PROMPT_PREFIX,
     CURSOR_PLANNING_PROMPT_PREFIX,

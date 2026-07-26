@@ -9,7 +9,7 @@ The local daemon feature scanner starts at `Path.cwd()`, finds every descendant 
 - **Stable Keys**: Project keys use full resolved paths so duplicate folder names do not collide.
 - **Markdown Loading**: Every `.md` file under each `feature_files` directory is read recursively and returned as raw UTF-8 text.
 - **Deterministic Order**: File paths are sorted before reading so the output stays stable across runs.
-- **Project Boundary**: Once a directory containing `feature_files` is found, the scanner records its requested sibling directory and does not descend into that project's children.
+- **Project Boundary**: Once a descendant containing `feature_files` is found, the scanner stops there; when the execution root itself is a project, only its immediate child projects are additionally inspected.
 - **Startup Loading**: The frontend sends the existing feature-file and parameter-file load requests once for each signed-in user, so the workspace populates without a manual refresh.
 - **Bounded Snapshots**: Scanner-owned byte and file-count limits retain normal one-time payloads while replacing overflow content with an explicit path, heading, byte-size, and omission manifest.
 - **Contained Detail Reads**: Explicit file reads resolve beneath the selected project root and reject traversal, missing files, and responses over the individual-file byte limit.
@@ -33,3 +33,4 @@ HACKING
 - 2026-07-13: Configured the daemon entrypoint's root logger at INFO so feature-file scan timing benchmarks reach the daemon terminal.
 - 2026-07-13: Removed per-directory scan logging and made each discovered `feature_files` directory a traversal boundary, preventing scans of project internals.
 - 2026-07-14: Added UTF-8 individual, aggregate, and file-count snapshot bounds with overflow manifests and a project-contained bounded file-read primitive.
+- 2026-07-26: Added direct-child discovery beneath a project execution root while preserving deeper-project and linked-worktree exclusions.

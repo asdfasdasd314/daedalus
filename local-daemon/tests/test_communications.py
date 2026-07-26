@@ -16,6 +16,7 @@ from daedalus_daemon.communications import (
     FEATURE_FILES_PAYLOAD_KIND,
     FEATURE_FILE_LOAD_PURPOSE,
     GIT_SYNC_PAYLOAD_KIND,
+    PROJECT_INITIALIZATION_PAYLOAD_KIND,
     PARAMETER_FILES_PAYLOAD_KIND,
     PARAMETER_FILE_LOAD_PURPOSE,
     fetch_current_message,
@@ -26,12 +27,24 @@ from daedalus_daemon.communications import (
     upsert_agent_output_history,
     post_feature_files,
     post_git_sync_result,
+    post_project_initialization_result,
     post_parameter_files,
     record_daemon_event,
     SupabaseUnavailableError,
     open_supabase_request,
     update_current_message,
 )
+
+
+class ProjectInitializationCommunicationTests(unittest.TestCase):
+    def test_posts_project_initialization_result_kind(self):
+        with patch("daedalus_daemon.communications.upsert_daemon_payload") as upsert:
+            post_project_initialization_result({"daemonUserId": "user"}, {"status": "running"})
+        upsert.assert_called_once_with(
+            {"daemonUserId": "user"},
+            PROJECT_INITIALIZATION_PAYLOAD_KIND,
+            {"status": "running"},
+        )
 
 
 class FakeResponse:

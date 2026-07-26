@@ -77,12 +77,14 @@ if __package__ in {None, ""}:
         ENTRY_POINT_UPDATE_PURPOSE,
         SupabaseUnavailableError,
         GIT_SYNC_PURPOSE,
+        PROJECT_INITIALIZATION_PURPOSE,
         fetch_current_message,
         fetch_work_snapshot,
         snapshot_communication_messages,
         upsert_agent_output_history,
         post_feature_files,
         post_git_sync_result,
+        post_project_initialization_result,
         post_parameter_files,
         update_current_message,
     )
@@ -98,6 +100,7 @@ if __package__ in {None, ""}:
     from daedalus_daemon.orchestrator import GitWorktreeOrchestrator
     from daedalus_daemon.execution import FeatureExecutionSupervisor
     from daedalus_daemon.architecture import ArchitectureViewSupervisor
+    from daedalus_daemon.project_initializer import initialize_project
 else:
     from .communications import (
         AGENT_PROMPT_PURPOSE,
@@ -110,12 +113,14 @@ else:
         ENTRY_POINT_UPDATE_PURPOSE,
         SupabaseUnavailableError,
         GIT_SYNC_PURPOSE,
+        PROJECT_INITIALIZATION_PURPOSE,
         fetch_current_message,
         fetch_work_snapshot,
         snapshot_communication_messages,
         upsert_agent_output_history,
         post_feature_files,
         post_git_sync_result,
+        post_project_initialization_result,
         post_parameter_files,
         update_current_message,
     )
@@ -124,6 +129,7 @@ else:
     from .orchestrator import GitWorktreeOrchestrator
     from .execution import FeatureExecutionSupervisor
     from .architecture import ArchitectureViewSupervisor
+    from .project_initializer import initialize_project
 
 
 ACTIVE_AGENT_PROCESSES: dict[str, subprocess.Popen] = {}
@@ -877,6 +883,60 @@ def run_git_sync_cycle(
     write_message(config, GIT_SYNC_PURPOSE, DAEMON_COMPLETE)
 
 
+def run_project_initialization_cycle(
+    config: dict,
+    read_message=fetch_current_message,
+    write_message=update_current_message,
+    deliver_result=post_project_initialization_result,
+    initialize=initialize_project,
+    scan_features=scan_feature_file_projects,
+    scan_parameters=scan_parameter_file_projects,
+    deliver_features=post_feature_files,
+    deliver_parameters=post_parameter_files,
+) -> None:
+    message = read_message(config, PROJECT_INITIALIZATION_PURPOSE)
+    if not isinstance(message, str) or not message.strip():
+        return
+    try:
+        initialization_request = json.loads(message)
+    except json.JSONDecodeError as error:
+        initialization_request = {}
+        parse_error = f"Initialization request is not valid JSON: {error}"
+    else:
+        parse_error = "" if isinstance(initialization_request, dict) else (
+            "Initialization request must be a JSON object."
+        )
+        if not isinstance(initialization_request, dict):
+            initialization_request = {}
+    request_id_value = initialization_request.get("requestId")
+    request_id = request_id_value.strip() if isinstance(request_id_value, str) else ""
+
+    def publish_progress(result: dict) -> None:
+        if result.get("status") == "running":
+            deliver_result(config, result)
+
+    try:
+        if parse_error:
+            raise ValueError(parse_error)
+        result = initialize(initialization_request, progress=publish_progress)
+    except Exception as error:
+        result = {
+            "requestId": request_id,
+            "projectName": str(initialization_request.get("projectName") or "").strip().lower(),
+            "projectDirectory": "",
+            "status": "failed",
+            "githubUrl": None,
+            "error": str(error),
+            "steps": [],
+        }
+
+    deliver_result(config, result)
+    if result.get("status") in {"success", "partial_success"}:
+        deliver_features(config, scan_features())
+        deliver_parameters(config, scan_parameters())
+    write_message(config, PROJECT_INITIALIZATION_PURPOSE, DAEMON_COMPLETE)
+
+
 def filter_targeted_feature_paths(targeted_feature_paths: object) -> list[str]:
     if not isinstance(targeted_feature_paths, list):
         return []
@@ -1323,6 +1383,14 @@ def main() -> None:
             continue
 
         if not run_cycle_safely("git_sync", lambda current: run_git_sync_cycle(current, read_message=read_review), config):
+            time.sleep(config["pollIntervalMs"] / 1000)
+            continue
+
+        if not run_cycle_safely(
+            "project_initialization",
+            lambda current: run_project_initialization_cycle(current, read_message=read_review),
+            config,
+        ):
             time.sleep(config["pollIntervalMs"] / 1000)
             continue
 

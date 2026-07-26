@@ -8,7 +8,7 @@ The feature file communications system uses Supabase as a user-scoped message bu
 - **Consolidated Polling Ownership**: The browser owns one completion-scheduled review inbox and the daemon owns one bounded work snapshot per configured cycle.
 - **Transient Network Tolerance**: The daemon communications client retries short-lived Supabase HTTPS failures with a small timeout and backoff budget before giving up on that poll cycle.
 - **Outage Cooldown**: When Supabase stays unreachable after the retry budget is exhausted, the daemon pauses the current poll pass and waits on a longer cooldown before trying again.
-- **Daemon Delivery**: The daemon writes feature-file, parameter-file, and Git Sync payloads into `daemon_payloads`; agent responses are not payload messages.
+- **Daemon Delivery**: The daemon writes feature-file, parameter-file, Git Sync, and project-initialization payloads into `daemon_payloads`; agent responses are not payload messages.
 - **Schema Tracking**: Every database change must add a numbered migration and update the checked-in schema snapshot.
 - **Protocol Messages**: The feature-file load flow uses `purpose = "feature_file_load"` with `client_load_feature_files`, `daemon_received_message`, and `daemon_sent_feature_files`.
 - **Agent Status Messages**: The prompt flow uses `purpose = "agent_prompt"` with queued JSON payloads plus daemon-written status markers while `codex exec` is running.
@@ -44,3 +44,4 @@ HACKING
 - 2026-07-13: Retained communications as the direct planning/ask pickup protocol while moving response publication out of daemon payloads and into durable agent output history.
 - 2026-07-13: Added manager admission gating for feature-file load requests and exposed in-progress `daemon_review` loads through the authoritative drain interface.
 - 2026-07-14: Replaced independent recurrent reads with one bounded daemon work snapshot and added five-minute aggregate request/response-byte instrumentation.
+- 2026-07-26: Added bounded initialization request routing and progress/result payload delivery without changing the ownership and acknowledgement model.
