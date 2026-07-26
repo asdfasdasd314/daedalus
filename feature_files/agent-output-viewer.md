@@ -86,3 +86,4 @@ TESTING
 - 2026-07-18: Resumed durable tasks using a freshly loaded `agent_tasks` revision rather than the archive timestamp, then rehydrated live state and exposed pending/error feedback for recovery requests.
 - 2026-07-20: Made durable deletion state server-authoritative across browser hydration and Refresh, purging confirmed archive caches while restoring rejected tasks with their daemon error.
 - 2026-07-26: Made selected-conversation refresh retrieve full detail through both its conversation and prompt identities, and anchored questionnaire controls to the planning prompt that produced them so completed content and answer buttons survive refresh reconciliation.
+- 2026-07-26: Confirmed direct-prompt deletion through an owner-scoped RPC, reject durable requests when worktree cleanup fails, and leave the detail pane empty after deleting its selected exchange.

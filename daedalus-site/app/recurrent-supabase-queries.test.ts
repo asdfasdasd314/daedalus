@@ -261,7 +261,7 @@ test("durable deletion refresh reads server state and purges confirmed archive c
   assert.match(dashboardSource, /request\.status === "requested" \|\| request\.status === "completed"/);
   assert.match(dashboardSource, /request\.status === "rejected"/);
   assert.match(historySource, /removeDeletedAgentOutputHistory/);
-  assert.match(historySource, /setPendingDurableDeletionPromptIds/);
+  assert.match(historySource, /serverPendingDurableDeletionCount/);
   assert.match(deletionRefreshMigrationSource, /agent_task_deletion_requests_viewer_state_idx/);
   assert.match(deletionRefreshMigrationSource, /grant select on agent_task_deletion_requests to authenticated/);
 });
