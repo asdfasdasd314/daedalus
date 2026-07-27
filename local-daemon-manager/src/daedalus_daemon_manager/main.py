@@ -12,7 +12,7 @@ if __package__ in {None, ""}:
     from daedalus_daemon_manager.communications import (
         acquire_lease, begin_restart, claim_restart, complete_recovery,
         complete_control_request, complete_restart,
-        ManagerRpcUnavailableError, manager_tick, publish_candidate, publish_degraded,
+        ManagerRpcUnavailableError, ManagerSchemaMismatchError, manager_tick, publish_candidate, publish_degraded,
         publish_heartbeat, update_blockers,
     )
     from daedalus_daemon_manager.config import load_manager_config
@@ -20,7 +20,7 @@ else:
     from .communications import (
         acquire_lease, begin_restart, claim_restart, complete_recovery,
         complete_control_request, complete_restart,
-        ManagerRpcUnavailableError, manager_tick, publish_candidate, publish_degraded,
+        ManagerRpcUnavailableError, ManagerSchemaMismatchError, manager_tick, publish_candidate, publish_degraded,
         publish_heartbeat, update_blockers,
     )
     from .config import load_manager_config
@@ -237,6 +237,9 @@ def main() -> None:
                     "Manager RPC unavailable; keeping manager alive and retrying: %s",
                     error,
                 )
+            except ManagerSchemaMismatchError as error:
+                last_rpc_failure_detail = str(error)
+                logging.error("Manager schema mismatch; keeping execution child alive: %s", error)
             time.sleep(config["supabasePollIntervalMs"] / 1000)
     finally:
         try:

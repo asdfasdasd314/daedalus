@@ -21,6 +21,7 @@ create table daemon_manager_state (
   active_request_id uuid references daemon_manager_requests(id) on delete set null,
   manager_instance_id uuid,
   manager_heartbeat_at timestamptz,
+  execution_heartbeat_at timestamptz,
   execution_process_id integer,
   execution_generation bigint not null default 0 check (execution_generation >= 0),
   execution_started_at timestamptz,
@@ -1462,6 +1463,11 @@ begin
   if p_user_id is null or not exists(select 1 from auth.users where id=p_user_id) then
     raise exception 'Invalid daemon user scope';
   end if;
+  insert into daemon_manager_state(user_id,execution_heartbeat_at,message)
+  values(p_user_id,now(),'client_review')
+  on conflict(user_id) do update set
+    execution_heartbeat_at=excluded.execution_heartbeat_at,
+    message='client_review',updated_at=now();
   select id into claimed_id from feature_execution_runs
   where user_id=p_user_id and message='daemon_review' and status='queued' and not cancel_requested
   order by created_at,id for update skip locked limit 1;
@@ -1659,6 +1665,7 @@ returns jsonb language sql stable security definer set search_path=public as $$
         and daemon_events.message='client_review' order by created_at,id limit 50) r),'[]'),
     'managerStatus',(select case when s.user_id is null then null else jsonb_build_object(
       'state',s.state,'accepts_work',s.accepts_work,'manager_heartbeat_at',s.manager_heartbeat_at,
+      'execution_heartbeat_at',s.execution_heartbeat_at,
       'execution_process_id',s.execution_process_id,'execution_generation',s.execution_generation,
       'execution_started_at',s.execution_started_at,'execution_root',s.execution_root,
       'last_successful_restart_at',s.last_successful_restart_at,'status_detail',s.status_detail,
@@ -1678,3 +1685,5 @@ grant execute on function daemon_manager_acquire_lease(uuid,uuid,integer,text) t
 grant execute on function daemon_manager_publish_heartbeat(uuid,uuid,integer,timestamptz,text,text) to anon;
 grant execute on function daemon_manager_tick(uuid,uuid,integer,timestamptz,text,text) to anon;
 grant execute on function get_client_review_inbox() to authenticated;
+
+-- Migration 045: execution delivery health is independent of manager control-plane health.

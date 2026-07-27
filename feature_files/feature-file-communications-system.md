@@ -31,6 +31,7 @@ HACKING
 - 2026-07-04: Kept the communications path as direct frontend and daemon reads and writes against Supabase, while preserving only the missing-row and stale-poll fixes in the browser client.
 - 2026-07-04: Added browser console logging around frontend Supabase message reads and writes so the communications flow can be debugged from the client side.
 - 2026-07-04: Switched the frontend communications table reads and writes from the anon key to the Supabase service role key to bypass the observed row-level security failure.
+- 2026-07-26: Added an execution heartbeat to the existing daemon work-poll transaction so browser health distinguishes daemon delivery from manager control-plane availability.
 - 2026-07-04: Reverted the frontend back to the publishable key and added a migration plus schema snapshot update to permit anon reads, inserts, and updates on the `communications` table through row level security policies.
 - 2026-07-05: Split the shared communications table into purpose-based rows so feature-file loading and agent prompt submission can coexist without overwriting each other.
 - 2026-07-05: Added a second daemon delivery path so agent prompt replies can be returned to the frontend over REST without storing large chat output in Supabase.

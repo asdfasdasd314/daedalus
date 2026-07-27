@@ -35,3 +35,4 @@ HACKING
 - 2026-07-18: Removed orchestration-batch fallback and presentation fields so task integration states alone drain execution restarts.
 - 2026-07-26: Published the resolved execution root through lease refreshes and manager status so authenticated clients can preview initializer destinations.
 - 2026-07-26: Kept the manager and its execution child alive through transient Supabase RPC failures, logging retries and publishing recovery detail after connectivity returns.
+- 2026-07-26: Separated execution-daemon delivery health from manager control-plane health and made missing manager RPC signatures explicit schema-mismatch diagnostics.

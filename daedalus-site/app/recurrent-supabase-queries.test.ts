@@ -50,6 +50,10 @@ const deletionConfirmationMigrationSource = readFileSync(
   new URL("../../supabase/migrations/041_confirm_worktree_cleanup_before_task_deletion.sql", import.meta.url),
   "utf8",
 );
+const executionHealthMigrationSource = readFileSync(
+  new URL("../../supabase/migrations/045_separate_execution_daemon_health.sql", import.meta.url),
+  "utf8",
+);
 const canonicalSchemaSource = readFileSync(
   new URL("../../shared/database/schema.sql", import.meta.url),
   "utf8",
@@ -374,6 +378,15 @@ test("manager tick owns the idle heartbeat and control response", () => {
   assert.match(migrationSource, /daemon_manager_tick/);
   assert.match(migrationSource, /'activeRequest'/);
   assert.match(migrationSource, /'drainSummary'/);
+});
+
+test("execution delivery health is independent from manager control-plane health", () => {
+  assert.match(executionHealthMigrationSource, /add column if not exists execution_heartbeat_at timestamptz/);
+  assert.match(executionHealthMigrationSource, /insert into daemon_manager_state\(user_id,execution_heartbeat_at,message\)/);
+  assert.match(executionHealthMigrationSource, /'execution_heartbeat_at',s\.execution_heartbeat_at/);
+  assert.doesNotMatch(executionHealthMigrationSource, /'managerStatus',null/);
+  assert.match(managerSource, /Daemon \{executionOnline/);
+  assert.match(managerSource, /Manager \{managerOnline/);
 });
 
 test("daemon actionable queues and drain identifiers are bounded", () => {

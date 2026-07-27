@@ -12,6 +12,10 @@ class ManagerRpcUnavailableError(RuntimeError):
     """Raised when a manager RPC cannot reach Supabase."""
 
 
+class ManagerSchemaMismatchError(RuntimeError):
+    """Raised when the deployed manager RPC signature does not match this manager."""
+
+
 def record_rpc_metrics(response_bytes: int) -> None:
     _RPC_METRICS["requests"] += 1
     _RPC_METRICS["response_bytes"] += response_bytes
@@ -45,6 +49,15 @@ def call_manager_rpc(config: dict, function_name: str, values: dict):
             return json.loads(body) if body else None
     except HTTPError as error:
         detail = error.read().decode("utf-8")
+        if error.code in {400, 404} and (
+            "Could not find the function" in detail
+            or "function" in detail and "schema cache" in detail
+        ):
+            raise ManagerSchemaMismatchError(
+                f"Manager RPC {function_name} is incompatible with the deployed Supabase schema. "
+                "Apply migration 043_automated_project_initialization.sql or later: "
+                f"{detail}",
+            ) from error
         raise RuntimeError(
             f"Manager RPC {function_name} failed ({error.code}): {detail}",
         ) from error

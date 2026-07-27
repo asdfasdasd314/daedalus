@@ -3,12 +3,14 @@ import sys
 import unittest
 from pathlib import Path
 from unittest.mock import patch
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from daedalus_daemon_manager.communications import ManagerRpcUnavailableError, manager_tick
+from daedalus_daemon_manager.communications import (
+    ManagerRpcUnavailableError, ManagerSchemaMismatchError, manager_tick,
+)
 
 
 class FakeResponse:
@@ -62,6 +64,23 @@ class ManagerTickTests(unittest.TestCase):
             side_effect=URLError(TimeoutError("TLS handshake timed out")),
         ):
             with self.assertRaises(ManagerRpcUnavailableError):
+                manager_tick(config, "instance-1", 123, "2026-07-14T00:00:00+00:00")
+
+    def test_tick_reports_missing_rpc_signature_as_schema_mismatch(self):
+        config = {
+            "supabaseUrl": "https://example.supabase.co",
+            "supabasePublishableKey": "publishable-key",
+            "supabaseRequestTimeoutSeconds": 20,
+            "daemonUserId": "user-1",
+            "executionRoot": Path("/execution/root"),
+        }
+        error = HTTPError(
+            "https://example.supabase.co/rest/v1/rpc/daemon_manager_tick", 404,
+            "Not Found", None, None,
+        )
+        error.read = lambda: b'{"message":"Could not find the function public.daemon_manager_tick"}'
+        with patch("daedalus_daemon_manager.communications.request.urlopen", side_effect=error):
+            with self.assertRaises(ManagerSchemaMismatchError):
                 manager_tick(config, "instance-1", 123, "2026-07-14T00:00:00+00:00")
 
 
