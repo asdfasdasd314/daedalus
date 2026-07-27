@@ -48,6 +48,7 @@ TESTING
 ## State Log
 
 - 2026-07-26: Kept confirmed durable deletions tombstoned by task ID in dashboard reconciliation and by prompt ID across viewer archive, detail, and live-state caches.
+- 2026-07-26: Fixed finalized conversation cleanup to pass each deduplicated queue entry's conversation ID instead of destructuring it as a tuple.
 - 2026-07-13: Initialized the Agent Output Viewer ownership boundary, durable-history architecture, workspace placement, and prompt-only Edit relationship.
 - 2026-07-13: Implemented owner-scoped durable history projection and backfill, direct planning/ask publication, the unified responsive History drawer, planning and task controls, archive search/pagination, Edit cutover, and notification deep links.
 - 2026-07-13: Kept Ask-mode failures publishable to the viewer after removing the unsupported Codex approval argument from direct execution.

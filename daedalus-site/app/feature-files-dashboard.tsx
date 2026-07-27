@@ -2768,8 +2768,8 @@ export default function FeatureFilesDashboard({
       await Promise.all([...new Map(durableAgentTasks
         .filter((item) => isFinalizedAgentTaskStatus(item.status))
         .map((item) => [item.conversationId ?? item.promptId, item] as const)).values()]
-        .map(([conversationId]) => requestConversationDeletion(
-          supabaseUrl, supabasePublishableKey, accessToken, conversationId,
+        .map((item) => requestConversationDeletion(
+          supabaseUrl, supabasePublishableKey, accessToken, item.conversationId ?? item.promptId,
         )));
       setIsConfirmingClearDurableTasks(false);
       setPromptStatus("Synchronized conversation cleanup requested.");
