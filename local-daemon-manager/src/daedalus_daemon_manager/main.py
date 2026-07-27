@@ -12,14 +12,16 @@ if __package__ in {None, ""}:
     from daedalus_daemon_manager.communications import (
         acquire_lease, begin_restart, claim_restart, complete_recovery,
         complete_control_request, complete_restart,
-        manager_tick, publish_candidate, publish_degraded, publish_heartbeat, update_blockers,
+        ManagerRpcUnavailableError, manager_tick, publish_candidate, publish_degraded,
+        publish_heartbeat, update_blockers,
     )
     from daedalus_daemon_manager.config import load_manager_config
 else:
     from .communications import (
         acquire_lease, begin_restart, claim_restart, complete_recovery,
         complete_control_request, complete_restart,
-        manager_tick, publish_candidate, publish_degraded, publish_heartbeat, update_blockers,
+        ManagerRpcUnavailableError, manager_tick, publish_candidate, publish_degraded,
+        publish_heartbeat, update_blockers,
     )
     from .config import load_manager_config
 
@@ -209,24 +211,38 @@ def main() -> None:
     child, child_started_at = replacement
     complete_recovery(config, instance_id)
     last_heartbeat_at = 0.0
+    last_rpc_failure_detail = None
 
     try:
         while not SHUTTING_DOWN:
-            if child.poll() is not None:
-                recovered = recover_unexpected_exit(config, instance_id, child)
-                if recovered is None:
-                    break
-                child, child_started_at = recovered
-                continue
+            try:
+                if child.poll() is not None:
+                    recovered = recover_unexpected_exit(config, instance_id, child)
+                    if recovered is None:
+                        break
+                    child, child_started_at = recovered
+                    continue
 
-            tick = manager_tick(config, instance_id, child.pid, child_started_at)
-            child, child_started_at = process_requested_restart(
-                config, instance_id, child, child_started_at, tick,
-            )
-            last_heartbeat_at = time.monotonic()
+                tick = manager_tick(
+                    config, instance_id, child.pid, child_started_at, last_rpc_failure_detail,
+                )
+                last_rpc_failure_detail = None
+                child, child_started_at = process_requested_restart(
+                    config, instance_id, child, child_started_at, tick,
+                )
+                last_heartbeat_at = time.monotonic()
+            except ManagerRpcUnavailableError as error:
+                last_rpc_failure_detail = f"Manager RPC recovered after: {error}"
+                logging.warning(
+                    "Manager RPC unavailable; keeping manager alive and retrying: %s",
+                    error,
+                )
             time.sleep(config["supabasePollIntervalMs"] / 1000)
     finally:
-        publish_degraded(config, instance_id, "Manager is shutting down.")
+        try:
+            publish_degraded(config, instance_id, "Manager is shutting down.")
+        except ManagerRpcUnavailableError as error:
+            logging.warning("Could not publish manager shutdown status: %s", error)
         terminate_execution_child(child, config["childTerminationGraceSeconds"])
 
 

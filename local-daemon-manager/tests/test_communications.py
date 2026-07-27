@@ -3,11 +3,12 @@ import sys
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+from urllib.error import URLError
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from daedalus_daemon_manager.communications import manager_tick
+from daedalus_daemon_manager.communications import ManagerRpcUnavailableError, manager_tick
 
 
 class FakeResponse:
@@ -46,6 +47,22 @@ class ManagerTickTests(unittest.TestCase):
         body = json.loads(requests[0].data.decode("utf-8"))
         self.assertEqual(body["p_execution_root"], "/execution/root")
         self.assertEqual(result, {"activeRequest": None, "drainSummary": None})
+
+    def test_tick_marks_tls_timeouts_as_temporary_unavailability(self):
+        config = {
+            "supabaseUrl": "https://example.supabase.co",
+            "supabasePublishableKey": "publishable-key",
+            "supabaseRequestTimeoutSeconds": 20,
+            "daemonUserId": "user-1",
+            "executionRoot": Path("/execution/root"),
+        }
+
+        with patch(
+            "daedalus_daemon_manager.communications.request.urlopen",
+            side_effect=URLError(TimeoutError("TLS handshake timed out")),
+        ):
+            with self.assertRaises(ManagerRpcUnavailableError):
+                manager_tick(config, "instance-1", 123, "2026-07-14T00:00:00+00:00")
 
 
 if __name__ == "__main__":

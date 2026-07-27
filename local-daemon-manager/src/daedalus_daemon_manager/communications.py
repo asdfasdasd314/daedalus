@@ -2,9 +2,14 @@ import json
 import time
 from urllib import request
 from urllib.error import HTTPError
+from urllib.error import URLError
 
 
 _RPC_METRICS = {"started_at": time.monotonic(), "requests": 0, "response_bytes": 0}
+
+
+class ManagerRpcUnavailableError(RuntimeError):
+    """Raised when a manager RPC cannot reach Supabase."""
 
 
 def record_rpc_metrics(response_bytes: int) -> None:
@@ -42,6 +47,10 @@ def call_manager_rpc(config: dict, function_name: str, values: dict):
         detail = error.read().decode("utf-8")
         raise RuntimeError(
             f"Manager RPC {function_name} failed ({error.code}): {detail}",
+        ) from error
+    except (URLError, TimeoutError, OSError) as error:
+        raise ManagerRpcUnavailableError(
+            f"Manager RPC {function_name} is temporarily unavailable: {error}",
         ) from error
 
 
