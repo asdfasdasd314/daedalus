@@ -9,7 +9,6 @@ import {
   removeDeletedAgentOutputHistory,
   reconcileRecentAgentOutputHistory,
   rerankAgentOutputSearch,
-  deleteAgentOutputHistory,
   selectAgentOutputExchange,
   type AgentOutputExchange,
 } from "./agent-output-history";
@@ -234,33 +233,8 @@ test("deleting the selected exchange preserves an intentionally empty detail pan
   assert.equal(selectAgentOutputExchange([remaining], [remaining], "", false)?.promptId, "prompt-2");
 });
 
-test("direct deletion only succeeds when the RPC confirms the prompt id", async () => {
-  const originalFetch = globalThis.fetch;
-  let requestUrl = "";
-  let requestMethod = "";
-  globalThis.fetch = async (input, init) => {
-    requestUrl = String(input);
-    requestMethod = init?.method ?? "GET";
-    return new Response(JSON.stringify("prompt-1"), { status: 200 });
-  };
-  try {
-    await deleteAgentOutputHistory("https://example.supabase.co", "key", "token", "prompt-1");
-    assert.match(requestUrl, /rpc\/delete_terminal_direct_prompt_agent_output_history$/);
-    assert.equal(requestMethod, "POST");
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
-test("direct deletion keeps the exchange when the RPC reports no eligible row", async () => {
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => new Response("null", { status: 200 });
-  try {
-    await assert.rejects(
-      deleteAgentOutputHistory("https://example.supabase.co", "key", "token", "prompt-1"),
-      /was not deleted/,
-    );
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+test("conversation deletion removes every turn from history helpers", () => {
+  const deletedConversation = "conversation-1";
+  const retained = exchange({ id: "row-2", promptId: "prompt-2", conversationId: "conversation-2" });
+  assert.deepEqual(removeDeletedAgentOutputHistory([exchange(), retained], [deletedConversation]), [retained]);
 });

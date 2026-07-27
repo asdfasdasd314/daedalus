@@ -11,9 +11,9 @@ import tomllib
 from .communications import (
     SupabaseUnavailableError,
     get_agent_task_control,
-    complete_task_deletion,
+    complete_conversation_deletion,
     list_agent_tasks,
-    list_task_deletion_requests,
+    list_conversation_deletion_requests,
     record_daemon_event,
     update_agent_task,
 )
@@ -69,30 +69,30 @@ class GitWorktreeOrchestrator:
         self.recovered_persisted_work = False
 
     def _handle_task_deletion_requests(self, tasks: list[dict]) -> None:
-        tasks_by_id = {str(task["id"]): task for task in tasks}
-        for request in list_task_deletion_requests(self.config):
+        """Clean every worktree in a requested conversation before one atomic acknowledgement."""
+        requested_conversations = set()
+        for request in list_conversation_deletion_requests(self.config):
             request_id = str(request["id"])
-            task = tasks_by_id.get(str(request["task_id"]))
-            if task is None:
-                completed = complete_task_deletion(self.config, request_id, "Task is no longer available for deletion.")
-                if not completed:
-                    logging.warning("Task deletion request completion was not accepted: request_id=%s", request_id)
-                continue
+            conversation_id = str(request["conversation_id"])
+            requested_conversations.add(conversation_id)
+            members = request.get("tasks") if isinstance(request.get("tasks"), list) else []
             try:
-                worktree_path = str(task.get("worktree_path") or "")
-                if not cleanup_task_worktree(str(task["repository"]), worktree_path, force=True):
-                    raise RuntimeError(f"Unable to remove task worktree: {worktree_path}")
+                for task in members:
+                    worktree_path = str(task.get("worktree_path") or "")
+                    if worktree_path and not cleanup_task_worktree(str(task["repository"]), worktree_path, force=True):
+                        raise RuntimeError(f"Unable to remove task worktree: {worktree_path}")
             except Exception as error:
-                completed = complete_task_deletion(self.config, request_id, str(error))
+                completed = complete_conversation_deletion(self.config, request_id, str(error))
                 if not completed:
                     logging.warning(
-                        "Task deletion rejection was not accepted: request_id=%s error=%s",
-                        request_id, error,
+                        "Conversation deletion rejection was not accepted: request_id=%s conversation_id=%s task_ids=%s error=%s",
+                        request_id, conversation_id, request.get("task_ids", []), error,
                     )
                 continue
-            completed = complete_task_deletion(self.config, request_id)
+            logging.info("Completing conversation deletion: request_id=%s conversation_id=%s task_count=%s task_ids=%s", request_id, conversation_id, len(members), request.get("task_ids", []))
+            completed = complete_conversation_deletion(self.config, request_id)
             if not completed:
-                logging.warning("Task deletion completion was not accepted: request_id=%s", request_id)
+                logging.warning("Conversation deletion completion was not accepted: request_id=%s conversation_id=%s", request_id, conversation_id)
 
     def run_cycle(self, snapshot: dict | None = None) -> None:
         tasks = snapshot.get("agentTasks", []) if snapshot is not None else list_agent_tasks(self.config)

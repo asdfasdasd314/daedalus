@@ -6,11 +6,11 @@ The Agent Output Viewer is the durable, authenticated history and live-status su
 ## Key Points
 - **Task Integration Lifecycle**: Ready, integrating, resolving, and blocked states are rendered directly on each durable task.
 - **In-Place Recovery**: Retried implementation and integration work resumes from the task's retained worktree and durable record.
-- **Durable Projection**: One `agent_output_history` row is stored per user and prompt ID, preserving prompt metadata, raw output, terminal error, concise outcome, and lifecycle timestamps after transient task rows are cleared.
+- **Conversation-Owned Transcript**: `agent_conversations` owns each visible transcript while `agent_tasks` is the authoritative source for every planning, ask, and implementation turn; legacy history is compatibility-only during rollout.
 - **Unified Read Model**: Active direct prompts and durable tasks supply current lifecycle state while history supplies archived content; records merge by prompt ID.
 - **Deterministic Request Generations**: Initial load, manual refresh, search, active snapshots, and selected-conversation detail each reject late generations; refresh keeps visible history and reports archive, live-state, and detail failures independently.
 - **Snapshot and Event Reconciliation**: User-triggered active task hydration uses replacement semantics, while task-scoped integration events report successful promotion.
-- **Server-Authoritative Deletion State**: Durable deletion requests are rehydrated with live tasks; requested/completed requests hide their prompt, completed requests purge archive/detail caches, and rejected requests restore the task with the daemon reason.
+- **Server-Authoritative Deletion State**: Conversation deletion requests capture every task revision; completion purges the full transcript and related task caches, while rejection restores the conversation with its daemon reason.
 - **Single Browser Review Owner**: The completion-scheduled client-review inbox is the only recurrent owner of terminal task and daemon-event rows; it applies transitions before conditionally acknowledging the exact `updated_at` generation.
 - **Terminal Invariant**: Completed, failed, blocked, and cancelled durable tasks receive `completed_at` and archive projection before transient cleanup.
 - **Feature Discovery**: A multi-feature prompt remains one database record and is presented beneath every repository-qualified targeted feature, with separate All activity and Unscoped groups.
@@ -31,6 +31,7 @@ The Agent Output Viewer is the durable, authenticated history and live-status su
 - `shared/database/schema.sql`: Current database schema snapshot.
 - `supabase/migrations/039_remove_legacy_batch_persistence.sql`: Final task-only inbox, acknowledgement, event, retry, and cleanup contract.
 - `supabase/migrations/040_durable_task_deletion_refresh_state.sql`: Indexed owner-scoped deletion-request read model for viewer refreshes.
+- `supabase/migrations/044_conversation_scoped_agent_history.sql`: Conversation/task normalization, legacy backfill, atomic deletion RPCs, and normalized archive reads.
 - `parameter_files/agent-output-viewer.toml`: Viewer-owned tunable settings.
 - `local-daemon/src/daedalus_daemon/communications.py`: Narrow direct-prompt history upsert transport.
 - `local-daemon/src/daedalus_daemon/main.py`: Direct planning and ask execution publication.
@@ -89,3 +90,4 @@ TESTING
 - 2026-07-20: Made durable deletion state server-authoritative across browser hydration and Refresh, purging confirmed archive caches while restoring rejected tasks with their daemon error.
 - 2026-07-26: Made selected-conversation refresh retrieve full detail through both its conversation and prompt identities, and anchored questionnaire controls to the planning prompt that produced them so completed content and answer buttons survive refresh reconciliation.
 - 2026-07-26: Confirmed direct-prompt deletion through an owner-scoped RPC, reject durable requests when worktree cleanup fails, and leave the detail pane empty after deleting its selected exchange.
+- 2026-07-26: Replaced prompt-scoped history cleanup with atomic conversation deletion that retains task-level cancellation and removes every turn only after daemon worktree cleanup succeeds.

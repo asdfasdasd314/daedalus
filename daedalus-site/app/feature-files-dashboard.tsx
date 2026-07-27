@@ -214,7 +214,7 @@ type AgentTaskRow = {
   retry_generation?: number;
 };
 
-type TaskDeletionRequestRow = { id: string; task_id: string; prompt_id: string; status: "completed" | "rejected" | "requested"; error: string; updated_at: string };
+type ConversationDeletionRequestRow = { id: string; conversation_id: string; task_ids: string[]; status: "completed" | "rejected" | "requested"; error: string; updated_at: string };
 
 type DaemonEventRow = {
   id: number;
@@ -267,7 +267,7 @@ type FeatureExecutionRunRow = {
 
 type ReviewReceipt = {
   receiptId: string;
-  transport: "communications" | "daemonPayloads" | "agentTasks" | "taskDeletionRequests" | "architectureViews" | "architectureProgressEvents" | "featureExecutionRuns" | "daemonEvents" | "managerStatus";
+  transport: "communications" | "daemonPayloads" | "agentTasks" | "conversationDeletionRequests" | "architectureViews" | "architectureProgressEvents" | "featureExecutionRuns" | "daemonEvents" | "managerStatus";
   key: string;
   updatedAt?: string;
   generation?: number;
@@ -277,7 +277,7 @@ type ClientReviewInbox = {
   communications: Array<{ purpose: string; content: string | null; updated_at: string }>;
   daemonPayloads: DaemonPayloadRow<unknown>[];
   agentTasks: AgentTaskRow[];
-  taskDeletionRequests: TaskDeletionRequestRow[];
+  conversationDeletionRequests: ConversationDeletionRequestRow[];
   architectureViews: ArchitectureView[];
   architectureProgressEvents: ArchitectureProgressEvent[];
   featureExecutionRuns: FeatureExecutionRunRow[];
@@ -815,19 +815,18 @@ export default function FeatureFilesDashboard({
           });
           receipts.push(...inbox.agentTasks.map((row) => reviewReceipt("agentTasks", row.id, row.updated_at)));
         }
-        if ((inbox.taskDeletionRequests ?? []).length) {
-          for (const request of inbox.taskDeletionRequests) {
+        if ((inbox.conversationDeletionRequests ?? []).length) {
+          for (const request of inbox.conversationDeletionRequests) {
             if (request.status === "completed") {
-              setSynchronizedDeletedPromptIds((current) => current.includes(request.prompt_id)
-                ? current : [...current, request.prompt_id]);
-              setConfirmedDeletedTaskIds((current) => current.includes(request.task_id)
-                ? current : [...current, request.task_id]);
-              setDurableAgentTasks((current) => current.filter((task) => task.durableTaskId !== request.task_id));
+              setSynchronizedDeletedPromptIds((current) => current.includes(request.conversation_id)
+                ? current : [...current, request.conversation_id]);
+              setConfirmedDeletedTaskIds((current) => [...new Set([...current, ...request.task_ids])]);
+              setDurableAgentTasks((current) => current.filter((task) => !request.task_ids.includes(task.durableTaskId ?? "")));
             }
-            if (request.status === "rejected") setPromptStatus(request.error || "Task deletion was rejected.");
+            if (request.status === "rejected") setPromptStatus(request.error || "Conversation deletion was rejected.");
           }
-          receipts.push(...inbox.taskDeletionRequests.map((request) => reviewReceipt(
-            "taskDeletionRequests", request.id, request.updated_at,
+          receipts.push(...inbox.conversationDeletionRequests.map((request) => reviewReceipt(
+            "conversationDeletionRequests", request.id, request.updated_at,
           )));
         }
         if ((inbox.architectureViews ?? []).length) {
@@ -934,20 +933,20 @@ export default function FeatureFilesDashboard({
     if (generation !== taskHydrationGenerationRef.current || userId !== currentUserId) return;
     const hiddenPromptIds = deletionRequests
       .filter((request) => request.status === "requested" || request.status === "completed")
-      .map((request) => request.prompt_id);
+      .map((request) => request.conversation_id);
     const completedPromptIds = deletionRequests
       .filter((request) => request.status === "completed")
-      .map((request) => request.prompt_id);
+      .map((request) => request.conversation_id);
     const completedTaskIds = deletionRequests
       .filter((request) => request.status === "completed")
-      .map((request) => request.task_id);
+      .flatMap((request) => request.task_ids);
     const rejectedErrors = Object.fromEntries(deletionRequests
       .filter((request) => request.status === "rejected")
-      .map((request) => [request.prompt_id, request.error || "Task deletion was rejected."]));
+      .map((request) => [request.conversation_id, request.error || "Conversation deletion was rejected."]));
     setSynchronizedDeletedPromptIds(hiddenPromptIds);
     setConfirmedDeletedPromptIds(completedPromptIds);
     setConfirmedDeletedTaskIds(completedTaskIds);
-    setDeletionRequestPromptIds(deletionRequests.map((request) => request.prompt_id));
+    setDeletionRequestPromptIds(deletionRequests.map((request) => request.conversation_id));
     setDeletionRequestErrors(rejectedErrors);
     const activeEntries = rows.map(mapAgentTaskRowToQueueEntry);
     setDurableAgentTasks(activeEntries.filter((entry) => !completedTaskIds.includes(entry.durableTaskId ?? "")).sort(
@@ -2766,14 +2765,14 @@ export default function FeatureFilesDashboard({
     setPromptStatus("");
 
     try {
-      await Promise.all(durableAgentTasks
+      await Promise.all([...new Map(durableAgentTasks
         .filter((item) => isFinalizedAgentTaskStatus(item.status))
-        .map((item) => requestFinalizedTaskDeletion(
-          supabaseUrl, supabasePublishableKey, accessToken, item.promptId,
-          item.updatedAt ?? new Date(item.enqueuedAt).toISOString(),
+        .map((item) => [item.conversationId ?? item.promptId, item] as const)).values()]
+        .map(([conversationId]) => requestConversationDeletion(
+          supabaseUrl, supabasePublishableKey, accessToken, conversationId,
         )));
       setIsConfirmingClearDurableTasks(false);
-      setPromptStatus("Synchronized durable task cleanup requested.");
+      setPromptStatus("Synchronized conversation cleanup requested.");
     } catch {
       setPromptStatus("Unable to clear durable agent tasks right now.");
     } finally {
@@ -3019,10 +3018,10 @@ export default function FeatureFilesDashboard({
         accessToken={accessToken}
         activitySummary={lastIntegratedTaskStatus}
         architectureViews={architectureViews}
-        deletedPromptIds={synchronizedDeletedPromptIds}
-        confirmedDeletedPromptIds={confirmedDeletedPromptIds}
+        deletedConversationIds={synchronizedDeletedPromptIds}
+        confirmedDeletedConversationIds={confirmedDeletedPromptIds}
         deletionRequestErrors={deletionRequestErrors}
-        deletionRequestPromptIds={deletionRequestPromptIds}
+        deletionRequestConversationIds={deletionRequestPromptIds}
         isOpen={workspaceView === "architecture" || isAgentOutputViewerOpen}
         liveExchanges={liveHistoryExchanges}
         onAbandonDirectPrompt={abandonQueuedAgentPrompt}
@@ -3031,25 +3030,19 @@ export default function FeatureFilesDashboard({
         onClearFinalizedTasks={() => void clearDurableTasks()}
         onClose={closeAgentOutputViewer}
         onDeletedExchange={handleDeletedHistoryExchange}
-        onDeleteDurableTask={async (exchange) => {
-          if (!exchange.taskId || !currentUser || !accessToken) {
-            throw new Error("This finalized task is unavailable for synchronized deletion.");
+        onDeleteConversation={async (exchange) => {
+          if (!exchange.conversationId || !currentUser || !accessToken) {
+            throw new Error("This conversation is unavailable for synchronized deletion.");
           }
           // The selected exchange can be an archived history row, whose timestamp
           // is independent from agent_tasks.updated_at. The deletion RPC guards on
           // the durable task's exact database revision, so reload it before asking
           // the daemon to clean up its worktree and history.
-          const currentTask = await fetchAgentTaskById(
-            supabaseUrl, supabasePublishableKey, accessToken, currentUserId, exchange.taskId,
-          );
-          if (!currentTask || !isFinalizedAgentTaskStatus(currentTask.status)) {
-            throw new Error("This task is no longer finalized and cannot be deleted.");
-          }
-          await requestFinalizedTaskDeletion(
-            supabaseUrl, supabasePublishableKey, accessToken, currentTask.id, currentTask.updated_at,
+          await requestConversationDeletion(
+            supabaseUrl, supabasePublishableKey, accessToken, exchange.conversationId,
           );
           await rehydrateDurableAgentTasks();
-          setPromptStatus("Synchronized task deletion requested.");
+          setPromptStatus("Synchronized conversation deletion requested.");
         }}
         onImplementPlan={() => void implementPlanningSession()}
         onPlanningReply={handleHistoryPlanningReply}
@@ -4822,6 +4815,7 @@ async function insertAgentTask(
     headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
     body: JSON.stringify({
       id: task.promptId,
+      prompt_id: task.promptId,
       user_id: userId,
       repository: task.directory,
       prompt: task.prompt,
@@ -4829,6 +4823,7 @@ async function insertAgentTask(
       model: task.model,
       reasoning: task.reasoning,
       conversation_id: task.conversationId ?? null,
+      task_type: "implementation",
       planning_mode: false,
       targeted_feature_paths: task.targetedFeaturePaths,
       status: "queued",
@@ -4904,7 +4899,7 @@ async function fetchFeatureExecutionHistorySummaries(
   url.searchParams.set("status", "in.(completed,failed,cancelled)");
   url.searchParams.set("order", "created_at.desc");
   url.searchParams.set("limit", "50");
-  const response = await fetch(url, { headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken), cache: "no-store" });
+  const response = await fetch(url, { method: "POST", headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken), cache: "no-store" });
   if (!response.ok) throw new Error("feature execution history query failed");
   const rows = await response.json() as Array<Omit<FeatureExecutionRunRow, "stdout_tail" | "stderr_tail">>;
   return rows.map((row) => ({ ...row, stdout_tail: "", stderr_tail: "", detail_loaded: false }));
@@ -4984,19 +4979,13 @@ async function fetchActiveAgentTaskSummaries(
 async function fetchDurableTaskDeletionRequests(
   supabaseUrl: string, supabasePublishableKey: string, accessToken: string, userId: string,
 ) {
-  const url = new URL("/rest/v1/agent_task_deletion_requests", supabaseUrl);
-  const recentSince = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-  url.searchParams.set("select", "id,task_id,prompt_id,status,error,updated_at");
-  url.searchParams.set("user_id", `eq.${userId}`);
-  url.searchParams.set("or", `(status.eq.requested,updated_at.gte.${recentSince})`);
-  url.searchParams.set("order", "updated_at.desc,id.desc");
-  url.searchParams.set("limit", "100");
-  const response = await fetch(url, { headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken), cache: "no-store" });
+  const url = new URL("/rest/v1/rpc/get_agent_conversation_deletion_requests", supabaseUrl);
+  const response = await fetch(url, { method: "POST", headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken), cache: "no-store" });
   if (!response.ok) {
     const detail = (await response.text()).trim();
     throw new Error(detail ? `task deletion hydration query failed (${response.status}): ${detail}` : `task deletion hydration query failed (${response.status})`);
   }
-  return (await response.json()) as TaskDeletionRequestRow[];
+  return (await response.json()) as ConversationDeletionRequestRow[];
 }
 
 async function fetchAgentTaskById(
@@ -5116,14 +5105,14 @@ function requestDurableTaskRetry(
   });
 }
 
-async function requestFinalizedTaskDeletion(
-  supabaseUrl: string, key: string, token: string, taskId: string, updatedAt: string,
+async function requestConversationDeletion(
+  supabaseUrl: string, key: string, token: string, conversationId: string,
 ) {
-  const response = await fetch(new URL("/rest/v1/rpc/request_finalized_task_deletion", supabaseUrl), {
+  const response = await fetch(new URL("/rest/v1/rpc/request_conversation_deletion", supabaseUrl), {
     method: "POST", headers: getAuthenticatedSupabaseHeaders(key, token),
-    body: JSON.stringify({ p_task_id: taskId, p_expected_updated_at: updatedAt }), cache: "no-store",
+    body: JSON.stringify({ p_conversation_id: conversationId }), cache: "no-store",
   });
-  if (!response.ok) throw new Error("finalized task deletion request failed");
+  if (!response.ok) throw new Error("conversation deletion request failed");
   return await response.json() as string;
 }
 

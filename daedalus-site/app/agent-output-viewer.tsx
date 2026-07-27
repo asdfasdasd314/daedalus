@@ -16,7 +16,6 @@ import {
   canDeleteAgentOutput,
   dedupeAgentOutputConversations,
   dedupeAgentOutputs,
-  deleteAgentOutputHistory,
   findMatchingAgentOutputFeaturePaths,
   fetchAgentOutputHistoryPage,
   fetchAgentOutputFeatureSummaries,
@@ -40,10 +39,10 @@ type AgentOutputViewerProps = {
   accessToken: string;
   activitySummary: string;
   architectureViews: Record<string, ArchitectureView>;
-  deletedPromptIds?: string[];
-  confirmedDeletedPromptIds?: string[];
+  deletedConversationIds?: string[];
+  confirmedDeletedConversationIds?: string[];
   deletionRequestErrors?: Record<string, string>;
-  deletionRequestPromptIds?: string[];
+  deletionRequestConversationIds?: string[];
   isOpen: boolean;
   liveExchanges: AgentOutputExchange[];
   onAbandonDirectPrompt: (promptId: string) => void;
@@ -54,7 +53,7 @@ type AgentOutputViewerProps = {
   onClearFinalizedTasks: () => void;
   onClose: () => void;
   onDeletedExchange: (exchange: AgentOutputExchange) => void;
-  onDeleteDurableTask: (exchange: AgentOutputExchange) => Promise<void>;
+  onDeleteConversation: (exchange: AgentOutputExchange) => Promise<void>;
   onImplementPlan: () => void;
   onPlanningReply: (exchange: AgentOutputExchange) => void;
   onRefreshLiveTasks?: () => Promise<void>;
@@ -73,10 +72,10 @@ type AgentOutputViewerProps = {
 export type AgentOutputViewerPresentation = "drawer" | "architecture-rail";
 
 export default function AgentOutputViewer({
-  accessToken, activitySummary, architectureViews, deletedPromptIds: synchronizedDeletedPromptIds = [],
-  confirmedDeletedPromptIds = [], deletionRequestErrors = {}, deletionRequestPromptIds = [], isOpen, liveExchanges, onAbandonDirectPrompt,
+  accessToken, activitySummary, architectureViews, deletedConversationIds: synchronizedDeletedConversationIds = [],
+  confirmedDeletedConversationIds = [], deletionRequestErrors = {}, deletionRequestConversationIds = [], isOpen, liveExchanges, onAbandonDirectPrompt,
   onAnswerPlanningQuestion, onArchitectureCanvasPromptChange, onArchitectureViewChange, onCancelDurableTask, onClearFinalizedTasks,
-  onClose, onDeletedExchange, onDeleteDurableTask, onImplementPlan, onPlanningReply, onRefreshLiveTasks,
+  onClose, onDeletedExchange, onDeleteConversation, onImplementPlan, onPlanningReply, onRefreshLiveTasks,
   onRetryDirectPrompt, onRetryDurableTask, onSelectedPromptIdChange, planningSession, presentation, projects,
   selectedPromptId, supabasePublishableKey, supabaseUrl,
 }: AgentOutputViewerProps) {
@@ -87,7 +86,7 @@ export default function AgentOutputViewer({
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [deletingPromptId, setDeletingPromptId] = useState("");
-  const [deletedPromptIds, setDeletedPromptIds] = useState<string[]>([]);
+  const [deletedConversationIds, setDeletedConversationIds] = useState<string[]>([]);
   const [selectionClearedByDeletion, setSelectionClearedByDeletion] = useState(false);
   const [fetchError, setFetchError] = useState("");
   const [archiveError, setArchiveError] = useState("");
@@ -157,7 +156,7 @@ export default function AgentOutputViewer({
       const synchronizedAt = new Date().toISOString();
       if (archiveResult.status === "fulfilled") {
         const page = archiveResult.value;
-        setArchive(removeDeletedAgentOutputHistory(dedupeAgentOutputs(page.exchanges), confirmedDeletedPromptIds));
+        setArchive(removeDeletedAgentOutputHistory(dedupeAgentOutputs(page.exchanges), confirmedDeletedConversationIds));
         setCursor(page.cursor);
         setHasMore(page.hasMore);
         setArchiveSynchronizedAt(synchronizedAt);
@@ -182,7 +181,7 @@ export default function AgentOutputViewer({
         generation, archive: archiveResult.status, live: liveResult.status, summaries: summaryResult.status,
       });
     });
-  }, [accessToken, confirmedDeletedPromptIds, isOpen, supabasePublishableKey, supabaseUrl]);
+  }, [accessToken, confirmedDeletedConversationIds, isOpen, supabasePublishableKey, supabaseUrl]);
 
   useEffect(() => {
     conversationCacheRef.current.clear();
@@ -193,9 +192,9 @@ export default function AgentOutputViewer({
   // Completed deletion is stronger than filtering: remove stale archive, search,
   // detail, and conversation-cache records so later responses cannot revive it.
   useEffect(() => {
-    confirmedDeletionRef.current = new Set(confirmedDeletedPromptIds);
-    if (!confirmedDeletedPromptIds.length) return;
-    const deleted = new Set(confirmedDeletedPromptIds);
+    confirmedDeletionRef.current = new Set(confirmedDeletedConversationIds);
+    if (!confirmedDeletedConversationIds.length) return;
+    const deleted = new Set(confirmedDeletedConversationIds);
     setArchive((current) => removeDeletedAgentOutputHistory(current, deleted));
     setSearchResults((current) => current ? removeDeletedAgentOutputHistory(current, deleted) : null);
     for (const [conversationId, turns] of conversationCacheRef.current) {
@@ -204,7 +203,7 @@ export default function AgentOutputViewer({
       else conversationCacheRef.current.delete(conversationId);
     }
     detailRequestGenerationRef.current += 1;
-  }, [confirmedDeletedPromptIds]);
+  }, [confirmedDeletedConversationIds]);
 
   useEffect(() => {
     if (!isOpen || !search.trim()) {
@@ -219,7 +218,7 @@ export default function AgentOutputViewer({
         .then((results) => {
           if (generation === searchRequestGenerationRef.current) {
             setSearchResults(removeDeletedAgentOutputHistory(
-              rerankAgentOutputSearch(search, results, projects), confirmedDeletedPromptIds,
+              rerankAgentOutputSearch(search, results, projects), confirmedDeletedConversationIds,
             ));
           }
         })
@@ -233,21 +232,21 @@ export default function AgentOutputViewer({
       window.clearTimeout(timer);
       searchRequestGenerationRef.current += 1;
     };
-  }, [accessToken, confirmedDeletedPromptIds, isOpen, projects, search, supabasePublishableKey, supabaseUrl]);
+  }, [accessToken, confirmedDeletedConversationIds, isOpen, projects, search, supabasePublishableKey, supabaseUrl]);
 
   const deletedPromptIdSet = useMemo(
     () => new Set([
-      ...deletedPromptIds,
-      ...synchronizedDeletedPromptIds,
+      ...deletedConversationIds,
+      ...synchronizedDeletedConversationIds,
     ]),
-    [deletedPromptIds, synchronizedDeletedPromptIds],
+    [deletedConversationIds, synchronizedDeletedConversationIds],
   );
   const exchanges = useMemo(() => mergeAgentOutputRecords(archive, liveExchanges)
-    .filter((exchange) => !deletedPromptIdSet.has(exchange.promptId))
-    .map((exchange) => deletionRequestErrors[exchange.promptId]
-      ? { ...exchange, error: deletionRequestErrors[exchange.promptId], statusDetail: deletionRequestErrors[exchange.promptId] }
+    .filter((exchange) => !deletedPromptIdSet.has(exchange.conversationId))
+    .map((exchange) => deletionRequestErrors[exchange.conversationId]
+      ? { ...exchange, error: deletionRequestErrors[exchange.conversationId], statusDetail: deletionRequestErrors[exchange.conversationId] }
       : exchange), [archive, deletedPromptIdSet, deletionRequestErrors, liveExchanges]);
-  const activeSearchResults = search.trim() ? searchResults?.filter((exchange) => !deletedPromptIdSet.has(exchange.promptId)) ?? null : null;
+  const activeSearchResults = search.trim() ? searchResults?.filter((exchange) => !deletedPromptIdSet.has(exchange.conversationId)) ?? null : null;
   const visibleSource = useMemo(
     () => dedupeAgentOutputConversations(activeSearchResults ?? exchanges),
     [activeSearchResults, exchanges],
@@ -261,8 +260,8 @@ export default function AgentOutputViewer({
   const selected = selectAgentOutputExchange(
     exchanges, visibleExchanges, selectedPromptId, selectionClearedByDeletion,
   );
-  const serverPendingDurableDeletionCount = deletionRequestPromptIds.filter((promptId) => (
-    !confirmedDeletedPromptIds.includes(promptId) && !deletionRequestErrors[promptId]
+  const serverPendingDurableDeletionCount = deletionRequestConversationIds.filter((conversationId) => (
+    !confirmedDeletedConversationIds.includes(conversationId) && !deletionRequestErrors[conversationId]
   )).length;
   const conversationTurns = useMemo(() => selected
     ? exchanges.filter((exchange) => exchange.conversationId === selected.conversationId)
@@ -352,7 +351,7 @@ export default function AgentOutputViewer({
     const cached = conversationCacheRef.current.get(conversationId);
     if (cached) {
       setArchive((current) => removeDeletedAgentOutputHistory(
-        dedupeAgentOutputs([...current, ...cached]), confirmedDeletedPromptIds,
+        dedupeAgentOutputs([...current, ...cached]), confirmedDeletedConversationIds,
       ));
       setDetailError("");
       setDetailLoadingConversationId("");
@@ -366,10 +365,10 @@ export default function AgentOutputViewer({
       supabaseUrl, supabasePublishableKey, accessToken, conversationId, selected.promptId,
     ).then((turns) => {
       if (generation !== detailRequestGenerationRef.current) return;
-      if (turns.some((turn) => confirmedDeletionRef.current.has(turn.promptId))) return;
+      if (turns.some((turn) => confirmedDeletionRef.current.has(turn.conversationId))) return;
       conversationCacheRef.current.set(conversationId, turns);
       setArchive((current) => removeDeletedAgentOutputHistory(
-        dedupeAgentOutputs([...current, ...turns]), confirmedDeletedPromptIds,
+        dedupeAgentOutputs([...current, ...turns]), confirmedDeletedConversationIds,
       ));
       logViewerRequest("detail-load-accepted", { generation, conversationId });
     }).catch((error) => {
@@ -380,7 +379,7 @@ export default function AgentOutputViewer({
       if (generation === detailRequestGenerationRef.current) setDetailLoadingConversationId("");
     });
     return () => { detailRequestGenerationRef.current += 1; };
-  }, [accessToken, confirmedDeletedPromptIds, detailRetryGeneration, isOpen, selected?.conversationId, supabasePublishableKey, supabaseUrl]);
+  }, [accessToken, confirmedDeletedConversationIds, detailRetryGeneration, isOpen, selected?.conversationId, supabasePublishableKey, supabaseUrl]);
 
   useEffect(() => {
     if (selected?.mode === "planning" && selected.status === "completed" && selected.output &&
@@ -399,7 +398,7 @@ export default function AgentOutputViewer({
       const page = await fetchAgentOutputHistoryPage(supabaseUrl, supabasePublishableKey, accessToken, cursor);
       if (generation !== historyRequestGenerationRef.current) return;
       setArchive((current) => removeDeletedAgentOutputHistory(
-        dedupeAgentOutputs([...current, ...page.exchanges]), confirmedDeletedPromptIds,
+        dedupeAgentOutputs([...current, ...page.exchanges]), confirmedDeletedConversationIds,
       ));
       setCursor(page.cursor);
       setHasMore(page.hasMore);
@@ -444,7 +443,7 @@ export default function AgentOutputViewer({
       }
       const synchronizedAt = new Date().toISOString();
       if (archiveResult.status === "fulfilled") {
-        setArchive((current) => reconcileRecentAgentOutputHistory(current, archiveResult.value, confirmedDeletedPromptIds));
+        setArchive((current) => reconcileRecentAgentOutputHistory(current, archiveResult.value, confirmedDeletedConversationIds));
         setArchiveSynchronizedAt(synchronizedAt);
       } else {
         setArchiveError(archiveResult.reason instanceof Error ? archiveResult.reason.message : "Unable to refresh history.");
@@ -452,11 +451,11 @@ export default function AgentOutputViewer({
       if (detailResult.status === "fulfilled") {
         const refreshedConversation = detailResult.value;
         if (refreshedConversationId && refreshedConversation) {
-          if (!refreshedConversation.some((turn) => confirmedDeletionRef.current.has(turn.promptId))) {
+          if (!refreshedConversation.some((turn) => confirmedDeletionRef.current.has(turn.conversationId))) {
             conversationCacheRef.current.set(refreshedConversationId, refreshedConversation);
           }
           setArchive((current) => removeDeletedAgentOutputHistory(
-            dedupeAgentOutputs([...current, ...refreshedConversation]), confirmedDeletedPromptIds,
+            dedupeAgentOutputs([...current, ...refreshedConversation]), confirmedDeletedConversationIds,
           ));
         }
         setDetailError("");
@@ -492,21 +491,10 @@ export default function AgentOutputViewer({
     setDeletingPromptId(exchange.promptId);
     setFetchError("");
     try {
-      if (exchange.source === "durable_task" && exchange.taskId) {
-        await onDeleteDurableTask(exchange);
-        if (selectedPromptId === exchange.promptId) {
-          setSelectionClearedByDeletion(true);
-          onSelectedPromptIdChange("");
-          setMobileDetail(false);
-        }
-        return;
-      }
-      if (!exchange.localOnly) {
-        await deleteAgentOutputHistory(supabaseUrl, supabasePublishableKey, accessToken, exchange.promptId);
-      }
-      setDeletedPromptIds((current) => current.includes(exchange.promptId) ? current : [...current, exchange.promptId]);
-      setArchive((current) => current.filter((item) => item.promptId !== exchange.promptId));
-      setSearchResults((current) => current ? current.filter((item) => item.promptId !== exchange.promptId) : null);
+      await onDeleteConversation(exchange);
+      setDeletedConversationIds((current) => current.includes(exchange.conversationId) ? current : [...current, exchange.conversationId]);
+      setArchive((current) => current.filter((item) => item.conversationId !== exchange.conversationId));
+      setSearchResults((current) => current ? current.filter((item) => item.conversationId !== exchange.conversationId) : null);
       setFeatureSummaryCounts((current) => {
         const next = { ...current };
         for (const featurePath of exchange.targetedFeaturePaths) {
@@ -522,7 +510,7 @@ export default function AgentOutputViewer({
       }
       onDeletedExchange(exchange);
     } catch (error) {
-      setFetchError(error instanceof Error ? error.message : "Unable to delete this exchange.");
+      setFetchError(error instanceof Error ? error.message : "Unable to delete this conversation.");
     } finally {
       setDeletingPromptId("");
     }
@@ -603,8 +591,8 @@ export default function AgentOutputViewer({
                   {canDelete ? (
                     <button
                       type="button"
-                      aria-label="Delete exchange"
-                      title="Delete exchange"
+                      aria-label="Delete conversation"
+                      title="Delete conversation"
                       disabled={isDeleting}
                       onClick={() => void deleteExchange(exchange)}
                       className="absolute right-2 top-2 z-10 rounded-lg border border-white/10 bg-black/45 p-1.5 text-slate-300 hover:border-rose-400/30 hover:bg-rose-500/20 hover:text-rose-100 disabled:opacity-50"
@@ -670,8 +658,8 @@ export default function AgentOutputViewer({
                 {canDeleteAgentOutput(selected) ? (
                   <button
                     type="button"
-                    aria-label="Delete exchange"
-                    title="Delete exchange"
+                    aria-label="Delete conversation"
+                    title="Delete conversation"
                     disabled={deletingPromptId === selected.promptId}
                     onClick={() => void deleteExchange(selected)}
                     className="absolute right-3 top-3 rounded-lg border border-white/10 bg-black/45 p-2 text-slate-300 hover:border-rose-400/30 hover:bg-rose-500/20 hover:text-rose-100 disabled:opacity-50"

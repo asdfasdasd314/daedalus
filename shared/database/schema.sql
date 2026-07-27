@@ -1011,6 +1011,33 @@ $$;
 revoke all on function get_client_review_inbox() from public;
 grant execute on function get_client_review_inbox() to authenticated;
 
+-- Conversation-scoped Agent History (migration 044 snapshot).
+create table if not exists agent_conversations (
+  id uuid primary key default gen_random_uuid(), user_id uuid not null references auth.users(id) on delete cascade,
+  repository text not null default '', legacy_conversation_id text,
+  created_at timestamptz not null default now(), updated_at timestamptz not null default now(),
+  unique(user_id, legacy_conversation_id)
+);
+alter table agent_tasks add column if not exists prompt_id text;
+alter table agent_tasks add column if not exists task_type text not null default 'implementation';
+alter table agent_tasks add column if not exists source text not null default 'durable_task';
+alter table agent_tasks add column if not exists status_detail text not null default '';
+alter table agent_tasks rename column conversation_id to legacy_conversation_id;
+alter table agent_tasks add column conversation_id uuid references agent_conversations(id) on delete cascade;
+create table if not exists agent_conversation_deletion_requests (
+  id uuid primary key default gen_random_uuid(), user_id uuid not null references auth.users(id) on delete cascade,
+  conversation_id uuid not null, message text not null default 'daemon_review', status text not null default 'requested',
+  error text not null default '', created_at timestamptz not null default now(), updated_at timestamptz not null default now(),
+  unique(user_id, conversation_id, status)
+);
+create table if not exists agent_conversation_deletion_request_items (
+  request_id uuid not null references agent_conversation_deletion_requests(id) on delete cascade,
+  task_id uuid not null, expected_updated_at timestamptz not null, primary key(request_id, task_id)
+);
+alter table architecture_views add column if not exists task_id uuid references agent_tasks(id) on delete cascade;
+-- See migration 044 for the backfill, RLS, conversation read APIs, and atomic
+-- conversation-deletion RPC implementations.
+
 create function acknowledge_client_reviews(receipts jsonb)
 returns jsonb language plpgsql security definer set search_path=public as $$
 declare owner_id uuid:=auth.uid(); r jsonb; rid text; ok jsonb:='[]'; stale jsonb:='[]';

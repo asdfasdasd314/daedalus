@@ -81,7 +81,7 @@ if __package__ in {None, ""}:
         fetch_current_message,
         fetch_work_snapshot,
         snapshot_communication_messages,
-        upsert_agent_output_history,
+        upsert_agent_task_turn,
         post_feature_files,
         post_git_sync_result,
         post_project_initialization_result,
@@ -117,7 +117,7 @@ else:
         fetch_current_message,
         fetch_work_snapshot,
         snapshot_communication_messages,
-        upsert_agent_output_history,
+        upsert_agent_task_turn,
         post_feature_files,
         post_git_sync_result,
         post_project_initialization_result,
@@ -366,7 +366,7 @@ def run_agent_prompt_cycle(
         prompt_request.get("targetedFeaturePaths", []),
     )
     mode = "ask" if ask_mode else "planning"
-    history_publisher = publish_history or upsert_agent_output_history
+    history_publisher = publish_history or upsert_agent_task_turn
     history_args = (
         config, prompt_id, directory, prompt, "", "", provider, model,
         reasoning, mode, targeted_feature_paths, conversation_id,

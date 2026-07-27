@@ -164,7 +164,7 @@ def post_project_initialization_result(config: dict, result: dict) -> None:
     upsert_daemon_payload(config, PROJECT_INITIALIZATION_PAYLOAD_KIND, result)
 
 
-def upsert_agent_output_history(
+def upsert_agent_task_turn(
     config: dict,
     prompt_id: str,
     repository: str,
@@ -180,7 +180,7 @@ def upsert_agent_output_history(
     status: str = "running",
     status_detail: str | None = None,
 ) -> None:
-    call_daemon_rpc(config, "daemon_upsert_agent_output_history", {
+    call_daemon_rpc(config, "daemon_upsert_agent_task_turn", {
         "p_user_id": config["daemonUserId"],
         "p_prompt_id": prompt_id,
         "p_repository": repository,
@@ -315,15 +315,15 @@ def list_active_feature_execution_runs(config: dict) -> list[dict]:
     return result if isinstance(result, list) else []
 
 
-def list_task_deletion_requests(config: dict) -> list[dict]:
-    result = call_daemon_rpc(config, "daemon_list_task_deletion_requests", {
+def list_conversation_deletion_requests(config: dict) -> list[dict]:
+    result = call_daemon_rpc(config, "daemon_list_conversation_deletion_requests", {
         "p_user_id": config["daemonUserId"],
     })
     return result if isinstance(result, list) else []
 
 
-def complete_task_deletion(config: dict, request_id: str, error: str = "") -> bool:
-    return bool(call_daemon_rpc(config, "daemon_complete_task_deletion", {
+def complete_conversation_deletion(config: dict, request_id: str, error: str = "") -> bool:
+    return bool(call_daemon_rpc(config, "daemon_complete_conversation_deletion", {
         "p_user_id": config["daemonUserId"], "p_request_id": request_id,
         "p_error": error,
     }))

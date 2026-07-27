@@ -48,12 +48,11 @@ class MigrationDeploymentEventTests(unittest.TestCase):
 class TaskDeletionRequestTests(unittest.TestCase):
     def test_worktree_removal_failure_rejects_the_request_without_completing_deletion(self):
         orchestrator = GitWorktreeOrchestrator({"daemonUserId": "user-1"}, lambda *a: "ok", lambda *a: "ok")
-        request = {"id": "request-1", "task_id": "task-1"}
-        task = {"id": "task-1", "repository": "/repo", "worktree_path": "/worktree"}
-        with patch("daedalus_daemon.orchestrator.list_task_deletion_requests", return_value=[request]), \
+        request = {"id": "request-1", "conversation_id": "conversation-1", "task_ids": ["task-1"], "tasks": [{"id": "task-1", "repository": "/repo", "worktree_path": "/worktree"}]}
+        with patch("daedalus_daemon.orchestrator.list_conversation_deletion_requests", return_value=[request]), \
              patch("daedalus_daemon.orchestrator.cleanup_task_worktree", return_value=False), \
-             patch("daedalus_daemon.orchestrator.complete_task_deletion", return_value=True) as complete:
-            orchestrator._handle_task_deletion_requests([task])
+             patch("daedalus_daemon.orchestrator.complete_conversation_deletion", return_value=True) as complete:
+            orchestrator._handle_task_deletion_requests([])
 
         complete.assert_called_once_with(
             orchestrator.config, "request-1", "Unable to remove task worktree: /worktree",
@@ -61,12 +60,11 @@ class TaskDeletionRequestTests(unittest.TestCase):
 
     def test_false_completion_is_logged_after_successful_worktree_cleanup(self):
         orchestrator = GitWorktreeOrchestrator({"daemonUserId": "user-1"}, lambda *a: "ok", lambda *a: "ok")
-        request = {"id": "request-1", "task_id": "task-1"}
-        task = {"id": "task-1", "repository": "/repo", "worktree_path": ""}
-        with patch("daedalus_daemon.orchestrator.list_task_deletion_requests", return_value=[request]), \
-             patch("daedalus_daemon.orchestrator.complete_task_deletion", return_value=False) as complete, \
+        request = {"id": "request-1", "conversation_id": "conversation-1", "task_ids": ["task-1"], "tasks": [{"id": "task-1", "repository": "/repo", "worktree_path": ""}]}
+        with patch("daedalus_daemon.orchestrator.list_conversation_deletion_requests", return_value=[request]), \
+             patch("daedalus_daemon.orchestrator.complete_conversation_deletion", return_value=False) as complete, \
              self.assertLogs("root", "WARNING") as logs:
-            orchestrator._handle_task_deletion_requests([task])
+            orchestrator._handle_task_deletion_requests([])
 
         complete.assert_called_once_with(orchestrator.config, "request-1")
         self.assertIn("completion was not accepted", "\n".join(logs.output))

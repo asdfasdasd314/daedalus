@@ -24,7 +24,7 @@ from daedalus_daemon.communications import (
     fetch_work_snapshot,
     complete_architecture_view,
     publish_architecture_progress_event,
-    upsert_agent_output_history,
+    upsert_agent_task_turn,
     post_feature_files,
     post_git_sync_result,
     post_project_initialization_result,
@@ -345,7 +345,7 @@ class UpdateCurrentMessageTests(unittest.TestCase):
             return FakeResponse({})
 
         with patch("daedalus_daemon.communications.request.urlopen", side_effect=fake_urlopen):
-            upsert_agent_output_history(
+            upsert_agent_task_turn(
                 {
                     "supabaseUrl": "https://example.supabase.co",
                     "supabasePublishableKey": "publishable-key",
@@ -389,7 +389,7 @@ class UpdateCurrentMessageTests(unittest.TestCase):
             return FakeResponse({})
 
         with patch("daedalus_daemon.communications.request.urlopen", side_effect=fake_urlopen):
-            upsert_agent_output_history(
+            upsert_agent_task_turn(
                 {
                     "supabaseUrl": "https://example.supabase.co",
                     "supabasePublishableKey": "publishable-key",

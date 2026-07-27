@@ -244,23 +244,23 @@ export function mergeAgentOutputRecords(
 export function reconcileRecentAgentOutputHistory(
   current: AgentOutputExchange[],
   recent: AgentOutputExchange[],
-  deletedPromptIds: Iterable<string> = [],
+  deletedConversationIds: Iterable<string> = [],
 ) {
-  const deleted = new Set(deletedPromptIds);
+  const deleted = new Set(deletedConversationIds);
   const recentPromptIds = new Set(recent.map((exchange) => exchange.promptId));
   const durableOlderArchive = current.filter(
-    (exchange) => exchange.completedAt && !recentPromptIds.has(exchange.promptId) && !deleted.has(exchange.promptId),
+    (exchange) => exchange.completedAt && !recentPromptIds.has(exchange.promptId) && !deleted.has(exchange.conversationId),
   );
   return dedupeAgentOutputs([...recent, ...durableOlderArchive])
-    .filter((exchange) => !deleted.has(exchange.promptId));
+    .filter((exchange) => !deleted.has(exchange.conversationId));
 }
 
 export function removeDeletedAgentOutputHistory(
   exchanges: AgentOutputExchange[],
-  deletedPromptIds: Iterable<string>,
+  deletedConversationIds: Iterable<string>,
 ) {
-  const deleted = new Set(deletedPromptIds);
-  return exchanges.filter((exchange) => !deleted.has(exchange.promptId));
+  const deleted = new Set(deletedConversationIds);
+  return exchanges.filter((exchange) => !deleted.has(exchange.conversationId));
 }
 
 function featureLookup(projects: FeatureFileProjects) {
@@ -367,7 +367,7 @@ export async function fetchAgentOutputHistoryPage(
   accessToken: string,
   cursor: AgentOutputCursor | null = null,
 ): Promise<AgentOutputPage> {
-  const url = new URL("/rest/v1/rpc/get_agent_output_history_page", supabaseUrl);
+  const url = new URL("/rest/v1/rpc/get_agent_conversation_page", supabaseUrl);
   const rows = await readRows(await fetch(url, {
     method: "POST",
     headers: { ...historyHeaders(publishableKey, accessToken), "Content-Type": "application/json" },
@@ -401,20 +401,12 @@ export async function fetchAgentOutputConversation(
   promptId: string = conversationId,
   cursor: { createdAt: string; id: string } | null = null,
 ) {
-  const url = new URL("/rest/v1/agent_output_history", supabaseUrl);
-  // This is user-triggered by selecting a conversation. Unlike archive pages and
-  // searches, it intentionally retrieves the full prompt and response bodies.
-  // Include the selected prompt fallback because legacy/direct records can have
-  // a missing or stale conversation_id while still being the selected exchange.
-  url.searchParams.set("select", AGENT_OUTPUT_DETAIL_COLUMNS);
-  url.searchParams.set("or", `(conversation_id.eq.${conversationId},prompt_id.eq.${promptId})`);
-  url.searchParams.set("order", "created_at.desc,id.desc");
-  url.searchParams.set("limit", String(AGENT_OUTPUT_PAGE_SIZE));
-  if (cursor) {
-    url.searchParams.set("or", `(created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.lt.${cursor.id}))`);
-  }
+  const url = new URL("/rest/v1/rpc/get_agent_conversation_tasks", supabaseUrl);
+  // Detail is a normalized, ordered task-turn transcript. The legacy prompt
+  // argument remains accepted only so callers can migrate independently.
   const rows = await readRows(await fetch(url, {
-    headers: historyHeaders(publishableKey, accessToken), cache: "no-store",
+    method: "POST", headers: { ...historyHeaders(publishableKey, accessToken), "Content-Type": "application/json" },
+    body: JSON.stringify({ p_conversation_id: conversationId }), cache: "no-store",
   }));
   return rows.reverse().map(normalizeAgentOutputRow);
 }
@@ -422,12 +414,8 @@ export async function fetchAgentOutputConversation(
 export async function fetchAgentOutputByPromptId(
   supabaseUrl: string, publishableKey: string, accessToken: string, promptId: string,
 ) {
-  const url = new URL("/rest/v1/agent_output_history", supabaseUrl);
-  url.searchParams.set("select", AGENT_OUTPUT_DETAIL_COLUMNS);
-  url.searchParams.set("prompt_id", `eq.${promptId}`);
-  url.searchParams.set("limit", "1");
-  const rows = await readRows(await fetch(url, { headers: historyHeaders(publishableKey, accessToken), cache: "no-store" }));
-  return rows[0] ? normalizeAgentOutputRow(rows[0]) : null;
+  // Prompt lookup is now intentionally a compatibility-only local fallback.
+  return null;
 }
 
 export async function searchAgentOutputArchive(
@@ -436,7 +424,7 @@ export async function searchAgentOutputArchive(
 ) {
   const queries = [...new Set([query, ...featurePaths])];
   const pages = await Promise.all(queries.map(async (searchQuery) => {
-    const response = await fetch(new URL("/rest/v1/rpc/search_agent_output_history", supabaseUrl), {
+    const response = await fetch(new URL("/rest/v1/rpc/search_agent_conversations", supabaseUrl), {
       method: "POST",
       headers: { ...historyHeaders(publishableKey, accessToken), "Content-Type": "application/json" },
       body: JSON.stringify({ p_query: searchQuery, p_limit: 50 }),
@@ -449,7 +437,7 @@ export async function searchAgentOutputArchive(
 export async function fetchAgentOutputFeatureSummaries(
   supabaseUrl: string, publishableKey: string, accessToken: string,
 ) {
-  const response = await fetch(new URL("/rest/v1/rpc/summarize_agent_output_history_features", supabaseUrl), {
+  const response = await fetch(new URL("/rest/v1/rpc/summarize_agent_conversation_features", supabaseUrl), {
     method: "POST",
     headers: { ...historyHeaders(publishableKey, accessToken), "Content-Type": "application/json" },
     body: "{}",
@@ -470,27 +458,4 @@ export function selectAgentOutputExchange(
 ) {
   return exchanges.find((exchange) => exchange.promptId === selectedPromptId)
     ?? (preserveEmptySelection ? null : visibleExchanges[0] ?? null);
-}
-
-export async function deleteAgentOutputHistory(
-  supabaseUrl: string,
-  publishableKey: string,
-  accessToken: string,
-  promptId: string,
-) {
-  const response = await fetch(new URL("/rest/v1/rpc/delete_terminal_direct_prompt_agent_output_history", supabaseUrl), {
-    method: "POST",
-    headers: {
-      ...historyHeaders(publishableKey, accessToken),
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ p_prompt_id: promptId }),
-  });
-  if (!response.ok) {
-    throw new Error((await response.text()) || `History delete failed (${response.status}).`);
-  }
-  const deletedPromptId = await response.json() as unknown;
-  if (deletedPromptId !== promptId) {
-    throw new Error("This direct-prompt history entry was not deleted. Refresh and try again.");
-  }
 }

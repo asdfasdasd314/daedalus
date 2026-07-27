@@ -346,15 +346,14 @@ test("live durable task rehydrate stays non-recurrent and column-scoped", () => 
   assert.doesNotMatch(byId, /select", "\*"/);
 });
 
-test("finalized task deletion reloads the durable revision instead of using archive history time", () => {
+test("conversation deletion uses the conversation identity rather than an archived task revision", () => {
   const deletionHandler = dashboardSource.slice(
-    dashboardSource.indexOf("onDeleteDurableTask={async (exchange) => {"),
-    dashboardSource.indexOf("onImplementPlan", dashboardSource.indexOf("onDeleteDurableTask={async (exchange) => {")),
+    dashboardSource.indexOf("onDeleteConversation={async (exchange) => {"),
+    dashboardSource.indexOf("onImplementPlan", dashboardSource.indexOf("onDeleteConversation={async (exchange) => {")),
   );
-  assert.match(deletionHandler, /fetchAgentTaskById\(/);
-  assert.match(deletionHandler, /isFinalizedAgentTaskStatus\(currentTask\.status\)/);
-  assert.match(deletionHandler, /currentTask\.updated_at/);
-  assert.doesNotMatch(deletionHandler, /requestFinalizedTaskDeletion\([\s\S]*exchange\.updatedAt/);
+  assert.match(deletionHandler, /requestConversationDeletion\(/);
+  assert.match(deletionHandler, /exchange\.conversationId/);
+  assert.doesNotMatch(deletionHandler, /exchange\.updatedAt/);
 });
 
 test("manager panel is display/action only", () => {
