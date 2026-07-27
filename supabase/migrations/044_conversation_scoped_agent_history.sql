@@ -23,6 +23,11 @@ alter table agent_tasks add column if not exists source text not null default 'd
   check (source in ('durable_task', 'direct_prompt'));
 alter table agent_tasks add column if not exists status_detail text not null default '';
 
+-- The old projection assumes conversation_id is text and is incompatible with
+-- the UUID column above. Retire it before updating existing task rows.
+drop trigger if exists project_agent_task_history on agent_tasks;
+drop function if exists project_agent_task_to_output_history();
+
 insert into agent_conversations (user_id, repository, legacy_conversation_id, created_at, updated_at)
 select user_id, max(repository), conversation_key, min(created_at), max(updated_at)
 from (
@@ -257,8 +262,6 @@ declare owner_id uuid:=auth.uid(); r jsonb; ok jsonb:='[]'; stale jsonb:='[]'; b
  end loop; return jsonb_build_object('acknowledged',ok,'rejected',stale); end;
 $$;
 
-drop trigger if exists project_agent_task_history on agent_tasks;
-drop function if exists project_agent_task_to_output_history();
 drop function if exists request_finalized_task_deletion(uuid,timestamptz);
 drop function if exists delete_terminal_direct_prompt_agent_output_history(text);
 grant execute on function request_conversation_deletion(uuid),get_agent_conversation_page(timestamptz,uuid,integer),get_agent_conversation_tasks(uuid),search_agent_conversations(text,integer),summarize_agent_conversation_features(),get_agent_conversation_deletion_requests(),get_client_review_inbox(),acknowledge_client_reviews(jsonb) to authenticated;
