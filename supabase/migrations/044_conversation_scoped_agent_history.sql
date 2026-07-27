@@ -26,10 +26,10 @@ alter table agent_tasks add column if not exists status_detail text not null def
 insert into agent_conversations (user_id, repository, legacy_conversation_id, created_at, updated_at)
 select user_id, max(repository), conversation_key, min(created_at), max(updated_at)
 from (
-  select user_id, repository, coalesce(nullif(conversation_id, ''), prompt_id) conversation_key, created_at, updated_at
+  select user_id, repository, coalesce(nullif(conversation_id::text, ''), prompt_id) conversation_key, created_at, updated_at
   from agent_output_history
   union all
-  select user_id, repository, coalesce(nullif(legacy_conversation_id, ''), id::text), created_at, updated_at
+  select user_id, repository, coalesce(nullif(legacy_conversation_id::text, ''), id::text), created_at, updated_at
   from agent_tasks
 ) turns
 group by user_id, conversation_key
@@ -40,7 +40,7 @@ update agent_tasks task set
   prompt_id = coalesce(nullif(task.prompt_id, ''), task.id::text)
 from agent_conversations conversation
 where conversation.user_id = task.user_id
-  and conversation.legacy_conversation_id = coalesce(nullif(task.legacy_conversation_id, ''), task.id::text);
+  and conversation.legacy_conversation_id = coalesce(nullif(task.legacy_conversation_id::text, ''), task.id::text);
 
 -- Historic direct turns become first-class tasks. UUID v5-like deterministic IDs
 -- are unnecessary here: the legacy task ID is retained when present, and each
@@ -59,7 +59,7 @@ select gen_random_uuid(), history.user_id, conversation.id, history.prompt_id,
   history.source, coalesce(history.status_detail, '')
 from agent_output_history history
 join agent_conversations conversation on conversation.user_id = history.user_id
-  and conversation.legacy_conversation_id = coalesce(nullif(history.conversation_id, ''), history.prompt_id)
+  and conversation.legacy_conversation_id = coalesce(nullif(history.conversation_id::text, ''), history.prompt_id)
 where not exists (
   select 1 from agent_tasks task where task.user_id = history.user_id
     and task.prompt_id = history.prompt_id
@@ -76,7 +76,7 @@ returns trigger language plpgsql security definer set search_path=public as $$
 begin
   if new.conversation_id is null then
     insert into agent_conversations (user_id,repository,legacy_conversation_id)
-    values (new.user_id,new.repository,coalesce(nullif(new.legacy_conversation_id,''),new.id::text))
+    values (new.user_id,new.repository,coalesce(nullif(new.legacy_conversation_id::text,''),new.id::text))
     returning id into new.conversation_id;
   end if;
   new.prompt_id := coalesce(nullif(new.prompt_id,''),new.id::text);
