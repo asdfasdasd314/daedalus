@@ -60,6 +60,7 @@ export function parsePlanningReply(reply: string): {
   };
 }
 
+/** Parse a `## Questions` block body into multiple-choice questions. */
 export function parseQuestionSection(section: string): PlanningQuestion[] {
   const questions: PlanningQuestion[] = [];
   let currentQuestion: PlanningQuestion | null = null;

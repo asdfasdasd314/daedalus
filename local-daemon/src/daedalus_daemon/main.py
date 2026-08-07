@@ -57,12 +57,67 @@ Do not perform implementation work or create durable tasks/worktrees.
 
 """
 CURSOR_ASK_PROMPT_PREFIX = ASK_PROMPT_PREFIX
+BRIDGE_PROMPT_PREFIX = """You are in bridge mode for answer-oriented programming.
+
+Do not edit files.
+Do not run modifying commands.
+Do not implement durable tasks yourself.
+
+Take the user's high-level direction and either (1) ask high-coverage questions that resolve open decision dimensions, or (2) when enough is known, split the work into independent single-focus coding task prompts.
+
+Prefer questions that collapse multiple downstream choices (constraints, economics, risk, scope, non-goals) rather than low-leverage trivia.
+
+"""
+BRIDGE_PROMPT_SUFFIX = """Always respond with this Markdown contract only (no file writes):
+
+```md
+## Status
+need_more_questions
+
+## Notes
+Brief reasoning about remaining open dimensions.
+
+## Questions
+
+1. **[question]**:
+   - a. [potential answer]
+   - b. [potential answer]
+   - c. [potential answer]
+```
+
+or, when ready to fan out coding work:
+
+```md
+## Status
+ready
+
+## Notes
+Brief reasoning that the decision space is sufficiently covered.
+
+## Tasks
+
+1. **Task title**: one complete coding prompt focused on a single unit of work
+2. **Task title**: next independent unit of work
+```
+
+Rules:
+- If status is need_more_questions, include a non-empty ## Questions section and omit or leave ## Tasks empty.
+- If status is ready, include a non-empty ## Tasks section. Questions are optional.
+- Ask at most five questions per turn and never suggest more than three options per question.
+- Each task prompt must be self-contained so a coding agent can execute it without the full bridge transcript.
+
+"""
+CURSOR_BRIDGE_PROMPT_PREFIX = (
+    f"{BRIDGE_PROMPT_PREFIX.rstrip()}\n\n"
+    "Do not try to write the answer outline to a file.\n\n"
+)
 TARGETED_FEATURE_PATH_REGEX = re.compile(r"^feature_files/[A-Za-z0-9._/-]+\.md$")
 TARGETED_FEATURES_PROMPT_PREFIX = (
     "The following prompt reqeusts changes relevant to the following feature files: {paths}"
 )
 TASK_MODE_CODING = "TASK_MODE: coding"
 TASK_MODE_PLANNING = "TASK_MODE: planning"
+TASK_MODE_BRIDGE = "TASK_MODE: bridge"
 
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -355,17 +410,36 @@ def run_agent_prompt_cycle(
     reasoning = prompt_request.get("reasoning", DEFAULT_CODEX_REASONING)
     planning_mode = prompt_request.get("planningMode", False) is True
     ask_mode = prompt_request.get("askMode", False) is True
-    if ask_mode:
+    bridge_mode = prompt_request.get("bridgeMode", False) is True
+    if bridge_mode:
         planning_mode = False
-    planning_context = prompt_request.get("planningContext", "") if planning_mode else ""
-    planning_answers = prompt_request.get("planningAnswers", []) if planning_mode else []
+        ask_mode = False
+    elif ask_mode:
+        planning_mode = False
+    planning_context = (
+        prompt_request.get("planningContext", "")
+        if planning_mode
+        else (prompt_request.get("bridgeContext", "") if bridge_mode else "")
+    )
+    planning_answers = (
+        prompt_request.get("planningAnswers", [])
+        if planning_mode
+        else (prompt_request.get("bridgeAnswers", []) if bridge_mode else [])
+    )
     conversation_id = prompt_request.get("conversationId")
     if not isinstance(conversation_id, str) or not conversation_id.strip():
         conversation_id = prompt_id
     targeted_feature_paths = filter_targeted_feature_paths(
         prompt_request.get("targetedFeaturePaths", []),
     )
-    mode = "ask" if ask_mode else "planning"
+    if bridge_mode:
+        mode = "bridge"
+    elif ask_mode:
+        mode = "ask"
+    else:
+        mode = "planning"
+    # Bridge and ask share a non-mutating sandbox; planning uses provider plan modes.
+    read_only_exec = ask_mode or bridge_mode
     history_publisher = publish_history or upsert_agent_task_turn
     history_args = (
         config, prompt_id, directory, prompt, "", "", provider, model,
@@ -381,6 +455,7 @@ def run_agent_prompt_cycle(
             planning_context,
             planning_answers,
             ask_mode=ask_mode,
+            bridge_mode=bridge_mode,
         )
         if provider == CURSOR_PROVIDER
         else build_codex_prompt(
@@ -390,26 +465,33 @@ def run_agent_prompt_cycle(
             planning_context,
             planning_answers,
             ask_mode=ask_mode,
+            bridge_mode=bridge_mode,
         )
     )
     try:
         if provider == CURSOR_PROVIDER:
             reply = (
-                run_cursor_exec(directory, final_prompt, planning_mode, ask_mode=ask_mode)
+                run_cursor_exec(
+                    directory, final_prompt, planning_mode, ask_mode=read_only_exec,
+                )
                 if run_cursor_prompt is None
                 else (
-                    run_cursor_prompt(directory, final_prompt, planning_mode, ask_mode)
-                    if ask_mode
+                    run_cursor_prompt(directory, final_prompt, planning_mode, read_only_exec)
+                    if read_only_exec
                     else run_cursor_prompt(directory, final_prompt, planning_mode)
                 )
             )
         elif provider == CODEX_PROVIDER:
             reply = (
-                run_codex_exec(directory, final_prompt, model, reasoning, ask_mode=ask_mode)
+                run_codex_exec(
+                    directory, final_prompt, model, reasoning, ask_mode=read_only_exec,
+                )
                 if run_codex_prompt is None
                 else (
-                    run_codex_prompt(directory, final_prompt, model, reasoning, ask_mode)
-                    if ask_mode
+                    run_codex_prompt(
+                        directory, final_prompt, model, reasoning, read_only_exec,
+                    )
+                    if read_only_exec
                     else run_codex_prompt(directory, final_prompt, model, reasoning)
                 )
             )
@@ -444,7 +526,7 @@ def run_agent_prompt_cycle(
             config, prompt_id, directory, prompt, reply, provider, model,
             reasoning, planning_mode, targeted_feature_paths,
         )
-        if ask_mode:
+        if ask_mode or bridge_mode:
             deliver_chat(*legacy_args, ask_mode=True)
         else:
             deliver_chat(*legacy_args)
@@ -972,10 +1054,21 @@ def build_codex_prompt(
     planning_context: str = "",
     planning_answers: list[dict[str, str]] | None = None,
     ask_mode: bool = False,
+    bridge_mode: bool = False,
 ) -> str:
     prompt_sections: list[str] = []
 
-    if ask_mode:
+    if bridge_mode:
+        prompt_sections.append(TASK_MODE_BRIDGE)
+        prompt_sections.append(BRIDGE_PROMPT_PREFIX.rstrip())
+        prompt_sections.append(BRIDGE_PROMPT_SUFFIX.rstrip())
+        refinement_context = build_bridge_refinement_context(
+            planning_context,
+            planning_answers,
+        )
+        if refinement_context:
+            prompt_sections.append(refinement_context)
+    elif ask_mode:
         prompt_sections.append(ASK_PROMPT_PREFIX.rstrip())
     elif planning_mode:
         prompt_sections.append(TASK_MODE_PLANNING)
@@ -1008,10 +1101,21 @@ def build_cursor_prompt(
     planning_context: str = "",
     planning_answers: list[dict[str, str]] | None = None,
     ask_mode: bool = False,
+    bridge_mode: bool = False,
 ) -> str:
     prompt_sections: list[str] = []
 
-    if ask_mode:
+    if bridge_mode:
+        prompt_sections.append(TASK_MODE_BRIDGE)
+        prompt_sections.append(CURSOR_BRIDGE_PROMPT_PREFIX.rstrip())
+        prompt_sections.append(BRIDGE_PROMPT_SUFFIX.rstrip())
+        refinement_context = build_bridge_refinement_context(
+            planning_context,
+            planning_answers,
+        )
+        if refinement_context:
+            prompt_sections.append(refinement_context)
+    elif ask_mode:
         prompt_sections.append(CURSOR_ASK_PROMPT_PREFIX.rstrip())
     elif planning_mode:
         prompt_sections.append(TASK_MODE_PLANNING)
@@ -1052,6 +1156,34 @@ def build_planning_refinement_context(
     answers: list[str] = []
     if isinstance(planning_answers, list):
         for item in planning_answers:
+            if not isinstance(item, dict):
+                continue
+            question = item.get("question")
+            answer = item.get("answer")
+            if isinstance(question, str) and isinstance(answer, str):
+                answers.append(f"{question}: {len(answers) + 1}. {answer}")
+
+    if answers:
+        sections.append("\n".join(answers))
+
+    return "\n\n".join(sections)
+
+
+def build_bridge_refinement_context(
+    bridge_context: object,
+    bridge_answers: object,
+) -> str:
+    sections: list[str] = []
+
+    if isinstance(bridge_context, str) and bridge_context.strip():
+        sections.append(
+            "Continue the answer-oriented bridge using the notes below and the user's answers:\n\n"
+            f"{bridge_context.strip()}",
+        )
+
+    answers: list[str] = []
+    if isinstance(bridge_answers, list):
+        for item in bridge_answers:
             if not isinstance(item, dict):
                 continue
             question = item.get("question")

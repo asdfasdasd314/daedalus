@@ -458,6 +458,31 @@ class BuildCodexPromptTests(unittest.TestCase):
         self.assertNotIn(PLANNING_PROMPT_SUFFIX.rstrip(), prompt)
         self.assertNotIn("Refine the following current implementation plan", prompt)
 
+    def test_builds_bridge_mode_prompt_with_task_mode_and_refinement(self):
+        from daedalus_daemon.main import (
+            BRIDGE_PROMPT_PREFIX,
+            BRIDGE_PROMPT_SUFFIX,
+            TASK_MODE_BRIDGE,
+        )
+
+        prompt = build_codex_prompt(
+            "Trade volatility oscillations",
+            False,
+            ["feature_files/answer-oriented-programming.md"],
+            planning_context="## Notes\nNeed fee coverage.",
+            planning_answers=[{"question": "Beat fees alone?", "answer": "Maker only"}],
+            bridge_mode=True,
+        )
+
+        self.assertTrue(prompt.startswith(TASK_MODE_BRIDGE))
+        self.assertIn(BRIDGE_PROMPT_PREFIX.rstrip(), prompt)
+        self.assertIn(BRIDGE_PROMPT_SUFFIX.rstrip(), prompt)
+        self.assertIn("Continue the answer-oriented bridge", prompt)
+        self.assertIn("Beat fees alone?: 1. Maker only", prompt)
+        self.assertIn("feature_files/answer-oriented-programming.md", prompt)
+        self.assertNotIn(TASK_MODE_PLANNING, prompt)
+        self.assertNotIn(PLANNING_PROMPT_SUFFIX.rstrip(), prompt)
+
 
 class FilterTargetedFeaturePathsTests(unittest.TestCase):
     def test_keeps_only_valid_feature_file_paths(self):

@@ -8,7 +8,7 @@ const AGENT_OUTPUT_DETAIL_COLUMNS = `${AGENT_OUTPUT_SUMMARY_COLUMNS},output,erro
 export type AgentOutputStatus =
   | "queued" | "running" | "verifying" | "ready" | "integrating"
   | "resolving" | "completed" | "failed" | "blocked" | "cancelled";
-export type AgentOutputMode = "standard" | "planning" | "ask";
+export type AgentOutputMode = "standard" | "planning" | "ask" | "bridge";
 export type AgentOutputSource = "durable_task" | "direct_prompt";
 
 export type AgentOutputHistoryRow = {
@@ -84,7 +84,7 @@ export const AGENT_OUTPUT_STATUS_LABELS: Record<AgentOutputStatus, string> = {
   cancelled: "Cancelled",
 };
 export const AGENT_OUTPUT_MODE_LABELS: Record<AgentOutputMode, string> = {
-  standard: "Standard", planning: "Planning", ask: "Ask",
+  standard: "Standard", planning: "Planning", ask: "Ask", bridge: "Bridge",
 };
 export const AGENT_OUTPUT_SOURCE_LABELS: Record<AgentOutputSource, string> = {
   durable_task: "Durable task", direct_prompt: "Direct prompt",

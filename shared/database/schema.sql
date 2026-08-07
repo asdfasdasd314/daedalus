@@ -234,7 +234,7 @@ create table agent_output_history (
   provider text not null default '',
   model text not null default '',
   reasoning text not null default '',
-  mode text not null check (mode in ('standard', 'planning', 'ask')),
+  mode text not null check (mode in ('standard', 'planning', 'ask', 'bridge')),
   source text not null check (source in ('durable_task', 'direct_prompt')),
   targeted_feature_paths jsonb not null default '[]'::jsonb check (jsonb_typeof(targeted_feature_paths) = 'array'),
   status text not null check (status in ('queued', 'running', 'verifying', 'ready', 'integrating', 'resolving', 'completed', 'failed', 'blocked', 'cancelled')),
@@ -470,7 +470,7 @@ create or replace function daemon_upsert_agent_output_history(
 )
 returns void language plpgsql security definer set search_path = public as $$
 begin
-  if p_mode not in ('planning', 'ask') then raise exception 'Direct prompt history only supports planning and ask modes'; end if;
+  if p_mode not in ('planning', 'ask', 'bridge') then raise exception 'Direct prompt history only supports planning, ask, and bridge modes'; end if;
   if p_status not in ('running', 'completed', 'failed', 'cancelled') then raise exception 'Unsupported direct prompt history status: %', p_status; end if;
   if nullif(trim(p_prompt_id), '') is null then raise exception 'Prompt ID is required'; end if;
   insert into agent_output_history (

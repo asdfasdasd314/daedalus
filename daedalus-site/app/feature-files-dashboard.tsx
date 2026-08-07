@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient, type Session } from "@supabase/supabase-js";
 import AgentSessionPanel from "./agent-session-panel";
+import AopSessionPanel from "./aop-session-panel";
 import AgentOutputViewer from "./agent-output-viewer";
 import ArchitectureVisualization from "./architecture-visualization";
 import AgentTaskNotifications, {
@@ -42,6 +43,11 @@ import {
   type PlanningAnswer,
   type PlanningSession,
 } from "@/lib/planning-questionnaire";
+import {
+  parseBridgeReply,
+  type BridgeSession,
+} from "@/lib/bridge-session";
+import { fetchAgentOutputConversation } from "@/lib/agent-output-history";
 import type { FeatureFileProjects } from "@/lib/feature-file-cache";
 import type {
   ParameterFileProjects,
@@ -91,6 +97,7 @@ const PROJECT_INITIALIZATION_PAYLOAD_KIND = "project_initialization_result";
 const DEFAULT_PROJECT_DIRECTORY = "/Users/jameshollingsworth/Projects/daedalus";
 const AGENT_PROMPT_QUEUE_STORAGE_KEY = "agent-prompt-queue-v1";
 const PLANNING_SESSION_STORAGE_KEY = "planning-questionnaire-session-v1";
+const BRIDGE_SESSION_STORAGE_KEY = "bridge-aop-session-v1";
 const AGENT_PROMPT_TIMEOUT_MS = 5 * 60 * 1000;
 const VENTURE_PROGRESS_STATES = ["idle", "in progress", "completed"] as const;
 const DEFAULT_DESKTOP_MIN_ZOOM = 0.42;
@@ -108,7 +115,7 @@ const DAEMON_ADMISSION_MESSAGE = "The execution daemon is draining for restart. 
 type AuthMode = "sign-in" | "sign-up";
 type DevEnvironmentState = "idle" | "loading" | "ready" | "error";
 type PrimaryOverlay = "feature-detail" | "new-feature" | "git-sync" | "project-initialization" | null;
-type FeatureDetailTab = "edit" | "info" | "params";
+type FeatureDetailTab = "edit" | "info" | "params" | "aop";
 type WorkspaceView = "feature" | "architecture";
 type VentureProgressState = (typeof VENTURE_PROGRESS_STATES)[number];
 
@@ -173,9 +180,12 @@ type AgentPromptPayload = {
   reasoning: string;
   planningMode: boolean;
   askMode: boolean;
+  bridgeMode: boolean;
   targetedFeaturePaths: string[];
   planningContext?: string;
   planningAnswers?: PlanningAnswer[];
+  bridgeContext?: string;
+  bridgeAnswers?: PlanningAnswer[];
 };
 
 type AgentPromptQueueEntry = AgentPromptPayload & {
@@ -322,9 +332,13 @@ export default function FeatureFilesDashboard({
     useState("");
   const [latestChat, setLatestChat] = useState<AgentChatExchange | null>(null);
   const [planningSession, setPlanningSession] = useState<PlanningSession | null>(null);
+  const [bridgeSession, setBridgeSession] = useState<BridgeSession | null>(null);
+  const [aopDirectionText, setAopDirectionText] = useState("");
+  const [bridgeOtherAnswer, setBridgeOtherAnswer] = useState("");
   const [agentPromptQueue, setAgentPromptQueue] = useState<
     AgentPromptQueueEntry[]
   >([]);
+  const bridgeSessionRef = useRef<BridgeSession | null>(null);
   const [durableAgentTasks, setDurableAgentTasks] = useState<
     AgentPromptQueueEntry[]
   >([]);
@@ -539,6 +553,10 @@ export default function FeatureFilesDashboard({
   }, [agentPromptQueue]);
 
   useEffect(() => {
+    bridgeSessionRef.current = bridgeSession;
+  }, [bridgeSession]);
+
+  useEffect(() => {
     latestChatRef.current = latestChat;
   }, [latestChat]);
 
@@ -553,7 +571,9 @@ export default function FeatureFilesDashboard({
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setAgentPromptQueue(
           Array.isArray(parsedQueue)
-            ? parsedQueue.filter((item) => item.planningMode || item.askMode)
+            ? parsedQueue.filter(
+              (item) => item.planningMode || item.askMode || item.bridgeMode,
+            )
             : [],
         );
       }
@@ -567,6 +587,17 @@ export default function FeatureFilesDashboard({
           storedPlanningSession,
         ) as PlanningSession;
         setPlanningSession(parsedPlanningSession);
+      }
+
+      const storedBridgeSession = window.localStorage.getItem(
+        BRIDGE_SESSION_STORAGE_KEY,
+      );
+
+      if (storedBridgeSession) {
+        const parsedBridgeSession = JSON.parse(
+          storedBridgeSession,
+        ) as BridgeSession;
+        setBridgeSession(parsedBridgeSession);
       }
     } catch {
       return;
@@ -601,6 +632,22 @@ export default function FeatureFilesDashboard({
 
     window.localStorage.removeItem(PLANNING_SESSION_STORAGE_KEY);
   }, [isAgentPromptQueueHydrated, planningSession]);
+
+  useEffect(() => {
+    if (!isAgentPromptQueueHydrated) {
+      return;
+    }
+
+    if (bridgeSession) {
+      window.localStorage.setItem(
+        BRIDGE_SESSION_STORAGE_KEY,
+        JSON.stringify(bridgeSession),
+      );
+      return;
+    }
+
+    window.localStorage.removeItem(BRIDGE_SESSION_STORAGE_KEY);
+  }, [bridgeSession, isAgentPromptQueueHydrated]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -1310,7 +1357,7 @@ export default function FeatureFilesDashboard({
 
     const activePrompt = agentPromptQueue.find(
       (item) =>
-        (item.planningMode || item.askMode) &&
+        (item.planningMode || item.askMode || item.bridgeMode) &&
         (item.status === "sending" || item.status === "running"),
     );
 
@@ -1319,7 +1366,9 @@ export default function FeatureFilesDashboard({
     }
 
     const nextQueuedPrompt = agentPromptQueue.find(
-      (item) => item.status === "queued" && (item.planningMode || item.askMode),
+      (item) =>
+        item.status === "queued" &&
+        (item.planningMode || item.askMode || item.bridgeMode),
     );
 
     if (!nextQueuedPrompt) {
@@ -1345,7 +1394,7 @@ export default function FeatureFilesDashboard({
     const intervalId = window.setInterval(() => {
       const activePrompt = agentPromptQueueRef.current.find(
         (item) =>
-          (item.planningMode || item.askMode) &&
+          (item.planningMode || item.askMode || item.bridgeMode) &&
           (item.status === "sending" || item.status === "running"),
       );
 
@@ -1545,6 +1594,7 @@ export default function FeatureFilesDashboard({
       reasoning: selectedReasoning,
       planningMode,
       askMode,
+      bridgeMode: false,
       targetedFeaturePaths,
       status: "queued",
       enqueuedAt: Date.now(),
@@ -1618,6 +1668,273 @@ export default function FeatureFilesDashboard({
     }
   }
 
+  async function sendBridgeDirection() {
+    if (!aopDirectionText.trim() || !currentUser || !accessToken) {
+      return;
+    }
+    if (!daemonAcceptsWork) {
+      setPromptSubmissionError(DAEMON_ADMISSION_MESSAGE);
+      return;
+    }
+
+    const promptId = createPromptId();
+    const direction = aopDirectionText.trim();
+    const targetedFeaturePaths = targetedFeatures.map((feature) => feature.filePath);
+    const nextPromptPayload: AgentPromptQueueEntry = {
+      promptId,
+      conversationId: promptId,
+      directory: selectedProjectDirectory,
+      prompt: direction,
+      provider: selectedProvider,
+      model: selectedModelId,
+      reasoning: selectedReasoning,
+      planningMode: false,
+      askMode: false,
+      bridgeMode: true,
+      targetedFeaturePaths,
+      status: "queued",
+      enqueuedAt: Date.now(),
+    };
+
+    setPromptSubmissionError("");
+    setSelectedHistoryPromptId(promptId);
+    setAopDirectionText("");
+    setBridgeSession({
+      conversationId: promptId,
+      directionPrompt: direction,
+      directory: selectedProjectDirectory,
+      provider: selectedProvider,
+      model: selectedModelId,
+      reasoning: selectedReasoning,
+      targetedFeatures,
+      notes: "",
+      pendingQuestions: [],
+      questionIndex: 0,
+      answers: [],
+      proposedTasks: [],
+      phase: "running",
+      activeBridgePromptId: promptId,
+    });
+    setPromptStatus("Bridge direction queued.");
+    setAgentPromptQueue((currentQueue) => [...currentQueue, nextPromptPayload]);
+  }
+
+  function answerBridgeQuestion(answer: string) {
+    const normalizedAnswer = answer.trim();
+    if (!normalizedAnswer || !bridgeSession) {
+      return;
+    }
+
+    const question = bridgeSession.pendingQuestions[bridgeSession.questionIndex];
+    if (!question) {
+      return;
+    }
+
+    const answers = [
+      ...bridgeSession.answers,
+      { question: question.question, answer: normalizedAnswer },
+    ];
+    const nextQuestionIndex = bridgeSession.questionIndex + 1;
+
+    if (nextQuestionIndex < bridgeSession.pendingQuestions.length) {
+      setBridgeSession({
+        ...bridgeSession,
+        answers,
+        questionIndex: nextQuestionIndex,
+      });
+      return;
+    }
+
+    const promptId = createPromptId();
+    const nextPromptPayload: AgentPromptQueueEntry = {
+      promptId,
+      conversationId: bridgeSession.conversationId,
+      directory: bridgeSession.directory,
+      prompt: bridgeSession.directionPrompt,
+      provider: bridgeSession.provider,
+      model: bridgeSession.model,
+      reasoning: bridgeSession.reasoning,
+      planningMode: false,
+      askMode: false,
+      bridgeMode: true,
+      targetedFeaturePaths: bridgeSession.targetedFeatures.map(
+        (feature) => feature.filePath,
+      ),
+      bridgeContext: bridgeSession.notes,
+      bridgeAnswers: answers,
+      status: "queued",
+      enqueuedAt: Date.now(),
+    };
+
+    setBridgeSession({
+      ...bridgeSession,
+      answers,
+      pendingQuestions: [],
+      questionIndex: 0,
+      proposedTasks: [],
+      phase: "running",
+      activeBridgePromptId: promptId,
+      questionPromptId: "",
+    });
+    setPromptStatus("Answers saved. Refining the bridge.");
+    setSelectedHistoryPromptId(promptId);
+    setAgentPromptQueue((currentQueue) => [...currentQueue, nextPromptPayload]);
+  }
+
+  async function applyBridgeReply(promptId: string) {
+    const session = bridgeSessionRef.current;
+    if (!session || session.activeBridgePromptId !== promptId) {
+      return;
+    }
+    if (!currentUser || !accessToken) {
+      return;
+    }
+
+    try {
+      const turns = await fetchAgentOutputConversation(
+        supabaseUrl,
+        supabasePublishableKey,
+        accessToken,
+        session.conversationId,
+        promptId,
+      );
+      const turn = turns.find((item) => item.promptId === promptId)
+        ?? turns.find((item) => item.mode === "bridge" && item.output);
+      if (!turn?.output) {
+        setPromptStatus("Bridge finished, but no reply was available yet.");
+        setBridgeSession((current) =>
+          current && current.activeBridgePromptId === promptId
+            ? { ...current, phase: "idle", activeBridgePromptId: "" }
+            : current,
+        );
+        return;
+      }
+
+      const parsed = parseBridgeReply(turn.output);
+      if (parsed.status === "ready" && parsed.tasks.length > 0) {
+        setBridgeSession((current) =>
+          current && current.activeBridgePromptId === promptId
+            ? {
+              ...current,
+              notes: parsed.notes || current.notes,
+              pendingQuestions: [],
+              questionIndex: 0,
+              proposedTasks: parsed.tasks,
+              phase: "ready",
+              activeBridgePromptId: "",
+              questionPromptId: "",
+              latestReply: turn.output,
+            }
+            : current,
+        );
+        setPromptStatus("Bridge is ready to dispatch coding tasks.");
+        return;
+      }
+
+      setBridgeSession((current) =>
+        current && current.activeBridgePromptId === promptId
+          ? {
+            ...current,
+            notes: parsed.notes || current.notes,
+            pendingQuestions: parsed.questions,
+            questionIndex: 0,
+            proposedTasks: [],
+            phase: parsed.questions.length > 0 ? "questioning" : "idle",
+            activeBridgePromptId: "",
+            questionPromptId: parsed.questions.length > 0 ? promptId : "",
+            latestReply: turn.output,
+          }
+          : current,
+      );
+      setPromptStatus(
+        parsed.questions.length > 0
+          ? "Bridge questions ready."
+          : "Bridge finished without tasks or questions.",
+      );
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "Unable to load bridge reply.";
+      setPromptStatus(detail);
+      setBridgeSession((current) =>
+        current && current.activeBridgePromptId === promptId
+          ? { ...current, phase: "idle", activeBridgePromptId: "" }
+          : current,
+      );
+    }
+  }
+
+  async function dispatchBridgeTasks() {
+    if (!bridgeSession || !currentUser || !accessToken) {
+      return;
+    }
+    if (!daemonAcceptsWork) {
+      setPromptSubmissionError(DAEMON_ADMISSION_MESSAGE);
+      return;
+    }
+    if (bridgeSession.proposedTasks.length === 0) {
+      return;
+    }
+
+    setBridgeSession({ ...bridgeSession, phase: "dispatching" });
+    setPromptSubmissionError("");
+
+    try {
+      const dispatched: AgentPromptQueueEntry[] = [];
+      for (const task of bridgeSession.proposedTasks) {
+        const promptId = createPromptId();
+        const taskPrompt = [
+          `TASK: ${task.title}`,
+          "",
+          task.prompt,
+          "",
+          "Original bridge direction:",
+          bridgeSession.directionPrompt,
+        ].join("\n");
+        const payload: AgentPromptPayload = {
+          promptId,
+          // Omit conversationId so the DB trigger creates a new conversation
+          // per coding task (enables concurrent admission).
+          directory: bridgeSession.directory,
+          prompt: taskPrompt,
+          provider: bridgeSession.provider,
+          model: bridgeSession.model,
+          reasoning: bridgeSession.reasoning,
+          planningMode: false,
+          askMode: false,
+          bridgeMode: false,
+          targetedFeaturePaths: bridgeSession.targetedFeatures.map(
+            (feature) => feature.filePath,
+          ),
+        };
+        await insertAgentTask(
+          supabaseUrl,
+          supabasePublishableKey,
+          accessToken,
+          currentUserId,
+          payload,
+        );
+        dispatched.push({
+          ...payload,
+          status: "queued",
+          enqueuedAt: Date.now(),
+        });
+      }
+      setDurableAgentTasks((currentTasks) => [...currentTasks, ...dispatched]);
+      setBridgeSession(null);
+      setPromptStatus(
+        `Dispatched ${dispatched.length} coding task${dispatched.length === 1 ? "" : "s"}.`,
+      );
+    } catch (submissionError) {
+      const detail = submissionError instanceof Error
+        ? submissionError.message
+        : "Unable to dispatch coding tasks.";
+      setPromptStatus(detail);
+      setPromptSubmissionError(detail);
+      setBridgeSession((current) =>
+        current ? { ...current, phase: "ready" } : current,
+      );
+    }
+  }
+
   function answerPlanningQuestion(answer: string) {
     const normalizedAnswer = answer.trim();
 
@@ -1657,6 +1974,7 @@ export default function FeatureFilesDashboard({
       reasoning: planningSession.reasoning,
       planningMode: true,
       askMode: false,
+      bridgeMode: false,
       targetedFeaturePaths: planningSession.targetedFeatures.map(
         (feature) => feature.filePath,
       ),
@@ -1703,6 +2021,7 @@ export default function FeatureFilesDashboard({
       reasoning: planningSession.reasoning,
       planningMode: false,
       askMode: false,
+      bridgeMode: false,
       targetedFeaturePaths: planningSession.targetedFeatures.map(
         (feature) => feature.filePath,
       ),
@@ -1789,7 +2108,15 @@ export default function FeatureFilesDashboard({
         return;
       }
 
+      const wasBridge = Boolean(
+        agentPromptQueueRef.current.find(
+          (item) => item.promptId === nextPromptId && item.bridgeMode,
+        ) || bridgeSessionRef.current?.activeBridgePromptId === nextPromptId,
+      );
       finalizeQueuedAgentPrompt(nextPromptId, latestChatRef.current);
+      if (wasBridge) {
+        void applyBridgeReply(nextPromptId);
+      }
     }
   }
 
@@ -1851,9 +2178,12 @@ export default function FeatureFilesDashboard({
           reasoning: queueEntry.reasoning,
           planningMode: queueEntry.planningMode,
           askMode: queueEntry.askMode,
+          bridgeMode: queueEntry.bridgeMode,
           targetedFeaturePaths: queueEntry.targetedFeaturePaths,
           planningContext: queueEntry.planningContext,
           planningAnswers: queueEntry.planningAnswers,
+          bridgeContext: queueEntry.bridgeContext,
+          bridgeAnswers: queueEntry.bridgeAnswers,
           prompt: queueEntry.prompt,
         }),
       );
@@ -1929,6 +2259,7 @@ export default function FeatureFilesDashboard({
       reasoning: exchange.reasoning,
       planningMode: exchange.mode === "planning",
       askMode: exchange.mode === "ask",
+      bridgeMode: exchange.mode === "bridge",
       targetedFeaturePaths: exchange.targetedFeaturePaths,
       status: "queued",
       enqueuedAt: Date.now(),
@@ -2003,7 +2334,7 @@ export default function FeatureFilesDashboard({
       provider: entry.provider,
       model: entry.model,
       reasoning: entry.reasoning,
-      mode: entry.askMode ? "ask" : entry.planningMode ? "planning" : "standard",
+      mode: entry.bridgeMode ? "bridge" : entry.askMode ? "ask" : entry.planningMode ? "planning" : "standard",
       conversationId: entry.conversationId ?? entry.promptId,
       source,
       targetedFeaturePaths: entry.targetedFeaturePaths,
@@ -2807,6 +3138,7 @@ export default function FeatureFilesDashboard({
           reasoning: exchange.reasoning,
           planningMode: exchange.mode === "planning",
           askMode: exchange.mode === "ask",
+          bridgeMode: exchange.mode === "bridge",
           targetedFeaturePaths: exchange.targetedFeaturePaths,
           status: exchange.status as AgentPromptQueueStatus,
           enqueuedAt: Date.parse(exchange.createdAt) || Date.now(),
@@ -4057,6 +4389,17 @@ export default function FeatureFilesDashboard({
                 >
                   Params
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setFeatureDetailTab("aop")}
+                  className={`min-w-0 flex-1 rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] transition sm:flex-none ${
+                    featureDetailTab === "aop"
+                      ? "bg-cyan-300 text-slate-950"
+                      : "text-slate-300 hover:bg-white/10"
+                  }`}
+                >
+                  AOP
+                </button>
               </div>
             </div>
             <div className="agent-chat-scrollbar min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-4 sm:px-5">
@@ -4094,6 +4437,34 @@ export default function FeatureFilesDashboard({
                       "This feature file is no longer available in the loaded payload."}
                   </pre>
                 </div>
+              ) : featureDetailTab === "aop" ? (
+                <AopSessionPanel
+                  acceptsWork={daemonAcceptsWork}
+                  agentModels={agentModels}
+                  availableProjectDirectories={availableProjectDirectories}
+                  bridgeSession={bridgeSession}
+                  defaultProjectDirectory={DEFAULT_PROJECT_DIRECTORY}
+                  directionText={aopDirectionText}
+                  onClearSession={() => setBridgeSession(null)}
+                  onDirectionTextChange={setAopDirectionText}
+                  onDispatchTasks={() => void dispatchBridgeTasks()}
+                  onAnswerQuestion={answerBridgeQuestion}
+                  onOpenFeatureTagSearch={openFeatureTagSearch}
+                  onProviderChange={selectProvider}
+                  onRemoveTargetedFeature={removeTargetedFeature}
+                  onSelectedProjectDirectoryChange={setSelectedProjectDirectory}
+                  onSelectedReasoningChange={setSelectedReasoning}
+                  onSelectModel={selectModel}
+                  onSubmitDirection={() => void sendBridgeDirection()}
+                  otherAnswer={bridgeOtherAnswer}
+                  onOtherAnswerChange={setBridgeOtherAnswer}
+                  selectedModelId={selectedModelId}
+                  selectedProvider={selectedProvider}
+                  selectedProjectDirectory={selectedProjectDirectory}
+                  selectedReasoning={selectedReasoning}
+                  submissionError={promptSubmissionError}
+                  targetedFeatures={targetedFeatures}
+                />
               ) : (
                 <div className="grid gap-5">
                   <section className="grid gap-2">
@@ -4660,6 +5031,7 @@ function mapAgentTaskRowToQueueEntry(row: AgentTaskRow): AgentPromptQueueEntry {
     reasoning: row.reasoning,
     planningMode: row.planning_mode,
     askMode: false,
+    bridgeMode: false,
     targetedFeaturePaths: row.targeted_feature_paths ?? [],
     status: row.status,
     enqueuedAt: Date.parse(row.created_at),

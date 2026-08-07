@@ -10,6 +10,7 @@ The prompt should declare modes, such as:
     TASK_MODE: planning
     TASK_MODE: integrating
     TASK_MODE: architecture
+    TASK_MODE: bridge
 
 Read the corresponding profile:
 

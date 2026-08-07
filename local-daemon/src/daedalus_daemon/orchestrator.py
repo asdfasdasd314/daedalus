@@ -510,6 +510,7 @@ class GitWorktreeOrchestrator:
             str(task["model"]),
             str(task["reasoning"]),
             task_id,
+            writable_directories=[worktree_path],
         )
 
     def _run_resolver_agent(
@@ -528,7 +529,14 @@ class GitWorktreeOrchestrator:
         else:
             model = settings["resolverModel"]
             reasoning = settings["resolverReasoning"]
-        return self.run_codex(worktree_path, prompt, model, reasoning, str(task["id"]))
+        return self.run_codex(
+            worktree_path,
+            prompt,
+            model,
+            reasoning,
+            str(task["id"]),
+            writable_directories=[worktree_path],
+        )
 
     def _finish_tasks(self, tasks: list[dict]) -> None:
         tasks_by_id = {str(task["id"]): task for task in tasks}

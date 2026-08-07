@@ -71,3 +71,4 @@ HACKING
 - 2026-07-18: Made successful task cleanup remove the merged task branch after its worktree, including restart recovery, and added a manually whitelisted local-branch pruning script for retired task and integration worktrees.
 - 2026-07-18: Removed the legacy batch persistence layer so durable tasks solely own scheduling, integration, retry, review, events, and manager draining.
 - 2026-07-18: Documented and regression-tested automatic inheritance of each Codex task's model and reasoning settings by its per-task integration resolver.
+- 2026-07-27: Granted each durable Codex task workspace-write access only to its isolated worktree, fixing new-project implementation prompts that otherwise launched read-only.

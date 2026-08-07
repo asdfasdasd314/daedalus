@@ -220,6 +220,24 @@ class VerificationTests(unittest.TestCase):
 
 
 class PerTaskIntegrationTests(unittest.TestCase):
+    def test_codex_task_agent_can_write_to_its_isolated_worktree(self):
+        run_codex = unittest.mock.Mock(return_value="implemented")
+        orchestrator = GitWorktreeOrchestrator({}, run_codex, lambda *a: "ok")
+        task = {
+            "id": "task-1",
+            "provider": "codex",
+            "model": "gpt-5.6-terra",
+            "reasoning": "high",
+        }
+
+        reply = orchestrator._run_task_agent("/tmp/task-worktree", task, "Build it")
+
+        self.assertEqual(reply, "implemented")
+        run_codex.assert_called_once_with(
+            "/tmp/task-worktree", "Build it", "gpt-5.6-terra", "high", "task-1",
+            writable_directories=["/tmp/task-worktree"],
+        )
+
     def test_auto_resolver_inherits_the_integrated_codex_task_model(self):
         run_codex = unittest.mock.Mock(return_value="resolved")
         orchestrator = GitWorktreeOrchestrator({}, run_codex, lambda *a: "ok")
@@ -242,7 +260,8 @@ class PerTaskIntegrationTests(unittest.TestCase):
 
         self.assertEqual(reply, "resolved")
         run_codex.assert_called_once_with(
-            "/tmp/task", "Resolve it", "gpt-5.6-terra", "high", "task-1"
+            "/tmp/task", "Resolve it", "gpt-5.6-terra", "high", "task-1",
+            writable_directories=["/tmp/task"],
         )
 
     @patch("daedalus_daemon.orchestrator.load_worktree_settings", return_value={})
