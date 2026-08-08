@@ -88,11 +88,12 @@ export default function AopSessionPanel({
           AOP Beta
         </h1>
         <p className="max-w-2xl text-sm leading-6 text-slate-300">
-          Send a high-level direction to the bridge agent. It maintains a concise
-          cp_doc (its model of <em>your</em> vision) and asks as many high-coverage
-          questions as needed to fill gaps. Coding-task dispatch is disabled while
-          question generation is the focus. Every post here is bridge-only — no
-          Standard, Planning, or Ask mode.
+Send a high-level direction to the bridge agent. It maintains a concise
+           cp_doc (its model of <em>your</em> vision) at{" "}
+           <code className="text-slate-200">cp_doc.md</code> in the selected project
+           root and asks as many high-coverage questions as needed to fill gaps.
+           Coding-task dispatch is disabled while question generation is the focus.
+           Every post here is bridge-only — no Standard, Planning, or Ask mode.
         </p>
       </header>
 
@@ -247,11 +248,16 @@ export default function AopSessionPanel({
           {bridgeSession.cpDoc ? (
             <div className="grid gap-2">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
-                  cp_doc
-                </p>
+                <div className="min-w-0">
+                  <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
+                    cp_doc
+                  </p>
+                  <p className="truncate text-xs text-slate-500" title={`${bridgeSession.directory.replace(/\/$/, "")}/cp_doc.md`}>
+                    {bridgeSession.directory.replace(/\/$/, "")}/cp_doc.md
+                  </p>
+                </div>
                 <p className="text-xs text-slate-500">
-                  Agent model of your stated vision — updates only after your direction or answers
+                  On disk per project; updates only after your direction or answers
                 </p>
               </div>
               <pre className="agent-chat-scrollbar max-h-80 overflow-y-auto whitespace-pre-wrap break-words rounded-[1.25rem] border border-violet-300/20 bg-violet-300/[0.05] px-4 py-3 text-sm text-slate-100">

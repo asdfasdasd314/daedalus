@@ -508,6 +508,73 @@ class FilterTargetedFeaturePathsTests(unittest.TestCase):
         )
 
 
+class BridgeCpDocPersistenceTests(unittest.TestCase):
+    def test_extracts_cp_doc_section_from_bridge_reply(self):
+        from daedalus_daemon.main import extract_bridge_cp_doc
+
+        body = extract_bridge_cp_doc(
+            "## Status\nneed_more_questions\n\n"
+            "## Cp Doc\nUser auth needed\nMaker-only vol edge\n\n"
+            "## Notes\nNeed fee model\n\n"
+            "## Questions\n\n1. **Fee model?**:\n   - a. Maker only\n",
+        )
+        self.assertEqual(body, "User auth needed\nMaker-only vol edge")
+
+    def test_writes_cp_doc_md_at_project_root(self):
+        import tempfile
+        from daedalus_daemon.main import CP_DOC_FILENAME, write_project_cp_doc
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = write_project_cp_doc(tmp, "User auth needed")
+            self.assertEqual(path.name, CP_DOC_FILENAME)
+            self.assertEqual(path.read_text(encoding="utf-8"), "User auth needed\n")
+
+    def test_bridge_cycle_seeds_and_persists_cp_doc_from_reply(self):
+        import tempfile
+        from daedalus_daemon.main import CP_DOC_FILENAME
+
+        with tempfile.TemporaryDirectory() as tmp:
+            reply = (
+                "## Status\nready\n\n"
+                "## Cp Doc\nUser auth needed\nCustom fees\n\n"
+                "## Notes\nSolid enough\n"
+            )
+            prompt_payload = json.dumps({
+                "promptId": "bridge-1",
+                "directory": tmp,
+                "provider": "codex",
+                "model": "gpt-5.5",
+                "reasoning": "medium",
+                "bridgeMode": True,
+                "prompt": "Trade vol with auth",
+            })
+            publications: list[dict] = []
+
+            def fake_run_codex_prompt(directory, prompt, model, reasoning, ask_mode):
+                seed = Path(directory) / CP_DOC_FILENAME
+                self.assertTrue(seed.is_file(), "cp_doc should be seeded before the agent runs")
+                self.assertEqual(seed.read_text(encoding="utf-8"), "Trade vol with auth\n")
+                self.assertTrue(ask_mode)
+                self.assertIn("TASK_MODE: bridge", prompt)
+                return reply
+
+            def publish(*args, **kwargs):
+                publications.append({"status": kwargs["status"], "mode": args[9]})
+
+            run_agent_prompt_cycle(
+                {"pollIntervalMs": 5000},
+                read_message=lambda *_args: prompt_payload,
+                write_message=lambda *_args: None,
+                publish_history=publish,
+                run_codex_prompt=fake_run_codex_prompt,
+            )
+
+            final = Path(tmp) / CP_DOC_FILENAME
+            self.assertEqual(final.read_text(encoding="utf-8"), "User auth needed\nCustom fees\n")
+            self.assertEqual([item["status"] for item in publications], ["running", "completed"])
+            self.assertEqual(publications[-1]["mode"], "bridge")
+
+
 class RunAgentPromptCycleTests(unittest.TestCase):
     def test_ignores_empty_prompt_message(self):
         writes: list[tuple[str, str]] = []

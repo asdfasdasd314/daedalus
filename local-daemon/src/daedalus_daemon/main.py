@@ -18,6 +18,9 @@ CURSOR_PROVIDER = "cursor"
 DAEMON_ERROR = "daemon_error"
 PARAMETER_FILE_UPDATE_COMMAND = "parameter_file_update"
 ENTRY_POINT_UPDATE_COMMAND = "entry_point_update"
+CP_DOC_FILENAME = "cp_doc.md"
+CP_DOC_HEADING = re.compile(r"^## Cp Doc\s*$", re.IGNORECASE | re.MULTILINE)
+SECTION_HEADING = re.compile(r"^##\s+\S", re.MULTILINE)
 PLANNING_PROMPT_PREFIX = """You are in planning mode.
 
 Do not edit files.
@@ -83,6 +86,8 @@ requirements the operator has not stated or confirmed.
 
 """
 BRIDGE_PROMPT_SUFFIX = """Always respond with this Markdown contract only (no file writes).
+The host writes your ## Cp Doc section to the project root as cp_doc.md for the
+operator and later agents — do not write that file yourself.
 Every reply must include a full replacement ## Cp Doc (not a patch).
 
 ```md
@@ -132,7 +137,8 @@ Rules:
 """
 CURSOR_BRIDGE_PROMPT_PREFIX = (
     f"{BRIDGE_PROMPT_PREFIX.rstrip()}\n\n"
-    "Do not try to write cp_doc or any other file to disk.\n\n"
+    "Do not try to write cp_doc.md or any other file to disk; the host persists "
+    "cp_doc from your ## Cp Doc section.\n\n"
 )
 TARGETED_FEATURE_PATH_REGEX = re.compile(r"^feature_files/[A-Za-z0-9._/-]+\.md$")
 TARGETED_FEATURES_PROMPT_PREFIX = (
@@ -462,6 +468,7 @@ def run_agent_prompt_cycle(
     else:
         mode = "planning"
     # Bridge and ask share a non-mutating sandbox; planning uses provider plan modes.
+    # The host still persists cp_doc.md after bridge replies (agents stay read-only).
     read_only_exec = ask_mode or bridge_mode
     history_publisher = publish_history or upsert_agent_task_turn
     history_args = (
@@ -470,6 +477,18 @@ def run_agent_prompt_cycle(
     )
     if deliver_chat is None:
         history_publisher(*history_args, status="running")
+    if bridge_mode:
+        seed_cp_doc = (
+            planning_context.strip()
+            if isinstance(planning_context, str) and planning_context.strip()
+            else str(prompt)
+        )
+        try:
+            write_project_cp_doc(directory, seed_cp_doc)
+        except Exception as error:
+            logging.getLogger(__name__).warning(
+                "Failed to seed %s for %s: %s", CP_DOC_FILENAME, directory, error,
+            )
     final_prompt = (
         build_cursor_prompt(
             prompt,
@@ -535,6 +554,14 @@ def run_agent_prompt_cycle(
             write_message(config, AGENT_PROMPT_PURPOSE, DAEMON_COMPLETE)
         return
 
+    if bridge_mode:
+        try:
+            persist_bridge_cp_doc_from_reply(directory, reply)
+        except Exception as error:
+            logging.getLogger(__name__).warning(
+                "Failed to persist %s for %s: %s", CP_DOC_FILENAME, directory, error,
+            )
+
     if deliver_chat is None:
         history_publisher(
             config, prompt_id, directory, prompt, reply, "", provider, model,
@@ -554,6 +581,49 @@ def run_agent_prompt_cycle(
         else:
             deliver_chat(*legacy_args)
         write_message(config, AGENT_PROMPT_PURPOSE, DAEMON_COMPLETE)
+
+
+def extract_bridge_cp_doc(reply: object) -> str:
+    """Return the ## Cp Doc body from a bridge agent reply, if present."""
+    if not isinstance(reply, str) or not reply.strip():
+        return ""
+    text = reply.strip()
+    fenced = re.match(r"^```[^\n]*\n([\s\S]*?)\n```\s*$", text)
+    if fenced:
+        text = fenced.group(1)
+    start = CP_DOC_HEADING.search(text)
+    if not start:
+        return ""
+    after = start.end()
+    rest = text[after:]
+    next_heading = SECTION_HEADING.search(rest)
+    body = rest[: next_heading.start()] if next_heading else rest
+    return body.strip()
+
+
+def write_project_cp_doc(project_directory: object, content: object) -> Path:
+    """Write cp_doc.md at the project root. Agents must not write this themselves."""
+    if not isinstance(project_directory, (str, Path)) or not str(project_directory).strip():
+        raise ValueError("Project directory is required to write cp_doc.md.")
+    body = content if isinstance(content, str) else ""
+    if not body.strip():
+        raise ValueError("cp_doc content must be non-empty.")
+    project_root = Path(project_directory).expanduser().resolve()
+    if not project_root.is_dir():
+        raise ValueError(f"Project directory does not exist: {project_root}")
+    target = (project_root / CP_DOC_FILENAME).resolve()
+    if target.parent != project_root:
+        raise ValueError("cp_doc.md path must stay inside the selected project.")
+    target.write_text(body if body.endswith("\n") else f"{body}\n", encoding="utf-8")
+    return target
+
+
+def persist_bridge_cp_doc_from_reply(project_directory: object, reply: object) -> Path | None:
+    """Persist ## Cp Doc from a bridge reply to project-root cp_doc.md."""
+    cp_doc = extract_bridge_cp_doc(reply)
+    if not cp_doc:
+        return None
+    return write_project_cp_doc(project_directory, cp_doc)
 
 
 def parse_agent_prompt_message(message: str) -> dict[str, object] | None:

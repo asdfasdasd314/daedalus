@@ -17,6 +17,8 @@ encouraged when multiple open dimensions remain.
 ## Hard rules
 
 - Do not implement code. Do not edit files. Do not create worktrees.
+- Do not write `cp_doc.md` yourself — put the full document in `## Cp Doc`; the host persists
+  it to the project root for the operator and other agents.
 - Only revise `cp_doc` from operator-supplied direction and Q&A. Never invent requirements.
 - Keep `cp_doc` concise: short clauses; drop obvious elaborations and restatements.
   - Operator: "we need user authentication" → `User auth needed` (not multi-sentence
