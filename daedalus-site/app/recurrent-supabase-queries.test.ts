@@ -327,10 +327,11 @@ test("Architecture View progress uses bounded generation-safe recurrent delivery
   assert.match(historySource, /Correcting document, attempt/);
 });
 
-test("workspace exposes two modes and clears stale canvas selection", () => {
-  assert.match(dashboardSource, /type WorkspaceView = "feature" \| "architecture"/);
+test("workspace exposes three modes and clears stale canvas selection", () => {
+  assert.match(dashboardSource, /type WorkspaceView = "feature" \| "architecture" \| "aop"/);
   assert.match(dashboardSource, /Feature View/);
   assert.match(dashboardSource, /Architecture View/);
+  assert.match(dashboardSource, /AOP Beta/);
   assert.match(dashboardSource, /presentation=\{workspaceView === "architecture" \? "architecture-rail" : "drawer"\}/);
   assert.match(dashboardSource, /function selectHistoryPrompt[\s\S]*setArchitectureCanvasPromptId\(""\)/);
   assert.match(dashboardSource, /mergeArchitectureView/);

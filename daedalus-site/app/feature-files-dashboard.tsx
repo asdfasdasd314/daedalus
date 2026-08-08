@@ -115,8 +115,8 @@ const DAEMON_ADMISSION_MESSAGE = "The execution daemon is draining for restart. 
 type AuthMode = "sign-in" | "sign-up";
 type DevEnvironmentState = "idle" | "loading" | "ready" | "error";
 type PrimaryOverlay = "feature-detail" | "new-feature" | "git-sync" | "project-initialization" | null;
-type FeatureDetailTab = "edit" | "info" | "params" | "aop";
-type WorkspaceView = "feature" | "architecture";
+type FeatureDetailTab = "edit" | "info" | "params";
+type WorkspaceView = "feature" | "architecture" | "aop";
 type VentureProgressState = (typeof VENTURE_PROGRESS_STATES)[number];
 
 type VentureRow = {
@@ -2534,15 +2534,29 @@ export default function FeatureFilesDashboard({
   function selectWorkspaceView(nextView: WorkspaceView) {
     if (nextView === workspaceView) return;
     if (nextView === "architecture") {
-      featureHistoryDrawerOpenRef.current = isAgentOutputViewerOpen;
+      if (workspaceView !== "architecture") {
+        featureHistoryDrawerOpenRef.current = isAgentOutputViewerOpen;
+      }
       setIsAgentOutputViewerOpen(true);
       setIsWorkspaceMenuOpen(false);
       setIsAgentTaskNotificationsOpen(false);
       setFeatureSearchMode(null);
     } else {
-      setIsAgentOutputViewerOpen(featureHistoryDrawerOpenRef.current);
+      if (workspaceView === "architecture") {
+        setIsAgentOutputViewerOpen(featureHistoryDrawerOpenRef.current);
+      }
+      if (nextView === "aop") {
+        setIsWorkspaceMenuOpen(false);
+        setIsAgentTaskNotificationsOpen(false);
+      }
     }
     setWorkspaceView(nextView);
+  }
+
+  function workspaceViewLabel(view: WorkspaceView): string {
+    if (view === "feature") return "Feature View";
+    if (view === "architecture") return "Architecture View";
+    return "AOP Beta";
   }
 
   function selectHistoryPrompt(promptId: string) {
@@ -3319,7 +3333,11 @@ export default function FeatureFilesDashboard({
 
   return (
     <main className="relative h-screen w-screen overflow-hidden bg-black text-slate-100">
-      <div className={`absolute inset-0 ${workspaceView === "architecture" ? "pointer-events-none" : ""}`} aria-hidden={workspaceView === "architecture"} inert={workspaceView === "architecture"}>
+      <div
+        className={`absolute inset-0 ${workspaceView !== "feature" ? "pointer-events-none" : ""}`}
+        aria-hidden={workspaceView !== "feature"}
+        inert={workspaceView !== "feature"}
+      >
       <FeatureFileGraph
         maxZoom={graphZoomSettings.maxZoom}
         minZoom={graphZoomSettings.minZoom}
@@ -3344,6 +3362,54 @@ export default function FeatureFilesDashboard({
           view={architectureCanvasPromptId ? architectureViews[architectureCanvasPromptId] ?? null : null}
         />
       </div> : null}
+
+      {workspaceView === "aop" ? (
+        <div className="fixed inset-0 z-30 overflow-hidden bg-slate-950">
+          <div className="pointer-events-none absolute left-4 top-4 z-40 sm:left-5 sm:top-4">
+            <button
+              type="button"
+              onClick={() => isAgentOutputViewerOpen ? closeAgentOutputViewer() : openAgentOutputViewer()}
+              aria-label="Open agent output history"
+              title="Agent output history"
+              className={`pointer-events-auto relative inline-flex h-11 w-11 items-center justify-center rounded-full border shadow-[0_20px_60px_rgba(2,6,23,0.45)] transition sm:h-12 sm:w-12 ${isAgentOutputViewerOpen ? "border-cyan-300/30 bg-cyan-200 text-slate-950" : "border-white/10 bg-white text-slate-950 hover:bg-slate-200"}`}
+            >
+              <svg aria-hidden="true" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/></svg>
+              {liveHistoryExchanges.some((exchange) => !["completed", "failed", "blocked", "cancelled"].includes(exchange.status)) ? <span className="absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full border-2 border-slate-950 bg-amber-300" /> : null}
+            </button>
+          </div>
+          <div className="agent-chat-scrollbar h-full overflow-x-hidden overflow-y-auto px-4 pb-10 pt-20 sm:px-8">
+            <div className="mx-auto w-full max-w-3xl">
+              <AopSessionPanel
+                acceptsWork={daemonAcceptsWork}
+                agentModels={agentModels}
+                availableProjectDirectories={availableProjectDirectories}
+                bridgeSession={bridgeSession}
+                defaultProjectDirectory={DEFAULT_PROJECT_DIRECTORY}
+                directionText={aopDirectionText}
+                onClearSession={() => setBridgeSession(null)}
+                onDirectionTextChange={setAopDirectionText}
+                onDispatchTasks={() => void dispatchBridgeTasks()}
+                onAnswerQuestion={answerBridgeQuestion}
+                onOpenFeatureTagSearch={openFeatureTagSearch}
+                onProviderChange={selectProvider}
+                onRemoveTargetedFeature={removeTargetedFeature}
+                onSelectedProjectDirectoryChange={setSelectedProjectDirectory}
+                onSelectedReasoningChange={setSelectedReasoning}
+                onSelectModel={selectModel}
+                onSubmitDirection={() => void sendBridgeDirection()}
+                otherAnswer={bridgeOtherAnswer}
+                onOtherAnswerChange={setBridgeOtherAnswer}
+                selectedModelId={selectedModelId}
+                selectedProvider={selectedProvider}
+                selectedProjectDirectory={selectedProjectDirectory}
+                selectedReasoning={selectedReasoning}
+                submissionError={promptSubmissionError}
+                targetedFeatures={targetedFeatures}
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <AgentOutputViewer
         key={currentUserId}
@@ -3419,13 +3485,13 @@ export default function FeatureFilesDashboard({
       />
 
       <div className="fixed left-1/2 top-3 z-50 -translate-x-1/2 rounded-full border border-white/10 bg-slate-950/95 p-1 shadow-[0_18px_60px_rgba(2,6,23,0.55)] backdrop-blur" role="group" aria-label="Workspace view">
-        {(["feature", "architecture"] as const).map((view) => <button
+        {(["feature", "architecture", "aop"] as const).map((view) => <button
           key={view}
           type="button"
           aria-pressed={workspaceView === view}
           onClick={() => selectWorkspaceView(view)}
           className={`rounded-full px-4 py-2 text-xs font-semibold transition ${workspaceView === view ? "bg-cyan-300 text-slate-950" : "text-slate-300 hover:bg-white/10"}`}
-        >{view === "feature" ? "Feature View" : "Architecture View"}</button>)}
+        >{workspaceViewLabel(view)}</button>)}
       </div>
 
       {workspaceView === "feature" ? <div className="pointer-events-none absolute inset-0">
@@ -4389,17 +4455,6 @@ export default function FeatureFilesDashboard({
                 >
                   Params
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setFeatureDetailTab("aop")}
-                  className={`min-w-0 flex-1 rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] transition sm:flex-none ${
-                    featureDetailTab === "aop"
-                      ? "bg-cyan-300 text-slate-950"
-                      : "text-slate-300 hover:bg-white/10"
-                  }`}
-                >
-                  AOP
-                </button>
               </div>
             </div>
             <div className="agent-chat-scrollbar min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-4 sm:px-5">
@@ -4437,34 +4492,6 @@ export default function FeatureFilesDashboard({
                       "This feature file is no longer available in the loaded payload."}
                   </pre>
                 </div>
-              ) : featureDetailTab === "aop" ? (
-                <AopSessionPanel
-                  acceptsWork={daemonAcceptsWork}
-                  agentModels={agentModels}
-                  availableProjectDirectories={availableProjectDirectories}
-                  bridgeSession={bridgeSession}
-                  defaultProjectDirectory={DEFAULT_PROJECT_DIRECTORY}
-                  directionText={aopDirectionText}
-                  onClearSession={() => setBridgeSession(null)}
-                  onDirectionTextChange={setAopDirectionText}
-                  onDispatchTasks={() => void dispatchBridgeTasks()}
-                  onAnswerQuestion={answerBridgeQuestion}
-                  onOpenFeatureTagSearch={openFeatureTagSearch}
-                  onProviderChange={selectProvider}
-                  onRemoveTargetedFeature={removeTargetedFeature}
-                  onSelectedProjectDirectoryChange={setSelectedProjectDirectory}
-                  onSelectedReasoningChange={setSelectedReasoning}
-                  onSelectModel={selectModel}
-                  onSubmitDirection={() => void sendBridgeDirection()}
-                  otherAnswer={bridgeOtherAnswer}
-                  onOtherAnswerChange={setBridgeOtherAnswer}
-                  selectedModelId={selectedModelId}
-                  selectedProvider={selectedProvider}
-                  selectedProjectDirectory={selectedProjectDirectory}
-                  selectedReasoning={selectedReasoning}
-                  submissionError={promptSubmissionError}
-                  targetedFeatures={targetedFeatures}
-                />
               ) : (
                 <div className="grid gap-5">
                   <section className="grid gap-2">
@@ -4523,7 +4550,7 @@ export default function FeatureFilesDashboard({
         />
       ) : null}
 
-      {workspaceView === "feature" ? <FeatureSearchDialog
+      {(workspaceView === "feature" || workspaceView === "aop") ? <FeatureSearchDialog
         excludedFilePaths={
           featureSearchMode === "tag"
             ? targetedFeatures.map((feature) => feature.filePath)

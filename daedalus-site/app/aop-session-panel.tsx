@@ -78,16 +78,27 @@ export default function AopSessionPanel({
   );
 
   return (
-    <div className="grid min-w-0 gap-4 overflow-x-hidden">
-      <section className="grid min-w-0 gap-3 rounded-[1.5rem] border border-white/10 bg-black/25 p-4">
-        <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">
-          Answer-oriented programming
+    <div className="grid min-w-0 gap-5 overflow-x-hidden">
+      <header className="grid min-w-0 gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">
+            Answer-oriented programming
+          </p>
+          <span className="rounded-full border border-violet-300/30 bg-violet-300/10 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-violet-100">
+            Beta
+          </span>
+        </div>
+        <h1 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">
+          AOP Beta
+        </h1>
+        <p className="max-w-2xl text-sm leading-6 text-slate-300">
+          A separate programming surface: send a high-level direction to the bridge agent.
+          It asks high-coverage questions, then splits ready work into focused coding tasks.
+          Every post here is bridge-only — there is no Standard, Planning, or Ask mode.
         </p>
-        <p className="text-sm leading-6 text-slate-300">
-          Send a high-level direction to the bridge agent. It asks high-coverage questions,
-          then splits ready work into focused coding tasks you can dispatch.
-        </p>
+      </header>
 
+      <section className="grid min-w-0 gap-3 rounded-[1.5rem] border border-white/10 bg-black/25 p-4 sm:p-5">
         <label htmlFor="aop-project" className="text-[11px] uppercase tracking-[0.28em] text-slate-400">
           Target project
         </label>
@@ -228,7 +239,7 @@ export default function AopSessionPanel({
       </section>
 
       {bridgeSession ? (
-        <section className="grid gap-3 rounded-[1.5rem] border border-white/10 bg-black/25 p-4">
+        <section className="grid gap-3 rounded-[1.5rem] border border-white/10 bg-black/25 p-4 sm:p-5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">Bridge session</p>
             <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-200">
