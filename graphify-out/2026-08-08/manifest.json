@@ -5,8 +5,8 @@
     "semantic_hash": "8897146e4053c1a3668e19546907f631"
   },
   "daedalus-site/app/agent-output-viewer.tsx": {
-    "mtime": 1786069887.4494157,
-    "ast_hash": "45cd1c729a40bb3887eead7938811589",
+    "mtime": 1786217190.4235811,
+    "ast_hash": "96386c62696a2aa1c40b911001073fb1",
     "semantic_hash": ""
   },
   "daedalus-site/app/agent-session-panel.tsx": {
@@ -50,8 +50,8 @@
     "semantic_hash": "eb708572688fbc0c243f038a1dcd39bb"
   },
   "daedalus-site/app/feature-files-dashboard.tsx": {
-    "mtime": 1786069918.6856647,
-    "ast_hash": "066e58996c0e47c9d616777ea78de8e6",
+    "mtime": 1786217210.650865,
+    "ast_hash": "439df20796a45da88533c6dfdb892acf",
     "semantic_hash": ""
   },
   "daedalus-site/app/feature-search-dialog.tsx": {
@@ -95,8 +95,8 @@
     "semantic_hash": "adb51e29a07dd29c1c202a6977f72a08"
   },
   "daedalus-site/app/recurrent-supabase-queries.test.ts": {
-    "mtime": 1785120047.5772154,
-    "ast_hash": "7f2201f7d8f5b2adcf302cf0af028515",
+    "mtime": 1786217194.7210262,
+    "ast_hash": "fa7580ce02f5384b3a9eab50c6f586c7",
     "semantic_hash": ""
   },
   "daedalus-site/config/agent_models.json": {
@@ -355,8 +355,8 @@
     "semantic_hash": "b34fc28d1a79d4d940c91b976911fbcc"
   },
   "feature_files/feature-first-graph-workspace-shell.md": {
-    "mtime": 1784253660.2491062,
-    "ast_hash": "1218b39aae5e894988829dc100daee57",
+    "mtime": 1786217240.3966503,
+    "ast_hash": "49ff0c3ac8c919d29d86ec1faa3d0838",
     "semantic_hash": ""
   },
   "feature_files/feature-search-fuzzy-finder.md": {
@@ -730,8 +730,8 @@
     "semantic_hash": ""
   },
   "daedalus-site/app/aop-session-panel.tsx": {
-    "mtime": 1786069708.2231083,
-    "ast_hash": "51eb1bfbb08324984b083c60a5112683",
+    "mtime": 1786217184.5562253,
+    "ast_hash": "662c137a81e344f4bf2432a7bcb778c7",
     "semantic_hash": ""
   },
   "daedalus-site/app/project-initialization-types.ts": {
@@ -815,8 +815,8 @@
     "semantic_hash": ""
   },
   "feature_files/answer-oriented-programming.md": {
-    "mtime": 1786069561.7766726,
-    "ast_hash": "be88964706a67704db35716b6a3f3f86",
+    "mtime": 1786217206.2253416,
+    "ast_hash": "0517018edded522cb7c1bdc33b9c9c4b",
     "semantic_hash": ""
   },
   "feature_files/automated-project-initialization.md": {

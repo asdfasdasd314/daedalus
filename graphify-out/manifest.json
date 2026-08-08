@@ -50,8 +50,8 @@
     "semantic_hash": "eb708572688fbc0c243f038a1dcd39bb"
   },
   "daedalus-site/app/feature-files-dashboard.tsx": {
-    "mtime": 1786217210.650865,
-    "ast_hash": "439df20796a45da88533c6dfdb892acf",
+    "mtime": 1786219889.0397415,
+    "ast_hash": "1cccc91edbb4496352ddeae2577c7ce3",
     "semantic_hash": ""
   },
   "daedalus-site/app/feature-search-dialog.tsx": {
@@ -730,8 +730,8 @@
     "semantic_hash": ""
   },
   "daedalus-site/app/aop-session-panel.tsx": {
-    "mtime": 1786217184.5562253,
-    "ast_hash": "662c137a81e344f4bf2432a7bcb778c7",
+    "mtime": 1786219871.173914,
+    "ast_hash": "17ebb3eea9d3a8b4b2ca22fe7d1a3113",
     "semantic_hash": ""
   },
   "daedalus-site/app/project-initialization-types.ts": {

@@ -1863,6 +1863,15 @@ export default function FeatureFilesDashboard({
   }
 
   async function dispatchBridgeTasks() {
+    // Coding-task fan-out is intentionally off while AOP Beta focuses on questions.
+    const enableBridgeTaskDispatch = false;
+    if (!enableBridgeTaskDispatch) {
+      setPromptSubmissionError(
+        "Coding-task dispatch is disabled while AOP Beta focuses on question generation.",
+      );
+      return;
+    }
+
     if (!bridgeSession || !currentUser || !accessToken) {
       return;
     }

@@ -70,12 +70,8 @@ export default function AopSessionPanel({
   const activeQuestion = bridgeSession?.pendingQuestions[bridgeSession.questionIndex] ?? null;
   const canStart = Boolean(directionText.trim()) && acceptsWork &&
     (!bridgeSession || bridgeSession.phase === "idle" || bridgeSession.phase === "ready");
-  const canDispatch = Boolean(
-    bridgeSession &&
-    bridgeSession.phase === "ready" &&
-    bridgeSession.proposedTasks.length > 0 &&
-    acceptsWork,
-  );
+  // Coding-task fan-out is intentionally off while AOP Beta focuses on questions.
+  const canDispatch = false;
 
   return (
     <div className="grid min-w-0 gap-5 overflow-x-hidden">
@@ -93,8 +89,9 @@ export default function AopSessionPanel({
         </h1>
         <p className="max-w-2xl text-sm leading-6 text-slate-300">
           A separate programming surface: send a high-level direction to the bridge agent.
-          It asks high-coverage questions, then splits ready work into focused coding tasks.
-          Every post here is bridge-only — there is no Standard, Planning, or Ask mode.
+          It asks high-coverage questions so you can refine scope. Coding-task dispatch is
+          disabled for now while question generation is the focus. Every post here is
+          bridge-only — there is no Standard, Planning, or Ask mode.
         </p>
       </header>
 
@@ -280,7 +277,13 @@ export default function AopSessionPanel({
             </div>
           ) : null}
           {bridgeSession.proposedTasks.length > 0 ? (
-            <TaskList tasks={bridgeSession.proposedTasks} />
+            <>
+              <TaskList tasks={bridgeSession.proposedTasks} />
+              <p className="text-sm text-slate-400">
+                Proposed coding tasks are preview-only. Dispatch to agents is disabled while
+                question generation is under development.
+              </p>
+            </>
           ) : null}
           {canDispatch ? (
             <button
