@@ -103,5 +103,12 @@
   "101": "Path",
   "102": "Path",
   "103": "README.md",
-  "104": "primitive_field_definition"
+  "104": "primitive_field_definition",
+  "105": "execution.py",
+  "106": "SupabaseUnavailableError",
+  "107": "test_main.py",
+  "108": "properties",
+  "109": "entry-point-picker.tsx",
+  "110": "FeatureExecutionSupervisor",
+  "111": "system_definition"
 }

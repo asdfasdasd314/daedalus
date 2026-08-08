@@ -1,16 +1,16 @@
 # Graph Report - daedalus  (2026-08-08)
 
 ## Corpus Check
-- 165 files · ~130,123 words
+- 165 files · ~130,188 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1408 nodes · 2559 edges · 104 communities (87 shown, 17 thin omitted)
+- 1408 nodes · 2559 edges · 105 communities (89 shown, 16 thin omitted)
 - Extraction: 90% EXTRACTED · 10% INFERRED · 0% AMBIGUOUS · INFERRED: 250 edges (avg confidence: 0.76)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `11765903`
+- Built from commit: `8a7be127`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -116,6 +116,7 @@
 - Path
 - Path
 - README.md
+- primitive_field_definition
 
 ## God Nodes (most connected - your core abstractions)
 1. `GitWorktreeOrchestrator` - 50 edges
@@ -144,11 +145,11 @@
 ## Import Cycles
 - None detected.
 
-## Communities (104 total, 17 thin omitted)
+## Communities (105 total, 16 thin omitted)
 
 ### Community 0 - "orchestrator.py"
-Cohesion: 0.13
-Nodes (6): get_agent_task_control(), GitWorktreeOrchestrator, reply_indicates_cancel(), reply_indicates_failure(), CancelOrchestratorTests, PerTaskIntegrationTests
+Cohesion: 0.16
+Nodes (4): GitWorktreeOrchestrator, CancelOrchestratorTests, PerTaskIntegrationTests, VerificationTests
 
 ### Community 1 - "feature-files-dashboard.tsx"
 Cohesion: 0.04
@@ -219,8 +220,8 @@ Cohesion: 0.14
 Nodes (19): snapshot_communication_messages(), build_entry_point_update_state_message(), build_parameter_file_update_state_message(), build_skipped_push_step(), DirectPromptSupervisor, execute_git_sync_operation(), is_toml_float(), is_toml_string() (+11 more)
 
 ### Community 18 - "README.md"
-Cohesion: 0.23
-Nodes (23): load_deployment_settings(), positive_int(), commit_worktree_changes(), create_task_worktree(), delete_merged_branch(), find_migration_directories(), format_process_failure(), git_output() (+15 more)
+Cohesion: 0.27
+Nodes (18): load_deployment_settings(), positive_int(), commit_worktree_changes(), create_task_worktree(), delete_merged_branch(), format_process_failure(), git_output(), is_clean_worktree() (+10 more)
 
 ### Community 19 - "summary"
 Cohesion: 0.12
@@ -235,8 +236,8 @@ Cohesion: 0.17
 Nodes (9): is_cursor_plan_mode_unsupported(), parse_cursor_plan_stream(), parse_cursor_result(), Popen, register_agent_process(), run_cursor_exec(), run_tracked_agent_command(), unregister_agent_process() (+1 more)
 
 ### Community 22 - "run_cursor_exec"
-Cohesion: 0.15
-Nodes (15): properties, system_definition, $ref, $ref, id, name, source_system_id, summary (+7 more)
+Cohesion: 0.13
+Nodes (19): properties, object_field_definition, items, type, $ref, $ref, additionalProperties, properties (+11 more)
 
 ### Community 23 - "properties"
 Cohesion: 0.22
@@ -251,8 +252,8 @@ Cohesion: 0.23
 Nodes (14): fields, files, id, items, name, source_system_id, summary, target_system_id (+6 more)
 
 ### Community 26 - "$ref"
-Cohesion: 0.10
-Nodes (11): build_migration_resolver_prompt(), build_resolver_prompt(), build_task_prompt(), build_task_repair_prompt(), Publish optional deployment telemetry without blocking a database repair., record_migration_deployment_event(), MigrationDeploymentEventTests, MigrationResolverLoopTests (+3 more)
+Cohesion: 0.13
+Nodes (9): build_migration_resolver_prompt(), build_resolver_prompt(), build_task_repair_prompt(), Publish optional deployment telemetry without blocking a database repair., record_migration_deployment_event(), MigrationDeploymentEventTests, MigrationResolverLoopTests, PromptTests (+1 more)
 
 ### Community 27 - "git-sync-panel.tsx"
 Cohesion: 0.17
@@ -260,7 +261,7 @@ Nodes (16): AgentPromptMode, AgentSessionPanel(), AgentSessionPanelProps, AopSes
 
 ### Community 28 - "__init__.py"
 Cohesion: 0.12
-Nodes (16): additionalProperties, type, additionalProperties, type, $defs, array_field_definition, channel_definition, field_definition (+8 more)
+Nodes (16): additionalProperties, type, $defs, channel_definition, field_definition, identifier, non_empty_string, system_definition (+8 more)
 
 ### Community 29 - "update_execution_entry_point_in_toml"
 Cohesion: 0.17
@@ -379,8 +380,8 @@ Cohesion: 0.29
 Nodes (6): Dev Mode, Feature Search / Fuzzy Finder, Key Points, Relevant Files, State Log, Summary
 
 ### Community 58 - "enum"
-Cohesion: 0.13
-Nodes (16): boolean, integer, null, number, string, properties, primitive_field_definition, additionalProperties (+8 more)
+Cohesion: 0.17
+Nodes (12): boolean, integer, null, number, string, additionalProperties, properties, type (+4 more)
 
 ### Community 59 - "integrating.md"
 Cohesion: 0.29
@@ -450,6 +451,10 @@ Nodes (6): Dev Mode, Key Points, Relevant Files, State Log, Summary, System Arch
 Cohesion: 0.33
 Nodes (5): 4-Stage Development Lifecycle, Evidence Extraction, Execution Boundaries (CRITICAL), Feature File Automation, Parameter File Centralization
 
+### Community 92 - "Exception"
+Cohesion: 0.29
+Nodes (7): find_migration_directories(), package_has_test_script(), plan_migration_renames(), Path, reconcile_migration_numbers(), verification_commands_for_worktree(), MigrationReconcileTests
+
 ### Community 93 - "Exception"
 Cohesion: 0.33
 Nodes (5): 4-Stage Development Lifecycle, Evidence Extraction, Execution Boundaries (CRITICAL), Feature File Automation, Parameter File Centralization
@@ -475,24 +480,28 @@ Cohesion: 0.50
 Nodes (3): Deploy on Vercel, Getting Started, Learn More
 
 ### Community 99 - "Path"
-Cohesion: 0.29
-Nodes (7): object_field_definition, items, type, additionalProperties, properties, type, fields
+Cohesion: 0.18
+Nodes (4): get_agent_task_control(), build_task_prompt(), reply_indicates_cancel(), reply_indicates_failure()
 
 ### Community 100 - "Popen"
 Cohesion: 0.50
 Nodes (3): Daedalus Project Instructions, graphify, Task mode
 
+### Community 104 - "primitive_field_definition"
+Cohesion: 0.29
+Nodes (7): primitive_field_definition, additionalProperties, properties, type, required, default, type
+
 ## Knowledge Gaps
 - **417 isolated node(s):** `AgentOutputDetailProps`, `AgentOutputViewerProps`, `AgentOutputViewerPresentation`, `AgentPromptMode`, `AgentSessionPanelProps` (+412 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **17 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **16 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `load_daemon_config()` connect `properties` to `main.py`, `README.md`, `communications.py`?**
   _High betweenness centrality (0.014) - this node is a cross-community bridge._
-- **Why does `GitWorktreeOrchestrator` connect `orchestrator.py` to `communications.py`, `run_git_sync_cycle`, `coding.md`, `main.py`, `README.md`, `$ref`, `Exception`, `update_execution_entry_point_in_toml`?**
+- **Why does `GitWorktreeOrchestrator` connect `orchestrator.py` to `communications.py`, `run_git_sync_cycle`, `coding.md`, `Path`, `main.py`, `README.md`, `$ref`, `Exception`, `update_execution_entry_point_in_toml`?**
   _High betweenness centrality (0.012) - this node is a cross-community bridge._
 - **Why does `main()` connect `main.py` to `README.md`?**
   _High betweenness centrality (0.009) - this node is a cross-community bridge._

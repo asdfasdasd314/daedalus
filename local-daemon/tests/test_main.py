@@ -469,7 +469,7 @@ class BuildCodexPromptTests(unittest.TestCase):
             "Trade volatility oscillations",
             False,
             ["feature_files/answer-oriented-programming.md"],
-            planning_context="## Notes\nNeed fee coverage.",
+            planning_context="# cp_doc draft\n- Vol edge\n- User auth needed",
             planning_answers=[{"question": "Beat fees alone?", "answer": "Maker only"}],
             bridge_mode=True,
         )
@@ -477,9 +477,14 @@ class BuildCodexPromptTests(unittest.TestCase):
         self.assertTrue(prompt.startswith(TASK_MODE_BRIDGE))
         self.assertIn(BRIDGE_PROMPT_PREFIX.rstrip(), prompt)
         self.assertIn(BRIDGE_PROMPT_SUFFIX.rstrip(), prompt)
-        self.assertIn("Continue the answer-oriented bridge", prompt)
+        self.assertIn("## Cp Doc", prompt)
+        self.assertIn("concise centralized project document", prompt.lower())
+        self.assertIn("Continue the answer-oriented bridge from the current cp_doc", prompt)
+        self.assertIn("# cp_doc draft", prompt)
+        self.assertIn("User auth needed", prompt)
         self.assertIn("Beat fees alone?: 1. Maker only", prompt)
         self.assertIn("feature_files/answer-oriented-programming.md", prompt)
+        self.assertNotIn("at most five questions", prompt.lower())
         self.assertNotIn(TASK_MODE_PLANNING, prompt)
         self.assertNotIn(PLANNING_PROMPT_SUFFIX.rstrip(), prompt)
 

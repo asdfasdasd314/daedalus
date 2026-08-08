@@ -17,6 +17,8 @@ export type BridgePhase = "idle" | "running" | "questioning" | "ready" | "dispat
 export type BridgeSession = {
   conversationId: string;
   directionPrompt: string;
+  /** Agent's compressed model of the operator's stated vision (cp_doc). */
+  cpDoc: string;
   directory: string;
   provider: string;
   model: string;
@@ -34,6 +36,7 @@ export type BridgeSession = {
 };
 
 const STATUS_HEADING = /^## Status\s*$/im;
+const CP_DOC_HEADING = /^## Cp Doc\s*$/im;
 const NOTES_HEADING = /^## Notes\s*$/im;
 const QUESTIONS_HEADING = /^## Questions\s*$/im;
 const TASKS_HEADING = /^## Tasks\s*$/im;
@@ -87,6 +90,7 @@ export function parseBridgeTasksSection(section: string): BridgeTask[] {
 
 export function parseBridgeReply(reply: string): {
   status: BridgeStatus;
+  cpDoc: string;
   notes: string;
   questions: PlanningQuestion[];
   tasks: BridgeTask[];
@@ -94,6 +98,7 @@ export function parseBridgeReply(reply: string): {
 } {
   const normalizedReply = unwrapMarkdownCodeFence(reply);
   const statusBody = sectionBody(normalizedReply, STATUS_HEADING, [
+    CP_DOC_HEADING,
     NOTES_HEADING,
     QUESTIONS_HEADING,
     TASKS_HEADING,
@@ -104,6 +109,12 @@ export function parseBridgeReply(reply: string): {
   } else if (statusBody.includes("need_more_questions") || statusBody.includes("need more questions")) {
     status = "need_more_questions";
   }
+
+  const cpDoc = sectionBody(normalizedReply, CP_DOC_HEADING, [
+    NOTES_HEADING,
+    QUESTIONS_HEADING,
+    TASKS_HEADING,
+  ]);
 
   const notes = sectionBody(normalizedReply, NOTES_HEADING, [
     QUESTIONS_HEADING,
@@ -137,6 +148,7 @@ export function parseBridgeReply(reply: string): {
 
   return {
     status,
+    cpDoc,
     notes,
     questions,
     tasks,

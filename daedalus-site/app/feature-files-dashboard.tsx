@@ -597,7 +597,10 @@ export default function FeatureFilesDashboard({
         const parsedBridgeSession = JSON.parse(
           storedBridgeSession,
         ) as BridgeSession;
-        setBridgeSession(parsedBridgeSession);
+        setBridgeSession({
+          ...parsedBridgeSession,
+          cpDoc: parsedBridgeSession.cpDoc ?? parsedBridgeSession.directionPrompt ?? "",
+        });
       }
     } catch {
       return;
@@ -1702,6 +1705,7 @@ export default function FeatureFilesDashboard({
     setBridgeSession({
       conversationId: promptId,
       directionPrompt: direction,
+      cpDoc: direction,
       directory: selectedProjectDirectory,
       provider: selectedProvider,
       model: selectedModelId,
@@ -1760,7 +1764,7 @@ export default function FeatureFilesDashboard({
       targetedFeaturePaths: bridgeSession.targetedFeatures.map(
         (feature) => feature.filePath,
       ),
-      bridgeContext: bridgeSession.notes,
+      bridgeContext: bridgeSession.cpDoc,
       bridgeAnswers: answers,
       status: "queued",
       enqueuedAt: Date.now(),
@@ -1811,11 +1815,14 @@ export default function FeatureFilesDashboard({
       }
 
       const parsed = parseBridgeReply(turn.output);
+      const nextCpDoc = parsed.cpDoc.trim() ? parsed.cpDoc : undefined;
+
       if (parsed.status === "ready" && parsed.tasks.length > 0) {
         setBridgeSession((current) =>
           current && current.activeBridgePromptId === promptId
             ? {
               ...current,
+              ...(nextCpDoc ? { cpDoc: nextCpDoc } : {}),
               notes: parsed.notes || current.notes,
               pendingQuestions: [],
               questionIndex: 0,
@@ -1827,7 +1834,7 @@ export default function FeatureFilesDashboard({
             }
             : current,
         );
-        setPromptStatus("Bridge is ready to dispatch coding tasks.");
+        setPromptStatus("Bridge is ready (coding dispatch still disabled).");
         return;
       }
 
@@ -1835,11 +1842,16 @@ export default function FeatureFilesDashboard({
         current && current.activeBridgePromptId === promptId
           ? {
             ...current,
+            ...(nextCpDoc ? { cpDoc: nextCpDoc } : {}),
             notes: parsed.notes || current.notes,
             pendingQuestions: parsed.questions,
             questionIndex: 0,
-            proposedTasks: [],
-            phase: parsed.questions.length > 0 ? "questioning" : "idle",
+            proposedTasks: parsed.tasks,
+            phase: parsed.questions.length > 0
+              ? "questioning"
+              : parsed.status === "ready"
+                ? "ready"
+                : "idle",
             activeBridgePromptId: "",
             questionPromptId: parsed.questions.length > 0 ? promptId : "",
             latestReply: turn.output,
@@ -1848,8 +1860,10 @@ export default function FeatureFilesDashboard({
       );
       setPromptStatus(
         parsed.questions.length > 0
-          ? "Bridge questions ready."
-          : "Bridge finished without tasks or questions.",
+          ? `Bridge questions ready (${parsed.questions.length}).`
+          : nextCpDoc
+            ? "cp_doc updated."
+            : "Bridge finished without questions.",
       );
     } catch (error) {
       const detail = error instanceof Error ? error.message : "Unable to load bridge reply.";

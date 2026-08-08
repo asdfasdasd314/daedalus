@@ -63,19 +63,37 @@ Do not edit files.
 Do not run modifying commands.
 Do not implement durable tasks yourself.
 
-Take the user's high-level direction and either (1) ask high-coverage questions that resolve open decision dimensions, or (2) when enough is known, split the work into independent single-focus coding task prompts.
+Your job is to grow a concise centralized project document (cp_doc): your model of
+the operator's stated vision for what they are building. This is not an ideal product
+spec you invent; it is only what the operator has told you or confirmed through answers.
 
-Prefer questions that collapse multiple downstream choices (constraints, economics, risk, scope, non-goals) rather than low-leverage trivia.
+Questions exist only to fill holes and resolve decision axes that materially change
+cp_doc. Prefer high-coverage questions that collapse multiple downstream choices
+(constraints, scope, non-goals, mechanisms) over low-leverage trivia.
+
+Concision rules for cp_doc:
+- Short clauses; drop obvious elaborations and restatements.
+- Example: operator says "we need user authentication" -> "User auth needed"
+  (not a paragraph about secure login/signup).
+- Add mechanism only when the operator specifies it, e.g. "Custom auth (login/signup)"
+  vs auth providers — not long prose restating the same idea.
+
+Only revise cp_doc from operator-supplied direction and answers. Never invent
+requirements the operator has not stated or confirmed.
 
 """
-BRIDGE_PROMPT_SUFFIX = """Always respond with this Markdown contract only (no file writes):
+BRIDGE_PROMPT_SUFFIX = """Always respond with this Markdown contract only (no file writes).
+Every reply must include a full replacement ## Cp Doc (not a patch).
 
 ```md
 ## Status
 need_more_questions
 
+## Cp Doc
+Concise markdown capturing the operator's stated vision so far.
+
 ## Notes
-Brief reasoning about remaining open dimensions.
+Brief meta about remaining gaps (not product vision prose).
 
 ## Questions
 
@@ -85,31 +103,36 @@ Brief reasoning about remaining open dimensions.
    - c. [potential answer]
 ```
 
-or, when ready to fan out coding work:
+or, when understanding is solid enough (tasks optional / low priority):
 
 ```md
 ## Status
 ready
 
+## Cp Doc
+Concise markdown of the operator's confirmed vision.
+
 ## Notes
-Brief reasoning that the decision space is sufficiently covered.
+Brief meta that remaining gaps are acceptable.
 
 ## Tasks
 
 1. **Task title**: one complete coding prompt focused on a single unit of work
-2. **Task title**: next independent unit of work
 ```
 
 Rules:
-- If status is need_more_questions, include a non-empty ## Questions section and omit or leave ## Tasks empty.
-- If status is ready, include a non-empty ## Tasks section. Questions are optional.
-- Ask at most five questions per turn and never suggest more than three options per question.
-- Each task prompt must be self-contained so a coding agent can execute it without the full bridge transcript.
+- Always include a non-empty ## Cp Doc with the complete updated document.
+- If status is need_more_questions, include a non-empty ## Questions section.
+- There is no maximum number of questions per turn; ask as many high-coverage
+  questions as needed in one mass batch.
+- Options may be as many as useful to span the decision surface (no artificial cap).
+- ## Tasks is optional and low priority; omit when focusing on understanding.
+- If you include tasks, each prompt must be self-contained for a coding agent.
 
 """
 CURSOR_BRIDGE_PROMPT_PREFIX = (
     f"{BRIDGE_PROMPT_PREFIX.rstrip()}\n\n"
-    "Do not try to write the answer outline to a file.\n\n"
+    "Do not try to write cp_doc or any other file to disk.\n\n"
 )
 TARGETED_FEATURE_PATH_REGEX = re.compile(r"^feature_files/[A-Za-z0-9._/-]+\.md$")
 TARGETED_FEATURES_PROMPT_PREFIX = (
@@ -1177,8 +1200,11 @@ def build_bridge_refinement_context(
 
     if isinstance(bridge_context, str) and bridge_context.strip():
         sections.append(
-            "Continue the answer-oriented bridge using the notes below and the user's answers:\n\n"
-            f"{bridge_context.strip()}",
+            "Continue the answer-oriented bridge from the current cp_doc "
+            "(agent model of the operator's stated vision). Revise cp_doc only from "
+            "this document and the operator answers below. Emit a full replacement "
+            "## Cp Doc in your reply.\n\n"
+            f"Current cp_doc:\n\n{bridge_context.strip()}",
         )
 
     answers: list[str] = []
@@ -1192,7 +1218,9 @@ def build_bridge_refinement_context(
                 answers.append(f"{question}: {len(answers) + 1}. {answer}")
 
     if answers:
-        sections.append("\n".join(answers))
+        sections.append(
+            "Operator answers (apply these to update cp_doc):\n" + "\n".join(answers),
+        )
 
     return "\n\n".join(sections)
 

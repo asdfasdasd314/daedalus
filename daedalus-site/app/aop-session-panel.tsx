@@ -88,10 +88,11 @@ export default function AopSessionPanel({
           AOP Beta
         </h1>
         <p className="max-w-2xl text-sm leading-6 text-slate-300">
-          A separate programming surface: send a high-level direction to the bridge agent.
-          It asks high-coverage questions so you can refine scope. Coding-task dispatch is
-          disabled for now while question generation is the focus. Every post here is
-          bridge-only — there is no Standard, Planning, or Ask mode.
+          Send a high-level direction to the bridge agent. It maintains a concise
+          cp_doc (its model of <em>your</em> vision) and asks as many high-coverage
+          questions as needed to fill gaps. Coding-task dispatch is disabled while
+          question generation is the focus. Every post here is bridge-only — no
+          Standard, Planning, or Ask mode.
         </p>
       </header>
 
@@ -243,9 +244,27 @@ export default function AopSessionPanel({
               {bridgeSession.phase}
             </span>
           </div>
+          {bridgeSession.cpDoc ? (
+            <div className="grid gap-2">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
+                  cp_doc
+                </p>
+                <p className="text-xs text-slate-500">
+                  Agent model of your stated vision — updates only after your direction or answers
+                </p>
+              </div>
+              <pre className="agent-chat-scrollbar max-h-80 overflow-y-auto whitespace-pre-wrap break-words rounded-[1.25rem] border border-violet-300/20 bg-violet-300/[0.05] px-4 py-3 text-sm text-slate-100">
+                {bridgeSession.cpDoc}
+              </pre>
+            </div>
+          ) : null}
           {bridgeSession.notes ? (
-            <div className="rounded-[1.25rem] border border-white/10 bg-slate-900/50 px-4 py-3 text-sm text-slate-200 whitespace-pre-wrap">
-              {bridgeSession.notes}
+            <div className="grid gap-2">
+              <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500">Notes</p>
+              <div className="rounded-[1.25rem] border border-white/10 bg-slate-900/50 px-4 py-3 text-sm text-slate-200 whitespace-pre-wrap">
+                {bridgeSession.notes}
+              </div>
             </div>
           ) : null}
           {(bridgeSession.phase === "running" || bridgeSession.phase === "dispatching") ? (
@@ -258,6 +277,8 @@ export default function AopSessionPanel({
           {activeQuestion ? (
             <BridgeQuestionnaire
               question={activeQuestion}
+              questionNumber={bridgeSession.questionIndex + 1}
+              questionCount={bridgeSession.pendingQuestions.length}
               otherAnswer={otherAnswer}
               onOtherAnswerChange={onOtherAnswerChange}
               onAnswer={onAnswerQuestion}
@@ -318,11 +339,15 @@ function TaskList({ tasks }: { tasks: BridgeTask[] }) {
 
 function BridgeQuestionnaire({
   question,
+  questionNumber,
+  questionCount,
   otherAnswer,
   onOtherAnswerChange,
   onAnswer,
 }: {
   question: PlanningQuestion;
+  questionNumber: number;
+  questionCount: number;
   otherAnswer: string;
   onOtherAnswerChange: (answer: string) => void;
   onAnswer: (answer: string) => void;
@@ -337,9 +362,16 @@ function BridgeQuestionnaire({
 
   return (
     <section className="grid gap-3 rounded-[1.25rem] border border-cyan-300/20 bg-cyan-300/[0.05] p-4">
-      <h3 className="text-[11px] font-semibold uppercase tracking-[0.24em] text-cyan-100">
-        Bridge question
-      </h3>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-[11px] font-semibold uppercase tracking-[0.24em] text-cyan-100">
+          Bridge question
+        </h3>
+        {questionCount > 0 ? (
+          <span className="text-xs text-slate-400">
+            Question {questionNumber} of {questionCount}
+          </span>
+        ) : null}
+      </div>
       <p className="text-sm text-slate-100">{question.question}</p>
       <div className="flex flex-wrap gap-2" aria-label="Answer choices">
         {question.options.map((option) => (
