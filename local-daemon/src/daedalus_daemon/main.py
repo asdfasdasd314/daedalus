@@ -20,7 +20,30 @@ PARAMETER_FILE_UPDATE_COMMAND = "parameter_file_update"
 ENTRY_POINT_UPDATE_COMMAND = "entry_point_update"
 CP_DOC_FILENAME = "cp_doc.md"
 CP_DOC_HEADING = re.compile(r"^## Cp Doc\s*$", re.IGNORECASE | re.MULTILINE)
+OPTIONAL_CP_DOC_HEADING = re.compile(
+    r"^## Optional Cp Doc\s*$", re.IGNORECASE | re.MULTILINE,
+)
+# Sibling bridge-contract headings that end the ## Cp Doc body (not cp_doc's inner ## sections).
+CP_DOC_TERMINAL_HEADING = re.compile(
+    r"^##\s+(Status|Notes|Questions|Tasks|Optional Cp Doc)\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
 SECTION_HEADING = re.compile(r"^##\s+\S", re.MULTILINE)
+# Five fixed ## headings inside cp_doc.md (the body under bridge reply ## Cp Doc).
+CP_DOC_SECTIONS = (
+    "Project Summary",
+    "Tech Stack",
+    "Broad Principles",
+    "Project State",
+    "Additional Notes",
+)
+# Required before any coding (or status ready). Broad Principles + Additional Notes optional.
+CP_DOC_REQUIRED_SECTIONS = (
+    "Project Summary",
+    "Tech Stack",
+    "Project State",
+)
+CP_DOC_PLACEHOLDER = "(not yet established)"
 PLANNING_PROMPT_PREFIX = """You are in planning mode.
 
 Do not edit files.
@@ -66,39 +89,81 @@ Do not edit files.
 Do not run modifying commands.
 Do not implement durable tasks yourself.
 
-Your job is to grow a concise centralized project document (cp_doc): your model of
-the operator's stated vision for what they are building. This is not an ideal product
-spec you invent; it is only what the operator has told you or confirmed through answers.
+Your job is to grow a structured centralized project document (cp_doc): long-term memory
+of the operator's stated vision, organized so fundamentals stay accountable. This is not
+an ideal product spec you invent; it is only what the operator has told you or confirmed
+through answers.
+
+cp_doc ALWAYS uses exactly these five ## sections, in this order (full replacement each turn):
+
+1. Project Summary — what is being built and why, at a product level. Relatively stable.
+2. Tech Stack — languages, frameworks, hosts, key services. Relatively stable.
+3. Broad Principles — philosophical / product / engineering principles that guide
+   trade-offs (e.g. "prefer read-only agents", "feature files over sprawling docs").
+   Flexible; often updates as Q&A clarifies priorities.
+4. Project State — where the project is in development and where priorities lie right now
+   (prototyping, mvp, scaling, debugging, redesign, etc.). System-wide priority signal,
+   analogous to feature Dev Mode but for the whole product. Mutable as phase/focus shifts.
+5. Additional Notes — ephemeral or secondary facts not yet (or never) folded elsewhere.
+   Most mutable; optional for coding readiness.
+
+Required before coding (and before status ready): Project Summary, Tech Stack, and
+Project State must have real operator-confirmed content (not placeholders / empty).
+Broad Principles and Additional Notes are optional for that gate — fill them when useful.
 
 Questions exist only to fill holes and resolve decision axes that materially change
-cp_doc. Prefer high-coverage questions that collapse multiple downstream choices
-(constraints, scope, non-goals, mechanisms) over low-leverage trivia.
+cp_doc. Prefer high-coverage questions that collapse multiple downstream choices over
+low-leverage trivia. Bias early turns toward required empty/weak sections.
 
-Concision rules for cp_doc:
+Concision rules for every section:
 - Short clauses; drop obvious elaborations and restatements.
 - Example: operator says "we need user authentication" -> "User auth needed"
   (not a paragraph about secure login/signup).
 - Add mechanism only when the operator specifies it, e.g. "Custom auth (login/signup)"
   vs auth providers — not long prose restating the same idea.
+- Section bodies themselves stay flexible markdown (bullets, short lines); only headings
+  and section roles are rigid.
+
+Mutability guidance:
+- Change Project Summary / Tech Stack only when the operator revises foundational intent.
+- Broad Principles and Additional Notes may change every turn as understanding evolves.
+- Project State should track current phase and priorities without inventing a roadmap.
 
 Only revise cp_doc from operator-supplied direction and answers. Never invent
-requirements the operator has not stated or confirmed.
+requirements the operator has not stated or confirmed. If inherited cp_doc lacks the
+five headings, restructure into them without inventing new requirements.
 
 """
 BRIDGE_PROMPT_SUFFIX = """Always respond with this Markdown contract only (no file writes).
 The host writes your ## Cp Doc section to the project root as cp_doc.md for the
 operator and later agents — do not write that file yourself.
-Every reply must include a full replacement ## Cp Doc (not a patch).
+Every reply must include a full replacement ## Cp Doc (not a patch) using the five
+section headings below exactly (## Project Summary, ## Tech Stack, ## Broad Principles,
+## Project State, ## Additional Notes) in that order.
 
 ```md
 ## Status
 need_more_questions
 
 ## Cp Doc
-Concise markdown capturing the operator's stated vision so far.
+## Project Summary
+[operator-confirmed product summary, or (not yet established)]
+
+## Tech Stack
+[languages/frameworks/services, or (not yet established)]
+
+## Broad Principles
+[optional guiding principles, or (not yet established)]
+
+## Project State
+[phase/priorities e.g. prototyping | mvp | scaling | debugging, or (not yet established)]
+
+## Additional Notes
+[optional ephemeral notes, or (none yet)]
 
 ## Notes
-Brief meta about remaining gaps (not product vision prose).
+Brief meta about remaining gaps (not product vision prose). Which required sections
+are still weak, and why you asked these questions.
 
 ## Questions
 
@@ -115,10 +180,23 @@ or, when understanding is solid enough (tasks optional / low priority):
 ready
 
 ## Cp Doc
-Concise markdown of the operator's confirmed vision.
+## Project Summary
+[confirmed summary]
+
+## Tech Stack
+[confirmed stack]
+
+## Broad Principles
+[principles if any]
+
+## Project State
+[current phase and priorities]
+
+## Additional Notes
+[optional notes]
 
 ## Notes
-Brief meta that remaining gaps are acceptable.
+Brief meta that remaining gaps are acceptable for coding.
 
 ## Tasks
 
@@ -126,19 +204,159 @@ Brief meta that remaining gaps are acceptable.
 ```
 
 Rules:
-- Always include a non-empty ## Cp Doc with the complete updated document.
+- Always include a non-empty ## Cp Doc with the complete five-section document.
+- Keep the five ## headings even when a section body is still a placeholder.
+- Prefer "(not yet established)" for empty required/optional sections, and
+  "(none yet)" for empty Additional Notes — never omit a heading.
+- status ready ONLY if Project Summary, Tech Stack, and Project State have real
+  operator-confirmed content (not placeholders). Broad Principles and Additional Notes
+  may remain thin or placeheld.
+- If any required section is still placeheld or empty, status must be
+  need_more_questions and Questions should target those gaps.
 - If status is need_more_questions, include a non-empty ## Questions section.
 - There is no maximum number of questions per turn; ask as many high-coverage
   questions as needed in one mass batch.
 - Options may be as many as useful to span the decision surface (no artificial cap).
-- ## Tasks is optional and low priority; omit when focusing on understanding.
-- If you include tasks, each prompt must be self-contained for a coding agent.
+- When vision is ready, prefer status ready without multi-task fan-out; the host
+  build loop will later request one next_task at a time. Do not emit large ## Tasks
+  lists during vision Q&A (omit Tasks or keep optional single illustrative task).
+- Coding must not begin until the required three sections are filled (enforce via
+  ready/status; do not claim ready early).
+
+"""
+BRIDGE_TASKING_SUFFIX = """You are in the AOP BUILD LOOP tasking phase (vision is already ready).
+Always respond with this Markdown contract only (no file writes).
+Every reply must include a full replacement ## Cp Doc using the five fixed section
+headings. Do not invent requirements.
+
+```md
+## Status
+next_task
+
+## Cp Doc
+## Project Summary
+…
+
+## Tech Stack
+…
+
+## Broad Principles
+…
+
+## Project State
+…
+
+## Additional Notes
+…
+
+## Notes
+Why this next slice unblocks MVP.
+
+## Tasks
+
+1. **Task title**: one complete, self-contained coding prompt for this slice only
+```
+
+or, when MVP for the stated vision is done:
+
+```md
+## Status
+mvp_complete
+
+## Cp Doc
+… five sections …
+
+## Notes
+Why MVP is complete enough.
+```
+
+Rules:
+- Emit exactly ONE task when status is next_task (never a batch).
+- Prefer the smallest vertical/first step (install deps, scaffold, first page, etc.).
+- Do not ask vision ## Questions here unless a required cp_doc section regressed
+  to a placeholder; implementation questions belong to later prep.
+- Do not write files.
+
+"""
+IMPL_PREP_PROMPT_PREFIX = """You are in implementation prep mode for answer-oriented programming.
+
+Do not edit files.
+Do not run modifying commands.
+Do not implement the task yet.
+
+Your job: decide whether this single coding task can start given current context.
+Context priority (strict):
+1) project-root cp_doc.md (operator vision)
+2) targeted feature files
+3) graphify structure queries when needed
+4) source code only if still required after the above (expensive)
+
+Ask implementation questions only when gaps block safe execution of THIS task
+(missing packager, auth choice that affects scaffolding, etc.). Never dump a full plan —
+operators only see questions and short notes.
+
+If operator answers change product vision, include ## Optional Cp Doc with a full
+five-section replacement. The host may persist it.
+
+"""
+IMPL_PREP_PROMPT_SUFFIX = """Always respond with this Markdown contract only (no file writes).
+
+```md
+## Status
+need_more_questions
+
+## Notes
+What still blocks starting.
+
+## Questions
+
+1. **[question]**:
+   - a. [potential answer]
+   - b. [potential answer]
+   - c. [potential answer]
+```
+
+or when ready:
+
+```md
+## Status
+ready_to_execute
+
+## Notes
+Task can be initiated.
+
+## Optional Cp Doc
+## Project Summary
+…
+
+## Tech Stack
+…
+
+## Broad Principles
+…
+
+## Project State
+…
+
+## Additional Notes
+…
+```
+
+Rules:
+- need_more_questions requires a non-empty ## Questions section.
+- ready_to_execute means the operator can start durable coding for this task.
+- Do not implement code. Do not write files.
+- Optional Cp Doc only when answers change vision/stack state.
 
 """
 CURSOR_BRIDGE_PROMPT_PREFIX = (
     f"{BRIDGE_PROMPT_PREFIX.rstrip()}\n\n"
     "Do not try to write cp_doc.md or any other file to disk; the host persists "
     "cp_doc from your ## Cp Doc section.\n\n"
+)
+CURSOR_IMPL_PREP_PROMPT_PREFIX = (
+    f"{IMPL_PREP_PROMPT_PREFIX.rstrip()}\n\n"
+    "Do not write files to disk; the host may persist Optional Cp Doc.\n\n"
 )
 TARGETED_FEATURE_PATH_REGEX = re.compile(r"^feature_files/[A-Za-z0-9._/-]+\.md$")
 TARGETED_FEATURES_PROMPT_PREFIX = (
@@ -440,20 +658,39 @@ def run_agent_prompt_cycle(
     planning_mode = prompt_request.get("planningMode", False) is True
     ask_mode = prompt_request.get("askMode", False) is True
     bridge_mode = prompt_request.get("bridgeMode", False) is True
-    if bridge_mode:
+    bridge_tasking = prompt_request.get("bridgeTasking", False) is True
+    impl_prep_mode = prompt_request.get("implPrepMode", False) is True
+    if impl_prep_mode:
+        planning_mode = False
+        ask_mode = False
+        bridge_mode = False
+        bridge_tasking = False
+    elif bridge_mode:
         planning_mode = False
         ask_mode = False
     elif ask_mode:
         planning_mode = False
+    if bridge_tasking and not bridge_mode:
+        bridge_mode = True
+        planning_mode = False
+        ask_mode = False
     planning_context = (
         prompt_request.get("planningContext", "")
         if planning_mode
-        else (prompt_request.get("bridgeContext", "") if bridge_mode else "")
+        else (
+            prompt_request.get("implPrepContext", "")
+            if impl_prep_mode
+            else (prompt_request.get("bridgeContext", "") if bridge_mode else "")
+        )
     )
     planning_answers = (
         prompt_request.get("planningAnswers", [])
         if planning_mode
-        else (prompt_request.get("bridgeAnswers", []) if bridge_mode else [])
+        else (
+            prompt_request.get("implPrepAnswers", [])
+            if impl_prep_mode
+            else (prompt_request.get("bridgeAnswers", []) if bridge_mode else [])
+        )
     )
     conversation_id = prompt_request.get("conversationId")
     if not isinstance(conversation_id, str) or not conversation_id.strip():
@@ -461,15 +698,17 @@ def run_agent_prompt_cycle(
     targeted_feature_paths = filter_targeted_feature_paths(
         prompt_request.get("targetedFeaturePaths", []),
     )
-    if bridge_mode:
+    if impl_prep_mode:
+        mode = "impl_prep"
+    elif bridge_mode:
         mode = "bridge"
     elif ask_mode:
         mode = "ask"
     else:
         mode = "planning"
-    # Bridge and ask share a non-mutating sandbox; planning uses provider plan modes.
-    # The host still persists cp_doc.md after bridge replies (agents stay read-only).
-    read_only_exec = ask_mode or bridge_mode
+    # Bridge, ask, and impl prep share a non-mutating sandbox.
+    # The host still persists cp_doc.md after bridge/impl-prep replies.
+    read_only_exec = ask_mode or bridge_mode or impl_prep_mode
     history_publisher = publish_history or upsert_agent_task_turn
     history_args = (
         config, prompt_id, directory, prompt, "", "", provider, model,
@@ -478,11 +717,12 @@ def run_agent_prompt_cycle(
     if deliver_chat is None:
         history_publisher(*history_args, status="running")
     if bridge_mode:
-        seed_cp_doc = (
+        seed_source = (
             planning_context.strip()
             if isinstance(planning_context, str) and planning_context.strip()
             else str(prompt)
         )
+        seed_cp_doc = ensure_structured_cp_doc(seed_source)
         try:
             write_project_cp_doc(directory, seed_cp_doc)
         except Exception as error:
@@ -498,6 +738,8 @@ def run_agent_prompt_cycle(
             planning_answers,
             ask_mode=ask_mode,
             bridge_mode=bridge_mode,
+            bridge_tasking=bridge_tasking,
+            impl_prep_mode=impl_prep_mode,
         )
         if provider == CURSOR_PROVIDER
         else build_codex_prompt(
@@ -508,6 +750,8 @@ def run_agent_prompt_cycle(
             planning_answers,
             ask_mode=ask_mode,
             bridge_mode=bridge_mode,
+            bridge_tasking=bridge_tasking,
+            impl_prep_mode=impl_prep_mode,
         )
     )
     try:
@@ -561,6 +805,16 @@ def run_agent_prompt_cycle(
             logging.getLogger(__name__).warning(
                 "Failed to persist %s for %s: %s", CP_DOC_FILENAME, directory, error,
             )
+    elif impl_prep_mode:
+        try:
+            persist_optional_cp_doc_from_reply(directory, reply)
+        except Exception as error:
+            logging.getLogger(__name__).warning(
+                "Failed to persist optional %s for %s: %s",
+                CP_DOC_FILENAME,
+                directory,
+                error,
+            )
 
     if deliver_chat is None:
         history_publisher(
@@ -576,7 +830,7 @@ def run_agent_prompt_cycle(
             config, prompt_id, directory, prompt, reply, provider, model,
             reasoning, planning_mode, targeted_feature_paths,
         )
-        if ask_mode or bridge_mode:
+        if ask_mode or bridge_mode or impl_prep_mode:
             deliver_chat(*legacy_args, ask_mode=True)
         else:
             deliver_chat(*legacy_args)
@@ -584,7 +838,11 @@ def run_agent_prompt_cycle(
 
 
 def extract_bridge_cp_doc(reply: object) -> str:
-    """Return the ## Cp Doc body from a bridge agent reply, if present."""
+    """Return the ## Cp Doc body from a bridge agent reply, if present.
+
+    Inner five-section headings (## Project Summary, etc.) stay inside the body;
+    extraction only stops at outer bridge contract headings (Notes/Questions/Tasks).
+    """
     if not isinstance(reply, str) or not reply.strip():
         return ""
     text = reply.strip()
@@ -596,9 +854,48 @@ def extract_bridge_cp_doc(reply: object) -> str:
         return ""
     after = start.end()
     rest = text[after:]
-    next_heading = SECTION_HEADING.search(rest)
+    next_heading = CP_DOC_TERMINAL_HEADING.search(rest)
     body = rest[: next_heading.start()] if next_heading else rest
     return body.strip()
+
+
+def cp_doc_has_all_sections(content: object) -> bool:
+    """True when content already contains all five fixed ## section headings."""
+    if not isinstance(content, str) or not content.strip():
+        return False
+    text = content
+    for title in CP_DOC_SECTIONS:
+        if not re.search(
+            rf"^##\s+{re.escape(title)}\s*$",
+            text,
+            re.IGNORECASE | re.MULTILINE,
+        ):
+            return False
+    return True
+
+
+def build_cp_doc_skeleton(project_summary: object = "") -> str:
+    """Return a five-section cp_doc template; summary seeds Project Summary only."""
+    summary = (
+        project_summary.strip()
+        if isinstance(project_summary, str) and project_summary.strip()
+        else CP_DOC_PLACEHOLDER
+    )
+    return (
+        f"## Project Summary\n{summary}\n\n"
+        f"## Tech Stack\n{CP_DOC_PLACEHOLDER}\n\n"
+        f"## Broad Principles\n{CP_DOC_PLACEHOLDER}\n\n"
+        f"## Project State\n{CP_DOC_PLACEHOLDER}\n\n"
+        "## Additional Notes\n(none yet)\n"
+    )
+
+
+def ensure_structured_cp_doc(content: object) -> str:
+    """Return content unchanged if already structured; else wrap into the skeleton."""
+    if isinstance(content, str) and cp_doc_has_all_sections(content):
+        return content.strip() + ("\n" if not content.endswith("\n") else "")
+    summary = content.strip() if isinstance(content, str) else ""
+    return build_cp_doc_skeleton(summary)
 
 
 def write_project_cp_doc(project_directory: object, content: object) -> Path:
@@ -624,6 +921,33 @@ def persist_bridge_cp_doc_from_reply(project_directory: object, reply: object) -
     if not cp_doc:
         return None
     return write_project_cp_doc(project_directory, cp_doc)
+
+
+def extract_optional_cp_doc(reply: object) -> str:
+    """Return ## Optional Cp Doc body from an impl-prep reply, if present."""
+    if not isinstance(reply, str) or not reply.strip():
+        return ""
+    text = reply.strip()
+    fenced = re.match(r"^```[^\n]*\n([\s\S]*?)\n```\s*$", text)
+    if fenced:
+        text = fenced.group(1)
+    start = OPTIONAL_CP_DOC_HEADING.search(text)
+    if not start:
+        return ""
+    after = start.end()
+    rest = text[after:]
+    next_heading = CP_DOC_TERMINAL_HEADING.search(rest)
+    body = rest[: next_heading.start()] if next_heading else rest
+    return body.strip()
+
+
+def persist_optional_cp_doc_from_reply(project_directory: object, reply: object) -> Path | None:
+    """Persist ## Optional Cp Doc from impl-prep when present."""
+    cp_doc = extract_optional_cp_doc(reply)
+    if not cp_doc:
+        return None
+    structured = ensure_structured_cp_doc(cp_doc)
+    return write_project_cp_doc(project_directory, structured)
 
 
 def parse_agent_prompt_message(message: str) -> dict[str, object] | None:
@@ -943,6 +1267,7 @@ def execute_git_sync_operation(
     operation: str,
     message: str = "",
     run_process=subprocess.run,
+    base_commit: str = "",
 ) -> tuple[list[dict[str, object]], str]:
     steps: list[dict[str, object]] = []
 
@@ -993,6 +1318,66 @@ def execute_git_sync_operation(
         steps.append(status_step)
         return steps, "success" if status_step["exitCode"] == 0 else "failed"
 
+    if operation == "resolve_head":
+        head_step = run_git_command(
+            directory,
+            ["git", "rev-parse", "HEAD"],
+            include_stdout=True,
+            run_process=run_process,
+        )
+        head_sha = str(head_step.get("stdout") or "").strip()
+        steps.append({**head_step, "head": head_sha})
+        return steps, "success" if head_step["exitCode"] == 0 and head_sha else "failed"
+
+    if operation == "aop_loop_revert":
+        if not base_commit.strip():
+            steps.append({
+                "command": ["git", "reset", "--hard"],
+                "exitCode": 1,
+                "stdout": "",
+                "stderr": "baseCommit is required for aop_loop_revert.",
+            })
+            return steps, "failed"
+        ancestor = run_git_command(
+            directory,
+            ["git", "merge-base", "--is-ancestor", base_commit, "HEAD"],
+            run_process,
+        )
+        steps.append(ancestor)
+        if ancestor["exitCode"] != 0:
+            steps.append({
+                "command": ["git", "reset", "--hard", base_commit],
+                "exitCode": 1,
+                "stdout": "",
+                "stderr": "baseCommit is not an ancestor of HEAD; refusing revert.",
+            })
+            return steps, "failed"
+        reset_step = run_git_command(
+            directory,
+            ["git", "reset", "--hard", base_commit],
+            run_process,
+        )
+        steps.append(reset_step)
+        if reset_step["exitCode"] != 0:
+            return steps, "failed"
+        clean_step = run_git_command(
+            directory,
+            ["git", "clean", "-fd"],
+            run_process,
+        )
+        steps.append(clean_step)
+        if clean_step["exitCode"] != 0:
+            return steps, "failed"
+        head_step = run_git_command(
+            directory,
+            ["git", "rev-parse", "HEAD"],
+            include_stdout=True,
+            run_process=run_process,
+        )
+        head_sha = str(head_step.get("stdout") or "").strip()
+        steps.append({**head_step, "head": head_sha})
+        return steps, "success" if head_step["exitCode"] == 0 else "failed"
+
     return steps, "failed"
 
 
@@ -1024,10 +1409,17 @@ def run_git_sync_cycle(
     if not isinstance(directory, str) or not directory.strip():
         return
 
-    if operation not in {"commit", "sync", "status"}:
+    if operation not in {
+        "commit",
+        "sync",
+        "status",
+        "resolve_head",
+        "aop_loop_revert",
+    }:
         return
 
     commit_message = ""
+    base_commit = ""
 
     if operation == "commit":
         message_value = git_request.get("message")
@@ -1036,13 +1428,30 @@ def run_git_sync_cycle(
             return
 
         commit_message = message_value
+    elif operation == "aop_loop_revert":
+        base_value = git_request.get("baseCommit")
+        if not isinstance(base_value, str) or not base_value.strip():
+            return
+        base_commit = base_value.strip()
 
     steps, status = execute_git_sync_operation(
         directory,
         operation,
         commit_message,
         run_process,
+        base_commit=base_commit,
     )
+
+    head_sha = ""
+    if status == "success" and operation in {"resolve_head", "aop_loop_revert", "status"}:
+        for step in reversed(steps):
+            if isinstance(step, dict) and step.get("head"):
+                head_sha = str(step.get("head") or "")
+                break
+        if not head_sha and operation == "resolve_head":
+            for step in steps:
+                if isinstance(step, dict) and step.get("stdout"):
+                    head_sha = str(step.get("stdout") or "").strip().splitlines()[0] if step.get("stdout") else ""
 
     deliver_result(
         config,
@@ -1052,6 +1461,8 @@ def run_git_sync_cycle(
             "operation": operation,
             "status": status,
             "steps": steps,
+            **({"head": head_sha} if head_sha else {}),
+            **({"baseCommit": base_commit} if base_commit else {}),
         },
     )
 
@@ -1148,13 +1559,28 @@ def build_codex_prompt(
     planning_answers: list[dict[str, str]] | None = None,
     ask_mode: bool = False,
     bridge_mode: bool = False,
+    bridge_tasking: bool = False,
+    impl_prep_mode: bool = False,
 ) -> str:
     prompt_sections: list[str] = []
 
-    if bridge_mode:
+    if impl_prep_mode:
+        prompt_sections.append(TASK_MODE_CODING)
+        prompt_sections.append(IMPL_PREP_PROMPT_PREFIX.rstrip())
+        prompt_sections.append(IMPL_PREP_PROMPT_SUFFIX.rstrip())
+        refinement_context = build_impl_prep_refinement_context(
+            planning_context,
+            planning_answers,
+        )
+        if refinement_context:
+            prompt_sections.append(refinement_context)
+    elif bridge_mode:
         prompt_sections.append(TASK_MODE_BRIDGE)
         prompt_sections.append(BRIDGE_PROMPT_PREFIX.rstrip())
-        prompt_sections.append(BRIDGE_PROMPT_SUFFIX.rstrip())
+        if bridge_tasking:
+            prompt_sections.append(BRIDGE_TASKING_SUFFIX.rstrip())
+        else:
+            prompt_sections.append(BRIDGE_PROMPT_SUFFIX.rstrip())
         refinement_context = build_bridge_refinement_context(
             planning_context,
             planning_answers,
@@ -1195,13 +1621,28 @@ def build_cursor_prompt(
     planning_answers: list[dict[str, str]] | None = None,
     ask_mode: bool = False,
     bridge_mode: bool = False,
+    bridge_tasking: bool = False,
+    impl_prep_mode: bool = False,
 ) -> str:
     prompt_sections: list[str] = []
 
-    if bridge_mode:
+    if impl_prep_mode:
+        prompt_sections.append(TASK_MODE_CODING)
+        prompt_sections.append(CURSOR_IMPL_PREP_PROMPT_PREFIX.rstrip())
+        prompt_sections.append(IMPL_PREP_PROMPT_SUFFIX.rstrip())
+        refinement_context = build_impl_prep_refinement_context(
+            planning_context,
+            planning_answers,
+        )
+        if refinement_context:
+            prompt_sections.append(refinement_context)
+    elif bridge_mode:
         prompt_sections.append(TASK_MODE_BRIDGE)
         prompt_sections.append(CURSOR_BRIDGE_PROMPT_PREFIX.rstrip())
-        prompt_sections.append(BRIDGE_PROMPT_SUFFIX.rstrip())
+        if bridge_tasking:
+            prompt_sections.append(BRIDGE_TASKING_SUFFIX.rstrip())
+        else:
+            prompt_sections.append(BRIDGE_PROMPT_SUFFIX.rstrip())
         refinement_context = build_bridge_refinement_context(
             planning_context,
             planning_answers,
@@ -1269,12 +1710,17 @@ def build_bridge_refinement_context(
     sections: list[str] = []
 
     if isinstance(bridge_context, str) and bridge_context.strip():
+        structured = ensure_structured_cp_doc(bridge_context)
         sections.append(
             "Continue the answer-oriented bridge from the current cp_doc "
-            "(agent model of the operator's stated vision). Revise cp_doc only from "
-            "this document and the operator answers below. Emit a full replacement "
-            "## Cp Doc in your reply.\n\n"
-            f"Current cp_doc:\n\n{bridge_context.strip()}",
+            "(structured long-term memory of the operator's stated vision). "
+            "Revise only from this document and the operator answers below. "
+            "Emit a full replacement ## Cp Doc using the five fixed sections "
+            "(Project Summary, Tech Stack, Broad Principles, Project State, "
+            "Additional Notes) in that order. Prefer updating weak required "
+            "sections before optional ones. status ready only when Project Summary, "
+            "Tech Stack, and Project State are operator-confirmed (not placeheld).\n\n"
+            f"Current cp_doc:\n\n{structured.strip()}",
         )
 
     answers: list[str] = []
@@ -1289,9 +1735,38 @@ def build_bridge_refinement_context(
 
     if answers:
         sections.append(
-            "Operator answers (apply these to update cp_doc):\n" + "\n".join(answers),
+            "Operator answers (apply these to update the matching cp_doc sections):\n"
+            + "\n".join(answers),
         )
 
+    return "\n\n".join(sections)
+
+
+def build_impl_prep_refinement_context(
+    prep_context: object,
+    prep_answers: object,
+) -> str:
+    sections: list[str] = []
+    if isinstance(prep_context, str) and prep_context.strip():
+        sections.append(
+            "Continue implementation prep for this task. Prefer cp_doc → feature "
+            "files → graphify → code. Emit ## Status need_more_questions or "
+            "ready_to_execute. Do not implement.\n\n"
+            f"Task context:\n\n{prep_context.strip()}",
+        )
+    answers: list[str] = []
+    if isinstance(prep_answers, list):
+        for item in prep_answers:
+            if not isinstance(item, dict):
+                continue
+            question = item.get("question")
+            answer = item.get("answer")
+            if isinstance(question, str) and isinstance(answer, str):
+                answers.append(f"{question}: {len(answers) + 1}. {answer}")
+    if answers:
+        sections.append(
+            "Operator prep answers so far:\n" + "\n".join(answers),
+        )
     return "\n\n".join(sections)
 
 

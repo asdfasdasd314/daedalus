@@ -10,14 +10,25 @@ export type BridgeTask = {
   prompt: string;
 };
 
-export type BridgeStatus = "need_more_questions" | "ready" | "unknown";
+export type BridgeStatus =
+  | "need_more_questions"
+  | "ready"
+  | "next_task"
+  | "mvp_complete"
+  | "unknown";
 
-export type BridgePhase = "idle" | "running" | "questioning" | "ready" | "dispatching";
+export type BridgePhase =
+  | "idle"
+  | "running"
+  | "questioning"
+  | "ready"
+  | "tasking"
+  | "dispatching";
 
 export type BridgeSession = {
   conversationId: string;
   directionPrompt: string;
-  /** Agent's compressed model of the operator's stated vision (cp_doc). */
+  /** Structured long-term memory of the operator's stated vision (cp_doc). */
   cpDoc: string;
   directory: string;
   provider: string;
@@ -35,12 +46,61 @@ export type BridgeSession = {
   latestReply?: string;
 };
 
+/** Fixed ## headings inside cp_doc.md (body under bridge reply ## Cp Doc). */
+export const CP_DOC_SECTIONS = [
+  "Project Summary",
+  "Tech Stack",
+  "Broad Principles",
+  "Project State",
+  "Additional Notes",
+] as const;
+
+/** Required before coding / status ready. Broad Principles + Additional Notes optional. */
+export const CP_DOC_REQUIRED_SECTIONS = [
+  "Project Summary",
+  "Tech Stack",
+  "Project State",
+] as const;
+
+export const CP_DOC_PLACEHOLDER = "(not yet established)";
+
 const STATUS_HEADING = /^## Status\s*$/im;
 const CP_DOC_HEADING = /^## Cp Doc\s*$/im;
 const NOTES_HEADING = /^## Notes\s*$/im;
 const QUESTIONS_HEADING = /^## Questions\s*$/im;
 const TASKS_HEADING = /^## Tasks\s*$/im;
 const TASK_LINE = /^\s*\d+\.\s+\*\*(.+?)\*\*:?\s*(.*)$/;
+
+export function cpDocHasAllSections(content: string): boolean {
+  if (!content.trim()) {
+    return false;
+  }
+  return CP_DOC_SECTIONS.every((title) =>
+    new RegExp(`^##\\s+${title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`, "im").test(
+      content,
+    ),
+  );
+}
+
+/** Five-section template; optional direction seeds Project Summary only. */
+export function buildCpDocSkeleton(projectSummary = ""): string {
+  const summary = projectSummary.trim() || CP_DOC_PLACEHOLDER;
+  return [
+    `## Project Summary\n${summary}`,
+    `## Tech Stack\n${CP_DOC_PLACEHOLDER}`,
+    `## Broad Principles\n${CP_DOC_PLACEHOLDER}`,
+    `## Project State\n${CP_DOC_PLACEHOLDER}`,
+    "## Additional Notes\n(none yet)",
+  ].join("\n\n") + "\n";
+}
+
+/** Keep structured docs; wrap free-form text into the skeleton. */
+export function ensureStructuredCpDoc(content: string): string {
+  if (cpDocHasAllSections(content)) {
+    return content.trimEnd() + "\n";
+  }
+  return buildCpDocSkeleton(content);
+}
 
 function unwrapMarkdownCodeFence(reply: string) {
   const fencedReply = reply.match(/^\s*```[^\n]*\n([\s\S]*?)\n```\s*$/);
@@ -104,10 +164,14 @@ export function parseBridgeReply(reply: string): {
     TASKS_HEADING,
   ]).toLowerCase();
   let status: BridgeStatus = "unknown";
-  if (statusBody.includes("ready")) {
-    status = "ready";
+  if (statusBody.includes("mvp_complete") || statusBody.includes("mvp complete")) {
+    status = "mvp_complete";
+  } else if (statusBody.includes("next_task") || statusBody.includes("next task")) {
+    status = "next_task";
   } else if (statusBody.includes("need_more_questions") || statusBody.includes("need more questions")) {
     status = "need_more_questions";
+  } else if (/\bready\b/.test(statusBody)) {
+    status = "ready";
   }
 
   const cpDoc = sectionBody(normalizedReply, CP_DOC_HEADING, [
@@ -139,11 +203,18 @@ export function parseBridgeReply(reply: string): {
   }
 
   if (status === "unknown") {
-    if (tasks.length > 0 && questions.length === 0) {
+    if (tasks.length === 1 && questions.length === 0) {
+      status = "next_task";
+    } else if (tasks.length > 0 && questions.length === 0) {
       status = "ready";
     } else if (questions.length > 0) {
       status = "need_more_questions";
     }
+  }
+
+  // Build-loop contract: at most one next task when status is next_task.
+  if (status === "next_task" && tasks.length > 1) {
+    tasks = tasks.slice(0, 1);
   }
 
   return {

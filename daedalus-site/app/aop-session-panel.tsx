@@ -1,8 +1,8 @@
 "use client";
 
-import type { FormEvent } from "react";
 import type { TargetedFeature } from "@/lib/agent-chat-cache";
 import type { AgentModelsConfig } from "@/lib/agent-models";
+import type { AopExecutionLoop } from "@/lib/aop-loop";
 import type { BridgeSession, BridgeTask } from "@/lib/bridge-session";
 import type { PlanningQuestion } from "@/lib/planning-questionnaire";
 import { getCompactProjectLabel, getProjectLabel } from "./feature-workspace-utils";
@@ -11,12 +11,12 @@ type AopSessionPanelProps = {
   acceptsWork: boolean;
   agentModels: AgentModelsConfig;
   availableProjectDirectories: string[];
+  aopLoop: AopExecutionLoop | null;
   bridgeSession: BridgeSession | null;
   defaultProjectDirectory: string;
   directionText: string;
   onClearSession: () => void;
   onDirectionTextChange: (text: string) => void;
-  onDispatchTasks: () => void;
   onAnswerQuestion: (answer: string) => void;
   onOpenFeatureTagSearch: () => void;
   onProviderChange: (provider: string) => void;
@@ -25,6 +25,12 @@ type AopSessionPanelProps = {
   onSelectedReasoningChange: (reasoning: string) => void;
   onSelectModel: (modelId: string) => void;
   onSubmitDirection: () => void;
+  onStartBuildLoop: () => void;
+  onStopLoop: () => void;
+  onResumeLoop: () => void;
+  onStartTask: () => void;
+  onVerifyLoop: () => void;
+  onRevertLoop: () => void;
   otherAnswer: string;
   onOtherAnswerChange: (value: string) => void;
   selectedModelId: string;
@@ -39,12 +45,12 @@ export default function AopSessionPanel({
   acceptsWork,
   agentModels,
   availableProjectDirectories,
+  aopLoop,
   bridgeSession,
   defaultProjectDirectory,
   directionText,
   onClearSession,
   onDirectionTextChange,
-  onDispatchTasks,
   onAnswerQuestion,
   onOpenFeatureTagSearch,
   onProviderChange,
@@ -53,6 +59,12 @@ export default function AopSessionPanel({
   onSelectedReasoningChange,
   onSelectModel,
   onSubmitDirection,
+  onStartBuildLoop,
+  onStopLoop,
+  onResumeLoop,
+  onStartTask,
+  onVerifyLoop,
+  onRevertLoop,
   otherAnswer,
   onOtherAnswerChange,
   selectedModelId,
@@ -67,11 +79,33 @@ export default function AopSessionPanel({
   const projectDirectories = availableProjectDirectories.length > 0
     ? availableProjectDirectories
     : [defaultProjectDirectory];
-  const activeQuestion = bridgeSession?.pendingQuestions[bridgeSession.questionIndex] ?? null;
+
+  const loopPrepQuestion =
+    aopLoop && (aopLoop.status === "awaiting_answers" || aopLoop.status === "prep")
+      ? aopLoop.pendingQuestions[0] ?? null
+      : null;
+  const activeQuestion =
+    loopPrepQuestion
+    ?? bridgeSession?.pendingQuestions[bridgeSession.questionIndex]
+    ?? null;
+  const questionNumber = loopPrepQuestion
+    ? 1
+    : (bridgeSession ? bridgeSession.questionIndex + 1 : 1);
+  const questionCount = loopPrepQuestion
+    ? aopLoop?.pendingQuestions.length ?? 1
+    : (bridgeSession?.pendingQuestions.length ?? 1);
+
   const canStart = Boolean(directionText.trim()) && acceptsWork &&
     (!bridgeSession || bridgeSession.phase === "idle" || bridgeSession.phase === "ready");
-  // Coding-task fan-out is intentionally off while AOP Beta focuses on questions.
-  const canDispatch = false;
+  const canStartLoop = Boolean(
+    acceptsWork
+    && bridgeSession
+    && (bridgeSession.phase === "ready" || bridgeSession.cpDoc)
+    && (!aopLoop || ["completed", "cancelled", "failed"].includes(aopLoop.status)),
+  );
+  const loopActive = Boolean(
+    aopLoop && !["completed", "cancelled", "failed"].includes(aopLoop.status),
+  );
 
   return (
     <div className="grid min-w-0 gap-5 overflow-x-hidden">
@@ -88,12 +122,9 @@ export default function AopSessionPanel({
           AOP Beta
         </h1>
         <p className="max-w-2xl text-sm leading-6 text-slate-300">
-Send a high-level direction to the bridge agent. It maintains a concise
-           cp_doc (its model of <em>your</em> vision) at{" "}
-           <code className="text-slate-200">cp_doc.md</code> in the selected project
-           root and asks as many high-coverage questions as needed to fill gaps.
-           Coding-task dispatch is disabled while question generation is the focus.
-           Every post here is bridge-only — no Standard, Planning, or Ask mode.
+          Bridge builds a five-section cp_doc from your answers, then a single
+          per-project build loop emits one coding task at a time (prep questions →
+          explicit Start task → worktree execution → optional every-N verification).
         </p>
       </header>
 
@@ -117,9 +148,6 @@ Send a high-level direction to the bridge agent. It maintains a concise
           </select>
           <span className="pointer-events-none absolute inset-y-0 left-4 right-12 flex items-center truncate text-sm text-slate-100">
             {getCompactProjectLabel(selectedProjectDirectory, projectDirectories)}
-          </span>
-          <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-xs text-slate-400">
-            v
           </span>
         </div>
 
@@ -256,9 +284,6 @@ Send a high-level direction to the bridge agent. It maintains a concise
                     {bridgeSession.directory.replace(/\/$/, "")}/cp_doc.md
                   </p>
                 </div>
-                <p className="text-xs text-slate-500">
-                  On disk per project; updates only after your direction or answers
-                </p>
               </div>
               <pre className="agent-chat-scrollbar max-h-80 overflow-y-auto whitespace-pre-wrap break-words rounded-[1.25rem] border border-violet-300/20 bg-violet-300/[0.05] px-4 py-3 text-sm text-slate-100">
                 {bridgeSession.cpDoc}
@@ -273,18 +298,14 @@ Send a high-level direction to the bridge agent. It maintains a concise
               </div>
             </div>
           ) : null}
-          {(bridgeSession.phase === "running" || bridgeSession.phase === "dispatching") ? (
-            <p className="text-sm text-slate-400">
-              {bridgeSession.phase === "dispatching"
-                ? "Dispatching coding tasks…"
-                : "Bridge agent is working…"}
-            </p>
+          {(bridgeSession.phase === "running" || bridgeSession.phase === "tasking") ? (
+            <p className="text-sm text-slate-400">Bridge agent is working…</p>
           ) : null}
-          {activeQuestion ? (
+          {activeQuestion && !loopPrepQuestion ? (
             <BridgeQuestionnaire
               question={activeQuestion}
-              questionNumber={bridgeSession.questionIndex + 1}
-              questionCount={bridgeSession.pendingQuestions.length}
+              questionNumber={questionNumber}
+              questionCount={questionCount}
               otherAnswer={otherAnswer}
               onOtherAnswerChange={onOtherAnswerChange}
               onAnswer={onAnswerQuestion}
@@ -292,7 +313,7 @@ Send a high-level direction to the bridge agent. It maintains a concise
           ) : null}
           {bridgeSession.answers.length > 0 ? (
             <div className="grid gap-2">
-              <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500">Answers so far</p>
+              <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500">Vision answers</p>
               <ul className="grid gap-2 text-sm text-slate-300">
                 {bridgeSession.answers.map((answer, index) => (
                   <li key={`${answer.question}-${index}`} className="rounded-xl border border-white/10 px-3 py-2">
@@ -304,33 +325,139 @@ Send a high-level direction to the bridge agent. It maintains a concise
             </div>
           ) : null}
           {bridgeSession.proposedTasks.length > 0 ? (
-            <>
-              <TaskList tasks={bridgeSession.proposedTasks} />
-              <p className="text-sm text-slate-400">
-                Proposed coding tasks are preview-only. Dispatch to agents is disabled while
-                question generation is under development.
-              </p>
-            </>
+            <TaskList tasks={bridgeSession.proposedTasks} label="Latest task" />
           ) : null}
-          {canDispatch ? (
+          {canStartLoop ? (
             <button
               type="button"
-              onClick={onDispatchTasks}
+              onClick={onStartBuildLoop}
               className="w-fit rounded-full bg-emerald-300 px-5 py-3 text-sm font-semibold text-slate-950 hover:bg-emerald-200"
             >
-              Dispatch {bridgeSession.proposedTasks.length} coding task{bridgeSession.proposedTasks.length === 1 ? "" : "s"}
+              Start build loop
             </button>
           ) : null}
+        </section>
+      ) : null}
+
+      {aopLoop ? (
+        <section className="grid gap-3 rounded-[1.5rem] border border-emerald-300/20 bg-emerald-300/[0.04] p-4 sm:p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-[11px] uppercase tracking-[0.28em] text-emerald-200/80">Build loop</p>
+            <span className="rounded-full border border-emerald-300/30 bg-emerald-300/10 px-3 py-1 text-xs text-emerald-100">
+              {aopLoop.status}
+            </span>
+          </div>
+          {aopLoop.statusDetail ? (
+            <p className="rounded-[1.25rem] border border-white/10 bg-black/30 px-4 py-3 text-sm text-slate-100">
+              {aopLoop.statusDetail}
+            </p>
+          ) : null}
+          <div className="grid gap-1 text-sm text-slate-300">
+            {aopLoop.currentTaskTitle ? (
+              <p>
+                <span className="text-slate-500">Task: </span>
+                {aopLoop.currentTaskTitle}
+              </p>
+            ) : null}
+            <p>
+              <span className="text-slate-500">Completed: </span>
+              {aopLoop.tasksCompletedTotal}
+              <span className="text-slate-500"> · Since verify: </span>
+              {aopLoop.tasksSinceVerification}/{aopLoop.maxTasksBeforeVerification}
+            </p>
+            {aopLoop.loopBaseCommit ? (
+              <p className="truncate text-xs text-slate-500" title={aopLoop.loopBaseCommit}>
+                Base {aopLoop.loopBaseCommit.slice(0, 12)}
+              </p>
+            ) : null}
+          </div>
+          {aopLoop.currentTaskPrompt ? (
+            <pre className="agent-chat-scrollbar max-h-40 overflow-y-auto whitespace-pre-wrap break-words rounded-[1.25rem] border border-white/10 bg-black/25 px-4 py-3 text-sm text-slate-200">
+              {aopLoop.currentTaskPrompt}
+            </pre>
+          ) : null}
+          {activeQuestion && loopPrepQuestion ? (
+            <BridgeQuestionnaire
+              question={activeQuestion}
+              questionNumber={1}
+              questionCount={aopLoop.pendingQuestions.length}
+              otherAnswer={otherAnswer}
+              onOtherAnswerChange={onOtherAnswerChange}
+              onAnswer={onAnswerQuestion}
+            />
+          ) : null}
+          {aopLoop.prepAnswers.length > 0 ? (
+            <div className="grid gap-2">
+              <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500">Prep answers</p>
+              <ul className="grid gap-2 text-sm text-slate-300">
+                {aopLoop.prepAnswers.map((answer, index) => (
+                  <li key={`${answer.question}-${index}`} className="rounded-xl border border-white/10 px-3 py-2">
+                    <span className="text-slate-400">{answer.question}</span>
+                    <span className="mt-1 block text-slate-100">{answer.answer}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          <div className="flex flex-wrap gap-2">
+            {aopLoop.status === "awaiting_start" ? (
+              <button
+                type="button"
+                onClick={onStartTask}
+                disabled={!acceptsWork}
+                className="rounded-full bg-cyan-300 px-5 py-3 text-sm font-semibold text-slate-950 hover:bg-cyan-200 disabled:opacity-50"
+              >
+                Start task
+              </button>
+            ) : null}
+            {aopLoop.status === "awaiting_verification" ? (
+              <button
+                type="button"
+                onClick={onVerifyLoop}
+                className="rounded-full bg-amber-300 px-5 py-3 text-sm font-semibold text-slate-950 hover:bg-amber-200"
+              >
+                Verify OK — continue
+              </button>
+            ) : null}
+            {loopActive && aopLoop.status !== "paused" ? (
+              <button
+                type="button"
+                onClick={onStopLoop}
+                className="rounded-full border border-rose-300/40 px-5 py-3 text-sm font-semibold text-rose-100 hover:bg-rose-300/10"
+              >
+                Stop
+              </button>
+            ) : null}
+            {aopLoop.status === "paused" ? (
+              <button
+                type="button"
+                onClick={onResumeLoop}
+                disabled={!acceptsWork}
+                className="rounded-full bg-emerald-300 px-5 py-3 text-sm font-semibold text-slate-950 hover:bg-emerald-200 disabled:opacity-50"
+              >
+                Resume
+              </button>
+            ) : null}
+            {aopLoop.loopBaseCommit && aopLoop.status !== "executing" ? (
+              <button
+                type="button"
+                onClick={onRevertLoop}
+                className="rounded-full border border-white/15 px-5 py-3 text-sm font-semibold text-slate-200 hover:bg-white/5"
+              >
+                Revert loop
+              </button>
+            ) : null}
+          </div>
         </section>
       ) : null}
     </div>
   );
 }
 
-function TaskList({ tasks }: { tasks: BridgeTask[] }) {
+function TaskList({ tasks, label = "Proposed tasks" }: { tasks: BridgeTask[]; label?: string }) {
   return (
     <div className="grid gap-2">
-      <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500">Proposed tasks</p>
+      <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500">{label}</p>
       <ol className="grid gap-3">
         {tasks.map((task, index) => (
           <li key={`${task.title}-${index}`} className="rounded-[1.25rem] border border-emerald-300/20 bg-emerald-300/[0.05] px-4 py-3">
@@ -355,59 +482,47 @@ function BridgeQuestionnaire({
   questionNumber: number;
   questionCount: number;
   otherAnswer: string;
-  onOtherAnswerChange: (answer: string) => void;
+  onOtherAnswerChange: (value: string) => void;
   onAnswer: (answer: string) => void;
 }) {
-  function submitOtherAnswer(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const answer = otherAnswer.trim();
-    if (!answer) return;
-    onAnswer(answer);
-    onOtherAnswerChange("");
-  }
-
   return (
-    <section className="grid gap-3 rounded-[1.25rem] border border-cyan-300/20 bg-cyan-300/[0.05] p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-[11px] font-semibold uppercase tracking-[0.24em] text-cyan-100">
-          Bridge question
-        </h3>
-        {questionCount > 0 ? (
-          <span className="text-xs text-slate-400">
-            Question {questionNumber} of {questionCount}
-          </span>
-        ) : null}
-      </div>
-      <p className="text-sm text-slate-100">{question.question}</p>
-      <div className="flex flex-wrap gap-2" aria-label="Answer choices">
+    <div className="grid gap-3 rounded-[1.25rem] border border-cyan-300/20 bg-cyan-300/[0.05] p-4">
+      <p className="text-[11px] uppercase tracking-[0.24em] text-cyan-200/70">
+        Question {questionNumber} of {questionCount}
+      </p>
+      <p className="text-sm font-semibold text-slate-100">{question.question}</p>
+      <div className="flex flex-wrap gap-2">
         {question.options.map((option) => (
           <button
             key={option}
             type="button"
             onClick={() => onAnswer(option)}
-            className="rounded-full border border-cyan-300/25 px-3 py-2 text-left text-xs text-cyan-100 transition hover:bg-cyan-300/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-200"
+            className="rounded-full border border-white/10 bg-slate-900/80 px-4 py-2 text-sm text-slate-100 hover:bg-slate-800"
           >
             {option}
           </button>
         ))}
       </div>
-      <form onSubmit={submitOtherAnswer} className="flex flex-wrap gap-2">
-        <label className="sr-only" htmlFor="bridge-other-answer">Other answer</label>
+      <div className="flex flex-wrap gap-2">
         <input
-          id="bridge-other-answer"
           value={otherAnswer}
           onChange={(event) => onOtherAnswerChange(event.target.value)}
-          placeholder="Other — type your answer"
-          className="min-w-0 flex-1 rounded-full border border-white/10 bg-black/30 px-3 py-2 text-sm text-white"
+          placeholder="Other answer…"
+          className="min-w-[12rem] flex-1 rounded-full border border-white/10 bg-slate-900/80 px-4 py-2 text-sm text-slate-100 outline-none"
         />
         <button
-          type="submit"
+          type="button"
+          onClick={() => {
+            if (otherAnswer.trim()) {
+              onAnswer(otherAnswer.trim());
+            }
+          }}
           disabled={!otherAnswer.trim()}
-          className="rounded-full bg-cyan-300 px-4 py-2 text-xs font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-full bg-cyan-300 px-4 py-2 text-sm font-semibold text-slate-950 disabled:opacity-40"
         >
-          Submit answer
+          Submit
         </button>
-      </form>
-    </section>
+      </div>
+    </div>
   );
 }

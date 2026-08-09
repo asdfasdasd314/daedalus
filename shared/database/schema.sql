@@ -1687,3 +1687,36 @@ grant execute on function daemon_manager_tick(uuid,uuid,integer,timestamptz,text
 grant execute on function get_client_review_inbox() to authenticated;
 
 -- Migration 045: execution delivery health is independent of manager control-plane health.
+
+-- Migration 047: AOP execution loops (full DDL in supabase/migrations/047_aop_execution_loops.sql)
+create table if not exists aop_execution_loops (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  repository text not null,
+  status text not null,
+  paused_from text not null default '',
+  direction_prompt text not null default '',
+  conversation_id text not null default '',
+  provider text not null default '',
+  model text not null default '',
+  reasoning text not null default '',
+  targeted_feature_paths jsonb not null default '[]'::jsonb,
+  current_task_title text not null default '',
+  current_task_prompt text not null default '',
+  prep_notes text not null default '',
+  pending_questions jsonb not null default '[]'::jsonb,
+  prep_answers jsonb not null default '[]'::jsonb,
+  current_agent_task_id uuid references agent_tasks(id) on delete set null,
+  active_prompt_id text not null default '',
+  tasks_completed_total integer not null default 0,
+  tasks_since_verification integer not null default 0,
+  max_tasks_before_verification integer not null default 3,
+  loop_base_commit text not null default '',
+  integrated_commits text[] not null default '{}',
+  recent_task_titles text[] not null default '{}',
+  status_detail text not null default '',
+  cancel_requested boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+alter table agent_tasks add column if not exists source_loop_id uuid references aop_execution_loops(id) on delete set null;

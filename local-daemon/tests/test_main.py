@@ -469,7 +469,11 @@ class BuildCodexPromptTests(unittest.TestCase):
             "Trade volatility oscillations",
             False,
             ["feature_files/answer-oriented-programming.md"],
-            planning_context="# cp_doc draft\n- Vol edge\n- User auth needed",
+            planning_context="## Project Summary\nVol edge\nUser auth needed\n\n"
+            "## Tech Stack\n(not yet established)\n\n"
+            "## Broad Principles\n(not yet established)\n\n"
+            "## Project State\n(not yet established)\n\n"
+            "## Additional Notes\n(none yet)",
             planning_answers=[{"question": "Beat fees alone?", "answer": "Maker only"}],
             bridge_mode=True,
         )
@@ -478,15 +482,47 @@ class BuildCodexPromptTests(unittest.TestCase):
         self.assertIn(BRIDGE_PROMPT_PREFIX.rstrip(), prompt)
         self.assertIn(BRIDGE_PROMPT_SUFFIX.rstrip(), prompt)
         self.assertIn("## Cp Doc", prompt)
-        self.assertIn("concise centralized project document", prompt.lower())
+        self.assertIn("## Project Summary", prompt)
+        self.assertIn("## Project State", prompt)
+        self.assertIn("structured centralized project document", prompt.lower())
         self.assertIn("Continue the answer-oriented bridge from the current cp_doc", prompt)
-        self.assertIn("# cp_doc draft", prompt)
         self.assertIn("User auth needed", prompt)
         self.assertIn("Beat fees alone?: 1. Maker only", prompt)
         self.assertIn("feature_files/answer-oriented-programming.md", prompt)
         self.assertNotIn("at most five questions", prompt.lower())
         self.assertNotIn(TASK_MODE_PLANNING, prompt)
         self.assertNotIn(PLANNING_PROMPT_SUFFIX.rstrip(), prompt)
+
+    def test_builds_bridge_tasking_and_impl_prep_prompts(self):
+        from daedalus_daemon.main import (
+            BRIDGE_TASKING_SUFFIX,
+            IMPL_PREP_PROMPT_SUFFIX,
+            build_codex_prompt,
+        )
+
+        tasking = build_codex_prompt(
+            "Emit next slice",
+            False,
+            [],
+            planning_context="## Project Summary\nApp\n\n## Tech Stack\nTS\n\n## Broad Principles\n-\n\n## Project State\nmvp\n\n## Additional Notes\n-",
+            bridge_mode=True,
+            bridge_tasking=True,
+        )
+        self.assertIn(BRIDGE_TASKING_SUFFIX.rstrip(), tasking)
+        self.assertIn("next_task", tasking)
+        self.assertIn("mvp_complete", tasking)
+
+        prep = build_codex_prompt(
+            "Prep install deps",
+            False,
+            ["feature_files/answer-oriented-programming.md"],
+            planning_context="TASK: install",
+            planning_answers=[{"question": "Bundler?", "answer": "Vite"}],
+            impl_prep_mode=True,
+        )
+        self.assertIn(IMPL_PREP_PROMPT_SUFFIX.rstrip(), prep)
+        self.assertIn("ready_to_execute", prep)
+        self.assertIn("Vite", prep)
 
 
 class FilterTargetedFeaturePathsTests(unittest.TestCase):
@@ -514,11 +550,40 @@ class BridgeCpDocPersistenceTests(unittest.TestCase):
 
         body = extract_bridge_cp_doc(
             "## Status\nneed_more_questions\n\n"
-            "## Cp Doc\nUser auth needed\nMaker-only vol edge\n\n"
+            "## Cp Doc\n"
+            "## Project Summary\nUser auth needed\nMaker-only vol edge\n\n"
+            "## Tech Stack\n(not yet established)\n\n"
+            "## Broad Principles\n(not yet established)\n\n"
+            "## Project State\nprototyping\n\n"
+            "## Additional Notes\n(none yet)\n\n"
             "## Notes\nNeed fee model\n\n"
             "## Questions\n\n1. **Fee model?**:\n   - a. Maker only\n",
         )
-        self.assertEqual(body, "User auth needed\nMaker-only vol edge")
+        self.assertIn("## Project Summary", body)
+        self.assertIn("User auth needed", body)
+        self.assertIn("## Project State", body)
+        self.assertIn("prototyping", body)
+        self.assertNotIn("## Notes", body)
+
+    def test_builds_and_ensures_structured_cp_doc(self):
+        from daedalus_daemon.main import (
+            build_cp_doc_skeleton,
+            cp_doc_has_all_sections,
+            ensure_structured_cp_doc,
+        )
+
+        skeleton = build_cp_doc_skeleton("Trade vol with auth")
+        self.assertTrue(cp_doc_has_all_sections(skeleton))
+        self.assertIn("## Project Summary\nTrade vol with auth", skeleton)
+        self.assertIn("## Tech Stack", skeleton)
+        self.assertIn("## Additional Notes", skeleton)
+
+        freeform = ensure_structured_cp_doc("User auth needed")
+        self.assertTrue(cp_doc_has_all_sections(freeform))
+        self.assertIn("User auth needed", freeform)
+
+        already = "## Project Summary\nA\n\n## Tech Stack\nB\n\n## Broad Principles\nC\n\n## Project State\nD\n\n## Additional Notes\nE\n"
+        self.assertEqual(ensure_structured_cp_doc(already).strip(), already.strip())
 
     def test_writes_cp_doc_md_at_project_root(self):
         import tempfile
@@ -531,12 +596,18 @@ class BridgeCpDocPersistenceTests(unittest.TestCase):
 
     def test_bridge_cycle_seeds_and_persists_cp_doc_from_reply(self):
         import tempfile
-        from daedalus_daemon.main import CP_DOC_FILENAME
+        from daedalus_daemon.main import CP_DOC_FILENAME, build_cp_doc_skeleton
 
         with tempfile.TemporaryDirectory() as tmp:
+            structured_reply_body = (
+                "## Project Summary\nUser auth needed\n\n"
+                "## Tech Stack\nPython\n\n"
+                "## Broad Principles\n(not yet established)\n\n"
+                "## Project State\nmvp\n\n"
+                "## Additional Notes\nCustom fees\n"
+            )
             reply = (
-                "## Status\nready\n\n"
-                "## Cp Doc\nUser auth needed\nCustom fees\n\n"
+                f"## Status\nready\n\n## Cp Doc\n{structured_reply_body}\n"
                 "## Notes\nSolid enough\n"
             )
             prompt_payload = json.dumps({
@@ -549,11 +620,18 @@ class BridgeCpDocPersistenceTests(unittest.TestCase):
                 "prompt": "Trade vol with auth",
             })
             publications: list[dict] = []
+            expected_seed = build_cp_doc_skeleton("Trade vol with auth")
 
             def fake_run_codex_prompt(directory, prompt, model, reasoning, ask_mode):
                 seed = Path(directory) / CP_DOC_FILENAME
                 self.assertTrue(seed.is_file(), "cp_doc should be seeded before the agent runs")
-                self.assertEqual(seed.read_text(encoding="utf-8"), "Trade vol with auth\n")
+                self.assertEqual(seed.read_text(encoding="utf-8"), expected_seed)
+                self.assertIn("## Project Summary", prompt)
+                self.assertIn("project summary", prompt.lower())
+                self.assertIn("status ready only if", prompt.lower())
+                self.assertTrue(
+                    "five" in prompt.lower() and "section" in prompt.lower(),
+                )
                 self.assertTrue(ask_mode)
                 self.assertIn("TASK_MODE: bridge", prompt)
                 return reply
@@ -570,7 +648,7 @@ class BridgeCpDocPersistenceTests(unittest.TestCase):
             )
 
             final = Path(tmp) / CP_DOC_FILENAME
-            self.assertEqual(final.read_text(encoding="utf-8"), "User auth needed\nCustom fees\n")
+            self.assertEqual(final.read_text(encoding="utf-8"), structured_reply_body)
             self.assertEqual([item["status"] for item in publications], ["running", "completed"])
             self.assertEqual(publications[-1]["mode"], "bridge")
 

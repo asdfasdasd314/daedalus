@@ -1,4 +1,9 @@
-export type GitSyncOperation = "commit" | "sync" | "status";
+export type GitSyncOperation =
+  | "commit"
+  | "sync"
+  | "status"
+  | "resolve_head"
+  | "aop_loop_revert";
 
 export type GitSyncStep = {
   command: string[];
@@ -6,14 +11,17 @@ export type GitSyncStep = {
   stdout: string;
   stderr: string;
   skipped?: boolean;
+  head?: string;
 };
 
 export type GitSyncResult = {
   requestId: string;
   directory: string;
-  operation: GitSyncOperation;
+  operation: GitSyncOperation | string;
   status: "success" | "failed";
   steps: GitSyncStep[];
+  head?: string;
+  baseCommit?: string;
 };
 
 export type ParsedGitSyncRow = {

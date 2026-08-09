@@ -44,9 +44,23 @@ import {
   type PlanningSession,
 } from "@/lib/planning-questionnaire";
 import {
+  ensureStructuredCpDoc,
   parseBridgeReply,
   type BridgeSession,
 } from "@/lib/bridge-session";
+import {
+  type AopExecutionLoop,
+  type AopExecutionLoopRow,
+  buildBridgeTaskingPrompt,
+  buildDurableImplementationPrompt,
+  buildImplPrepUserPrompt,
+  DEFAULT_MAX_TASKS_BEFORE_VERIFICATION,
+  mapAopLoopRow,
+  nextStatusAfterTaskComplete,
+  pauseTargetStatus,
+  resumeStatusFromPaused,
+} from "@/lib/aop-loop";
+import { parseImplPrepReply } from "@/lib/impl-prep";
 import { fetchAgentOutputConversation } from "@/lib/agent-output-history";
 import type { FeatureFileProjects } from "@/lib/feature-file-cache";
 import type {
@@ -181,11 +195,16 @@ type AgentPromptPayload = {
   planningMode: boolean;
   askMode: boolean;
   bridgeMode: boolean;
+  bridgeTasking?: boolean;
+  implPrepMode?: boolean;
   targetedFeaturePaths: string[];
   planningContext?: string;
   planningAnswers?: PlanningAnswer[];
   bridgeContext?: string;
   bridgeAnswers?: PlanningAnswer[];
+  implPrepContext?: string;
+  implPrepAnswers?: PlanningAnswer[];
+  sourceLoopId?: string;
 };
 
 type AgentPromptQueueEntry = AgentPromptPayload & {
@@ -333,12 +352,19 @@ export default function FeatureFilesDashboard({
   const [latestChat, setLatestChat] = useState<AgentChatExchange | null>(null);
   const [planningSession, setPlanningSession] = useState<PlanningSession | null>(null);
   const [bridgeSession, setBridgeSession] = useState<BridgeSession | null>(null);
+  const [aopLoop, setAopLoop] = useState<AopExecutionLoop | null>(null);
   const [aopDirectionText, setAopDirectionText] = useState("");
   const [bridgeOtherAnswer, setBridgeOtherAnswer] = useState("");
   const [agentPromptQueue, setAgentPromptQueue] = useState<
     AgentPromptQueueEntry[]
   >([]);
   const bridgeSessionRef = useRef<BridgeSession | null>(null);
+  const aopLoopRef = useRef<AopExecutionLoop | null>(null);
+  const aopPendingGitRef = useRef<{
+    requestId: string;
+    operation: "resolve_head" | "aop_loop_revert";
+    loopId?: string;
+  } | null>(null);
   const [durableAgentTasks, setDurableAgentTasks] = useState<
     AgentPromptQueueEntry[]
   >([]);
@@ -557,6 +583,44 @@ export default function FeatureFilesDashboard({
   }, [bridgeSession]);
 
   useEffect(() => {
+    aopLoopRef.current = aopLoop;
+  }, [aopLoop]);
+
+  useEffect(() => {
+    if (!accessToken || !currentUser || !selectedProjectDirectory) {
+      return;
+    }
+    let cancelled = false;
+    void fetchActiveAopLoop(
+      supabaseUrl,
+      supabasePublishableKey,
+      accessToken,
+      currentUserId,
+      selectedProjectDirectory,
+    )
+      .then((loop) => {
+        if (!cancelled) {
+          setAopLoop(loop);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAopLoop(null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    accessToken,
+    currentUser,
+    currentUserId,
+    selectedProjectDirectory,
+    supabasePublishableKey,
+    supabaseUrl,
+  ]);
+
+  useEffect(() => {
     latestChatRef.current = latestChat;
   }, [latestChat]);
 
@@ -572,7 +636,7 @@ export default function FeatureFilesDashboard({
         setAgentPromptQueue(
           Array.isArray(parsedQueue)
             ? parsedQueue.filter(
-              (item) => item.planningMode || item.askMode || item.bridgeMode,
+              (item) => item.planningMode || item.askMode || item.bridgeMode || item.implPrepMode || item.implPrepMode,
             )
             : [],
         );
@@ -599,7 +663,11 @@ export default function FeatureFilesDashboard({
         ) as BridgeSession;
         setBridgeSession({
           ...parsedBridgeSession,
-          cpDoc: parsedBridgeSession.cpDoc ?? parsedBridgeSession.directionPrompt ?? "",
+          cpDoc: ensureStructuredCpDoc(
+            parsedBridgeSession.cpDoc
+              ?? parsedBridgeSession.directionPrompt
+              ?? "",
+          ),
         });
       }
     } catch {
@@ -823,6 +891,7 @@ export default function FeatureFilesDashboard({
               setGitSyncStatus(result.status === "success" ? `${result.operation} completed successfully.` : `${result.operation} failed. Review the command output below.`);
               setIsGitSyncRequestInFlight(false);
               activeGitSyncRequestId.current = "";
+              void handleAopGitResult(result);
             }
           } else if (review.kind === PROJECT_INITIALIZATION_PAYLOAD_KIND) {
             applyProjectInitializationResult(review.payload as ProjectInitializationResult);
@@ -857,6 +926,12 @@ export default function FeatureFilesDashboard({
             setAgentTaskNotifications((current) => (
               [...nextNotifications.reverse(), ...current].slice(0, MAX_AGENT_TASK_NOTIFICATIONS)
             ));
+            for (const notification of nextNotifications) {
+              const matching = queue.find((item) => item.promptId === notification.taskId);
+              if (matching) {
+                void onAopDurableTaskTerminal(matching);
+              }
+            }
           }
           setDurableAgentTasks((current) => {
             const merged = new Map(current.map((row) => [row.promptId, row]));
@@ -1195,6 +1270,7 @@ export default function FeatureFilesDashboard({
               : `${nextResult.operation} failed. Review the command output below.`);
             setIsGitSyncRequestInFlight(false);
             activeGitSyncRequestId.current = "";
+            void handleAopGitResult(nextResult);
           }
         } else if (review.kind === PROJECT_INITIALIZATION_PAYLOAD_KIND) {
           applyProjectInitializationResult(review.payload as ProjectInitializationResult);
@@ -1360,7 +1436,7 @@ export default function FeatureFilesDashboard({
 
     const activePrompt = agentPromptQueue.find(
       (item) =>
-        (item.planningMode || item.askMode || item.bridgeMode) &&
+        (item.planningMode || item.askMode || item.bridgeMode || item.implPrepMode) &&
         (item.status === "sending" || item.status === "running"),
     );
 
@@ -1371,7 +1447,7 @@ export default function FeatureFilesDashboard({
     const nextQueuedPrompt = agentPromptQueue.find(
       (item) =>
         item.status === "queued" &&
-        (item.planningMode || item.askMode || item.bridgeMode),
+        (item.planningMode || item.askMode || item.bridgeMode || item.implPrepMode),
     );
 
     if (!nextQueuedPrompt) {
@@ -1397,7 +1473,7 @@ export default function FeatureFilesDashboard({
     const intervalId = window.setInterval(() => {
       const activePrompt = agentPromptQueueRef.current.find(
         (item) =>
-          (item.planningMode || item.askMode || item.bridgeMode) &&
+          (item.planningMode || item.askMode || item.bridgeMode || item.implPrepMode) &&
           (item.status === "sending" || item.status === "running"),
       );
 
@@ -1705,7 +1781,7 @@ export default function FeatureFilesDashboard({
     setBridgeSession({
       conversationId: promptId,
       directionPrompt: direction,
-      cpDoc: direction,
+      cpDoc: ensureStructuredCpDoc(direction),
       directory: selectedProjectDirectory,
       provider: selectedProvider,
       model: selectedModelId,
@@ -1725,7 +1801,76 @@ export default function FeatureFilesDashboard({
 
   function answerBridgeQuestion(answer: string) {
     const normalizedAnswer = answer.trim();
-    if (!normalizedAnswer || !bridgeSession) {
+    if (!normalizedAnswer) {
+      return;
+    }
+
+    const loop = aopLoopRef.current;
+    if (
+      loop
+      && (loop.status === "awaiting_answers" || loop.status === "prep")
+      && loop.pendingQuestions.length > 0
+    ) {
+      const question = loop.pendingQuestions[0];
+      const remaining = loop.pendingQuestions.slice(1);
+      const answers = [
+        ...loop.prepAnswers,
+        { question: question.question, answer: normalizedAnswer },
+      ];
+      setBridgeOtherAnswer("");
+      if (remaining.length > 0) {
+        void patchAopLoop(loop.id, {
+          prep_answers: answers,
+          pending_questions: remaining,
+          status: "awaiting_answers",
+        });
+        return;
+      }
+      void patchAopLoop(loop.id, {
+        prep_answers: answers,
+        pending_questions: [],
+        status: "prep",
+        status_detail: "Continuing implementation prep with answers…",
+      }).then(() => {
+        const session = bridgeSessionRef.current;
+        if (!session) {
+          return;
+        }
+        const promptId = createPromptId();
+        const prompt = buildImplPrepUserPrompt({
+          taskTitle: loop.currentTaskTitle,
+          taskPrompt: loop.currentTaskPrompt,
+          cpDoc: session.cpDoc,
+          directionPrompt: loop.directionPrompt || session.directionPrompt,
+        });
+        setAgentPromptQueue((current) => [
+          ...current,
+          {
+            promptId,
+            conversationId: loop.conversationId || session.conversationId,
+            directory: loop.repository,
+            prompt,
+            provider: loop.provider || session.provider,
+            model: loop.model || session.model,
+            reasoning: loop.reasoning || session.reasoning,
+            planningMode: false,
+            askMode: false,
+            bridgeMode: false,
+            implPrepMode: true,
+            implPrepContext: prompt,
+            implPrepAnswers: answers,
+            targetedFeaturePaths: loop.targetedFeaturePaths,
+            sourceLoopId: loop.id,
+            status: "queued",
+            enqueuedAt: Date.now(),
+          },
+        ]);
+        void patchAopLoop(loop.id, { active_prompt_id: promptId });
+      });
+      return;
+    }
+
+    if (!bridgeSession) {
       return;
     }
 
@@ -1746,6 +1891,7 @@ export default function FeatureFilesDashboard({
         answers,
         questionIndex: nextQuestionIndex,
       });
+      setBridgeOtherAnswer("");
       return;
     }
 
@@ -1773,15 +1919,12 @@ export default function FeatureFilesDashboard({
     setBridgeSession({
       ...bridgeSession,
       answers,
-      pendingQuestions: [],
       questionIndex: 0,
-      proposedTasks: [],
+      pendingQuestions: [],
       phase: "running",
       activeBridgePromptId: promptId,
-      questionPromptId: "",
     });
-    setPromptStatus("Answers saved. Refining the bridge.");
-    setSelectedHistoryPromptId(promptId);
+    setBridgeOtherAnswer("");
     setAgentPromptQueue((currentQueue) => [...currentQueue, nextPromptPayload]);
   }
 
@@ -1815,26 +1958,41 @@ export default function FeatureFilesDashboard({
       }
 
       const parsed = parseBridgeReply(turn.output);
-      const nextCpDoc = parsed.cpDoc.trim() ? parsed.cpDoc : undefined;
+      const nextCpDoc = parsed.cpDoc.trim()
+        ? ensureStructuredCpDoc(parsed.cpDoc)
+        : undefined;
+      const queueEntry = agentPromptQueueRef.current.find(
+        (item) => item.promptId === promptId,
+      );
+      const isTasking = Boolean(queueEntry?.bridgeTasking);
 
-      if (parsed.status === "ready" && parsed.tasks.length > 0) {
+      if (isTasking) {
+        await applyBridgeTaskingReply(promptId, parsed, nextCpDoc, turn.output);
+        return;
+      }
+
+      if (parsed.status === "ready" || parsed.status === "next_task") {
         setBridgeSession((current) =>
           current && current.activeBridgePromptId === promptId
             ? {
               ...current,
               ...(nextCpDoc ? { cpDoc: nextCpDoc } : {}),
               notes: parsed.notes || current.notes,
-              pendingQuestions: [],
+              pendingQuestions: parsed.questions,
               questionIndex: 0,
-              proposedTasks: parsed.tasks,
-              phase: "ready",
+              proposedTasks: parsed.tasks.slice(0, 1),
+              phase: parsed.questions.length > 0 ? "questioning" : "ready",
               activeBridgePromptId: "",
-              questionPromptId: "",
+              questionPromptId: parsed.questions.length > 0 ? promptId : "",
               latestReply: turn.output,
             }
             : current,
         );
-        setPromptStatus("Bridge is ready (coding dispatch still disabled).");
+        setPromptStatus(
+          parsed.questions.length > 0
+            ? `Bridge questions ready (${parsed.questions.length}).`
+            : "Bridge vision ready — start the build loop when you are ready.",
+        );
         return;
       }
 
@@ -1846,10 +2004,10 @@ export default function FeatureFilesDashboard({
             notes: parsed.notes || current.notes,
             pendingQuestions: parsed.questions,
             questionIndex: 0,
-            proposedTasks: parsed.tasks,
+            proposedTasks: parsed.tasks.slice(0, 1),
             phase: parsed.questions.length > 0
               ? "questioning"
-              : parsed.status === "ready"
+              : parsed.status === "mvp_complete"
                 ? "ready"
                 : "idle",
             activeBridgePromptId: "",
@@ -1876,87 +2034,587 @@ export default function FeatureFilesDashboard({
     }
   }
 
-  async function dispatchBridgeTasks() {
-    // Coding-task fan-out is intentionally off while AOP Beta focuses on questions.
-    const enableBridgeTaskDispatch = false;
-    if (!enableBridgeTaskDispatch) {
-      setPromptSubmissionError(
-        "Coding-task dispatch is disabled while AOP Beta focuses on question generation.",
+  async function applyBridgeTaskingReply(
+    promptId: string,
+    parsed: ReturnType<typeof parseBridgeReply>,
+    nextCpDoc: string | undefined,
+    raw: string,
+  ) {
+    const loop = aopLoopRef.current;
+    if (!loop || loop.cancelRequested || loop.status === "paused") {
+      setBridgeSession((current) =>
+        current
+          ? { ...current, phase: "ready", activeBridgePromptId: "" }
+          : current,
       );
       return;
     }
 
-    if (!bridgeSession || !currentUser || !accessToken) {
+    if (nextCpDoc) {
+      setBridgeSession((current) =>
+        current
+          ? {
+            ...current,
+            cpDoc: nextCpDoc,
+            notes: parsed.notes || current.notes,
+            latestReply: raw,
+            activeBridgePromptId: "",
+            phase: "ready",
+          }
+          : current,
+      );
+    } else {
+      setBridgeSession((current) =>
+        current
+          ? {
+            ...current,
+            notes: parsed.notes || current.notes,
+            latestReply: raw,
+            activeBridgePromptId: "",
+            phase: "ready",
+          }
+          : current,
+      );
+    }
+
+    if (parsed.status === "mvp_complete") {
+      await patchAopLoop(loop.id, {
+        status: "completed",
+        status_detail: "MVP complete — build loop finished.",
+        active_prompt_id: "",
+        current_task_title: "",
+        current_task_prompt: "",
+      });
+      setPromptStatus("AOP build loop complete (MVP).");
+      return;
+    }
+
+    const task = parsed.tasks[0];
+    if (parsed.status === "next_task" && task) {
+      await patchAopLoop(loop.id, {
+        status: "prep",
+        status_detail: `Prep for task: ${task.title}`,
+        current_task_title: task.title,
+        current_task_prompt: task.prompt,
+        prep_notes: "",
+        pending_questions: [],
+        prep_answers: [],
+        active_prompt_id: "",
+      });
+      setBridgeSession((current) =>
+        current
+          ? {
+            ...current,
+            proposedTasks: [task],
+            phase: "ready",
+          }
+          : current,
+      );
+      queueImplPrep(task.title, task.prompt);
+      return;
+    }
+
+    await patchAopLoop(loop.id, {
+      status: "failed",
+      status_detail: "Bridge tasking reply missing next_task or task.",
+      active_prompt_id: "",
+    });
+  }
+
+  function queueImplPrep(taskTitle: string, taskPrompt: string) {
+    const loop = aopLoopRef.current;
+    const session = bridgeSessionRef.current;
+    if (!loop || !session) {
+      return;
+    }
+    const promptId = createPromptId();
+    const prompt = buildImplPrepUserPrompt({
+      taskTitle,
+      taskPrompt,
+      cpDoc: session.cpDoc,
+      directionPrompt: loop.directionPrompt || session.directionPrompt,
+    });
+    const payload: AgentPromptQueueEntry = {
+      promptId,
+      conversationId: loop.conversationId || session.conversationId,
+      directory: loop.repository,
+      prompt,
+      provider: loop.provider || session.provider,
+      model: loop.model || session.model,
+      reasoning: loop.reasoning || session.reasoning,
+      planningMode: false,
+      askMode: false,
+      bridgeMode: false,
+      implPrepMode: true,
+      implPrepContext: prompt,
+      implPrepAnswers: loop.prepAnswers,
+      targetedFeaturePaths: loop.targetedFeaturePaths,
+      sourceLoopId: loop.id,
+      status: "queued",
+      enqueuedAt: Date.now(),
+    };
+    void patchAopLoop(loop.id, {
+      status: "prep",
+      active_prompt_id: promptId,
+      status_detail: `Implementation prep running for: ${taskTitle}`,
+    });
+    setAgentPromptQueue((current) => [...current, payload]);
+  }
+
+  async function applyImplPrepReply(promptId: string) {
+    const loop = aopLoopRef.current;
+    if (!loop || loop.activePromptId !== promptId) {
+      return;
+    }
+    if (!currentUser || !accessToken) {
+      return;
+    }
+    try {
+      const turns = await fetchAgentOutputConversation(
+        supabaseUrl,
+        supabasePublishableKey,
+        accessToken,
+        loop.conversationId || promptId,
+        promptId,
+      );
+      const turn = turns.find((item) => item.promptId === promptId)
+        ?? turns.find((item) => item.mode === "impl_prep" && item.output)
+        ?? turns.find((item) => item.output);
+      if (!turn?.output) {
+        await patchAopLoop(loop.id, {
+          status: "failed",
+          status_detail: "Implementation prep finished without a reply.",
+          active_prompt_id: "",
+        });
+        return;
+      }
+      const parsed = parseImplPrepReply(turn.output);
+      if (parsed.optionalCpDoc.trim()) {
+        setBridgeSession((current) =>
+          current
+            ? { ...current, cpDoc: ensureStructuredCpDoc(parsed.optionalCpDoc) }
+            : current,
+        );
+      }
+      if (parsed.status === "ready_to_execute") {
+        await patchAopLoop(loop.id, {
+          status: "awaiting_start",
+          status_detail: `Task ready to initiate: ${loop.currentTaskTitle}`,
+          prep_notes: parsed.notes,
+          pending_questions: [],
+          active_prompt_id: "",
+        });
+        setPromptStatus(`Task ready to initiate: ${loop.currentTaskTitle}`);
+        return;
+      }
+      await patchAopLoop(loop.id, {
+        status: "awaiting_answers",
+        status_detail: parsed.notes || "Implementation questions ready.",
+        prep_notes: parsed.notes,
+        pending_questions: parsed.questions,
+        active_prompt_id: "",
+      });
+      setPromptStatus(
+        parsed.questions.length
+          ? `Implementation prep questions (${parsed.questions.length}).`
+          : "Implementation prep needs answers.",
+      );
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "Unable to load impl prep reply.";
+      await patchAopLoop(loop.id, {
+        status: "failed",
+        status_detail: detail,
+        active_prompt_id: "",
+      });
+    }
+  }
+
+  async function startAopBuildLoop() {
+    if (!bridgeSession || !currentUser || !accessToken || !daemonAcceptsWork) {
+      return;
+    }
+    setPromptSubmissionError("");
+    try {
+      const existing = await fetchActiveAopLoop(
+        supabaseUrl,
+        supabasePublishableKey,
+        accessToken,
+        currentUserId,
+        bridgeSession.directory,
+      );
+      if (existing) {
+        setAopLoop(existing);
+        setPromptSubmissionError("An active build loop already exists for this project.");
+        return;
+      }
+      const row = await insertAopLoop(supabaseUrl, supabasePublishableKey, accessToken, {
+        user_id: currentUserId,
+        repository: bridgeSession.directory,
+        status: "bridging_task",
+        direction_prompt: bridgeSession.directionPrompt,
+        conversation_id: bridgeSession.conversationId,
+        provider: bridgeSession.provider,
+        model: bridgeSession.model,
+        reasoning: bridgeSession.reasoning,
+        targeted_feature_paths: bridgeSession.targetedFeatures.map((f) => f.filePath),
+        max_tasks_before_verification: DEFAULT_MAX_TASKS_BEFORE_VERIFICATION,
+        status_detail: "Resolving project HEAD and requesting first task…",
+      });
+      setAopLoop(row);
+      await requestAopGit("resolve_head", bridgeSession.directory, { loopId: row.id });
+      queueBridgeTasking(row);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "Unable to start build loop.";
+      setPromptSubmissionError(detail);
+    }
+  }
+
+  function queueBridgeTasking(loop: AopExecutionLoop) {
+    const session = bridgeSessionRef.current;
+    if (!session) {
+      return;
+    }
+    const promptId = createPromptId();
+    const prompt = buildBridgeTaskingPrompt({
+      directionPrompt: loop.directionPrompt || session.directionPrompt,
+      cpDoc: session.cpDoc,
+      recentTaskTitles: loop.recentTaskTitles,
+    });
+    const payload: AgentPromptQueueEntry = {
+      promptId,
+      conversationId: loop.conversationId || session.conversationId,
+      directory: loop.repository,
+      prompt,
+      provider: loop.provider || session.provider,
+      model: loop.model || session.model,
+      reasoning: loop.reasoning || session.reasoning,
+      planningMode: false,
+      askMode: false,
+      bridgeMode: true,
+      bridgeTasking: true,
+      bridgeContext: session.cpDoc,
+      targetedFeaturePaths: loop.targetedFeaturePaths,
+      sourceLoopId: loop.id,
+      status: "queued",
+      enqueuedAt: Date.now(),
+    };
+    void patchAopLoop(loop.id, {
+      status: "bridging_task",
+      active_prompt_id: promptId,
+      status_detail: "Bridge is choosing the next coding task…",
+    });
+    setBridgeSession((current) =>
+      current
+        ? {
+          ...current,
+          phase: "tasking",
+          activeBridgePromptId: promptId,
+        }
+        : current,
+    );
+    setAgentPromptQueue((current) => [...current, payload]);
+  }
+
+  async function startAopTask() {
+    const loop = aopLoopRef.current;
+    if (!loop || loop.status !== "awaiting_start" || !currentUser || !accessToken) {
       return;
     }
     if (!daemonAcceptsWork) {
       setPromptSubmissionError(DAEMON_ADMISSION_MESSAGE);
       return;
     }
-    if (bridgeSession.proposedTasks.length === 0) {
-      return;
-    }
-
-    setBridgeSession({ ...bridgeSession, phase: "dispatching" });
-    setPromptSubmissionError("");
-
+    const promptId = createPromptId();
+    const durablePrompt = buildDurableImplementationPrompt({
+      taskTitle: loop.currentTaskTitle,
+      taskPrompt: loop.currentTaskPrompt,
+      prepAnswers: loop.prepAnswers,
+      directionPrompt: loop.directionPrompt,
+    });
     try {
-      const dispatched: AgentPromptQueueEntry[] = [];
-      for (const task of bridgeSession.proposedTasks) {
-        const promptId = createPromptId();
-        const taskPrompt = [
-          `TASK: ${task.title}`,
-          "",
-          task.prompt,
-          "",
-          "Original bridge direction:",
-          bridgeSession.directionPrompt,
-        ].join("\n");
-        const payload: AgentPromptPayload = {
+      await insertAgentTask(
+        supabaseUrl,
+        supabasePublishableKey,
+        accessToken,
+        currentUserId,
+        {
           promptId,
-          // Omit conversationId so the DB trigger creates a new conversation
-          // per coding task (enables concurrent admission).
-          directory: bridgeSession.directory,
-          prompt: taskPrompt,
-          provider: bridgeSession.provider,
-          model: bridgeSession.model,
-          reasoning: bridgeSession.reasoning,
+          conversationId: loop.conversationId,
+          directory: loop.repository,
+          prompt: durablePrompt,
+          provider: loop.provider,
+          model: loop.model,
+          reasoning: loop.reasoning,
           planningMode: false,
           askMode: false,
           bridgeMode: false,
-          targetedFeaturePaths: bridgeSession.targetedFeatures.map(
-            (feature) => feature.filePath,
-          ),
-        };
-        await insertAgentTask(
-          supabaseUrl,
-          supabasePublishableKey,
-          accessToken,
-          currentUserId,
-          payload,
-        );
-        dispatched.push({
-          ...payload,
+          targetedFeaturePaths: loop.targetedFeaturePaths,
+          sourceLoopId: loop.id,
+        },
+      );
+      await patchAopLoop(loop.id, {
+        status: "executing",
+        status_detail: `Executing: ${loop.currentTaskTitle}`,
+        current_agent_task_id: promptId,
+        active_prompt_id: promptId,
+      });
+      setDurableAgentTasks((current) => [
+        ...current,
+        {
+          promptId,
+          directory: loop.repository,
+          prompt: durablePrompt,
+          provider: loop.provider,
+          model: loop.model,
+          reasoning: loop.reasoning,
+          planningMode: false,
+          askMode: false,
+          bridgeMode: false,
+          targetedFeaturePaths: loop.targetedFeaturePaths,
+          sourceLoopId: loop.id,
           status: "queued",
           enqueuedAt: Date.now(),
-        });
-      }
-      setDurableAgentTasks((currentTasks) => [...currentTasks, ...dispatched]);
-      setBridgeSession(null);
-      setPromptStatus(
-        `Dispatched ${dispatched.length} coding task${dispatched.length === 1 ? "" : "s"}.`,
-      );
-    } catch (submissionError) {
-      const detail = submissionError instanceof Error
-        ? submissionError.message
-        : "Unable to dispatch coding tasks.";
-      setPromptStatus(detail);
+          durableTaskId: promptId,
+        },
+      ]);
+      setPromptStatus(`Durable coding task queued: ${loop.currentTaskTitle}`);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "Unable to start coding task.";
       setPromptSubmissionError(detail);
-      setBridgeSession((current) =>
-        current ? { ...current, phase: "ready" } : current,
-      );
     }
   }
+
+  async function stopAopLoop() {
+    const loop = aopLoopRef.current;
+    if (!loop || !isLoopActiveStatus(loop.status)) {
+      return;
+    }
+    const pausedFrom = pauseTargetStatus(loop.status);
+    if (loop.currentAgentTaskId && loop.status === "executing") {
+      try {
+        await cancelDurableAgentTask(
+          supabaseUrl,
+          supabasePublishableKey,
+          accessToken!,
+          loop.currentAgentTaskId,
+        );
+      } catch {
+        // best-effort cancel
+      }
+    }
+    await patchAopLoop(loop.id, {
+      status: "paused",
+      paused_from: pausedFrom ?? "",
+      cancel_requested: true,
+      status_detail: "Loop stopped by operator.",
+      active_prompt_id: "",
+    });
+    setPromptStatus("AOP build loop stopped.");
+  }
+
+  async function resumeAopLoop() {
+    const loop = aopLoopRef.current;
+    if (!loop || loop.status !== "paused" || !daemonAcceptsWork) {
+      return;
+    }
+    const resume = resumeStatusFromPaused(loop.pausedFrom) ?? "bridging_task";
+    await patchAopLoop(loop.id, {
+      status: resume,
+      cancel_requested: false,
+      paused_from: "",
+      status_detail: `Resumed at ${resume}.`,
+    });
+    if (resume === "bridging_task") {
+      queueBridgeTasking({ ...loop, status: resume, cancelRequested: false });
+    } else if (resume === "prep" || resume === "awaiting_answers") {
+      queueImplPrep(loop.currentTaskTitle, loop.currentTaskPrompt);
+    } else if (resume === "awaiting_start") {
+      setPromptStatus(`Task ready to initiate: ${loop.currentTaskTitle}`);
+    } else if (resume === "awaiting_verification") {
+      setPromptStatus("Verify recent AOP changes, then continue.");
+    }
+  }
+
+  async function verifyAopLoop() {
+    const loop = aopLoopRef.current;
+    if (!loop || loop.status !== "awaiting_verification") {
+      return;
+    }
+    await patchAopLoop(loop.id, {
+      status: "bridging_task",
+      tasks_since_verification: 0,
+      status_detail: "Verification accepted — choosing next task…",
+    });
+    queueBridgeTasking({
+      ...loop,
+      status: "bridging_task",
+      tasksSinceVerification: 0,
+    });
+  }
+
+  async function revertAopLoop() {
+    const loop = aopLoopRef.current;
+    if (!loop || !loop.loopBaseCommit) {
+      setPromptSubmissionError("No loop base commit available to revert.");
+      return;
+    }
+    if (loop.status === "executing") {
+      await stopAopLoop();
+    }
+    await requestAopGit("aop_loop_revert", loop.repository, {
+      loopId: loop.id,
+      baseCommit: loop.loopBaseCommit,
+    });
+  }
+
+  async function handleAopGitResult(result: GitSyncResult) {
+    const pending = aopPendingGitRef.current;
+    if (!pending || pending.requestId !== result.requestId) {
+      return;
+    }
+    aopPendingGitRef.current = null;
+    if (pending.operation === "resolve_head" && pending.loopId) {
+      const head = result.head
+        || result.steps.find((step) => step.head)?.head
+        || (result.steps.find((step) => step.stdout)?.stdout ?? "").trim().split(/\s+/)[0];
+      if (result.status === "success" && head) {
+        await patchAopLoop(pending.loopId, { loop_base_commit: head });
+      }
+      return;
+    }
+    if (pending.operation === "aop_loop_revert" && pending.loopId) {
+      if (result.status === "success") {
+        await patchAopLoop(pending.loopId, {
+          status: "cancelled",
+          status_detail: "Loop reverted to base commit.",
+          cancel_requested: true,
+          current_agent_task_id: null,
+          active_prompt_id: "",
+        });
+        setPromptStatus("AOP loop reverted to base commit.");
+      } else {
+        setPromptSubmissionError("AOP loop revert failed. See Git sync output.");
+      }
+    }
+  }
+
+  async function requestAopGit(
+    operation: "resolve_head" | "aop_loop_revert",
+    directory: string,
+    options: { loopId?: string; baseCommit?: string } = {},
+  ) {
+    if (!currentUser || !accessToken) {
+      return;
+    }
+    const requestId = createPromptId();
+    aopPendingGitRef.current = {
+      requestId,
+      operation,
+      loopId: options.loopId,
+    };
+    activeGitSyncRequestId.current = requestId;
+    setIsGitSyncRequestInFlight(true);
+    await updateMessage(
+      supabaseUrl,
+      supabasePublishableKey,
+      accessToken,
+      currentUserId,
+      GIT_SYNC_PURPOSE,
+      JSON.stringify({
+        requestId,
+        directory,
+        operation,
+        ...(options.baseCommit ? { baseCommit: options.baseCommit } : {}),
+      }),
+    );
+    refreshInboxRef.current();
+  }
+
+  async function patchAopLoop(
+    loopId: string,
+    updates: Record<string, unknown>,
+  ) {
+    if (!accessToken) {
+      return;
+    }
+    const row = await updateAopLoop(
+      supabaseUrl,
+      supabasePublishableKey,
+      accessToken,
+      loopId,
+      updates,
+    );
+    setAopLoop(row);
+  }
+
+  function isLoopActiveStatus(status: string) {
+    return !["completed", "cancelled", "failed"].includes(status);
+  }
+
+  async function onAopDurableTaskTerminal(entry: AgentPromptQueueEntry) {
+    const loop = aopLoopRef.current;
+    if (!loop || loop.status !== "executing") {
+      return;
+    }
+    if (entry.promptId !== loop.currentAgentTaskId && entry.durableTaskId !== loop.currentAgentTaskId) {
+      return;
+    }
+    if (entry.status === "completed") {
+      const nextSince = loop.tasksSinceVerification;
+      const nextStatus = nextStatusAfterTaskComplete(
+        nextSince,
+        loop.maxTasksBeforeVerification,
+      );
+      const titles = [
+        ...loop.recentTaskTitles,
+        loop.currentTaskTitle,
+      ].filter(Boolean).slice(-12);
+      await patchAopLoop(loop.id, {
+        status: nextStatus,
+        tasks_completed_total: loop.tasksCompletedTotal + 1,
+        tasks_since_verification:
+          nextStatus === "awaiting_verification" ? nextSince + 1 : nextSince + 1,
+        recent_task_titles: titles,
+        current_agent_task_id: null,
+        active_prompt_id: "",
+        status_detail:
+          nextStatus === "awaiting_verification"
+            ? `Verify the last ${loop.maxTasksBeforeVerification} integrated task(s) before continuing.`
+            : "Task integrated — requesting next bridge task…",
+      });
+      if (nextStatus === "bridging_task") {
+        queueBridgeTasking({
+          ...loop,
+          status: "bridging_task",
+          tasksCompletedTotal: loop.tasksCompletedTotal + 1,
+          tasksSinceVerification: nextSince + 1,
+          recentTaskTitles: titles,
+        });
+      }
+      return;
+    }
+    if (entry.status === "cancelled") {
+      await patchAopLoop(loop.id, {
+        status: "paused",
+        paused_from: "executing",
+        cancel_requested: true,
+        status_detail: "Coding task cancelled.",
+        current_agent_task_id: null,
+        active_prompt_id: "",
+      });
+      return;
+    }
+    if (entry.status === "failed" || entry.status === "blocked") {
+      await patchAopLoop(loop.id, {
+        status: "failed",
+        status_detail: entry.error || "Coding task failed.",
+        current_agent_task_id: null,
+        active_prompt_id: "",
+      });
+    }
+  }
+
+  // legacy multi-dispatch removed; use startAopBuildLoop / startAopTask
 
   function answerPlanningQuestion(answer: string) {
     const normalizedAnswer = answer.trim();
@@ -2136,8 +2794,16 @@ export default function FeatureFilesDashboard({
           (item) => item.promptId === nextPromptId && item.bridgeMode,
         ) || bridgeSessionRef.current?.activeBridgePromptId === nextPromptId,
       );
+      const wasImplPrep = Boolean(
+        agentPromptQueueRef.current.find(
+          (item) => item.promptId === nextPromptId && item.implPrepMode,
+        ) || aopLoopRef.current?.activePromptId === nextPromptId
+          && aopLoopRef.current?.status === "prep",
+      );
       finalizeQueuedAgentPrompt(nextPromptId, latestChatRef.current);
-      if (wasBridge) {
+      if (wasImplPrep) {
+        void applyImplPrepReply(nextPromptId);
+      } else if (wasBridge) {
         void applyBridgeReply(nextPromptId);
       }
     }
@@ -2202,11 +2868,15 @@ export default function FeatureFilesDashboard({
           planningMode: queueEntry.planningMode,
           askMode: queueEntry.askMode,
           bridgeMode: queueEntry.bridgeMode,
+          bridgeTasking: queueEntry.bridgeTasking === true,
+          implPrepMode: queueEntry.implPrepMode === true,
           targetedFeaturePaths: queueEntry.targetedFeaturePaths,
           planningContext: queueEntry.planningContext,
           planningAnswers: queueEntry.planningAnswers,
           bridgeContext: queueEntry.bridgeContext,
           bridgeAnswers: queueEntry.bridgeAnswers,
+          implPrepContext: queueEntry.implPrepContext,
+          implPrepAnswers: queueEntry.implPrepAnswers,
           prompt: queueEntry.prompt,
         }),
       );
@@ -3406,12 +4076,12 @@ export default function FeatureFilesDashboard({
                 acceptsWork={daemonAcceptsWork}
                 agentModels={agentModels}
                 availableProjectDirectories={availableProjectDirectories}
+                aopLoop={aopLoop}
                 bridgeSession={bridgeSession}
                 defaultProjectDirectory={DEFAULT_PROJECT_DIRECTORY}
                 directionText={aopDirectionText}
                 onClearSession={() => setBridgeSession(null)}
                 onDirectionTextChange={setAopDirectionText}
-                onDispatchTasks={() => void dispatchBridgeTasks()}
                 onAnswerQuestion={answerBridgeQuestion}
                 onOpenFeatureTagSearch={openFeatureTagSearch}
                 onProviderChange={selectProvider}
@@ -3420,6 +4090,12 @@ export default function FeatureFilesDashboard({
                 onSelectedReasoningChange={setSelectedReasoning}
                 onSelectModel={selectModel}
                 onSubmitDirection={() => void sendBridgeDirection()}
+                onStartBuildLoop={() => void startAopBuildLoop()}
+                onStopLoop={() => void stopAopLoop()}
+                onResumeLoop={() => void resumeAopLoop()}
+                onStartTask={() => void startAopTask()}
+                onVerifyLoop={() => void verifyAopLoop()}
+                onRevertLoop={() => void revertAopLoop()}
                 otherAnswer={bridgeOtherAnswer}
                 onOtherAnswerChange={setBridgeOtherAnswer}
                 selectedModelId={selectedModelId}
@@ -5248,6 +5924,7 @@ async function insertAgentTask(
       task_type: "implementation",
       planning_mode: false,
       targeted_feature_paths: task.targetedFeaturePaths,
+      source_loop_id: task.sourceLoopId ?? null,
       status: "queued",
       message: DAEMON_REVIEW,
     }),
@@ -5255,6 +5932,101 @@ async function insertAgentTask(
   if (!response.ok) {
     const detail = await response.text();
     throw submissionRequestError(response, detail, "agent task insert failed");
+  }
+}
+
+async function fetchActiveAopLoop(
+  supabaseUrl: string,
+  supabasePublishableKey: string,
+  accessToken: string,
+  userId: string,
+  repository: string,
+): Promise<AopExecutionLoop | null> {
+  const url = new URL("/rest/v1/aop_execution_loops", supabaseUrl);
+  url.searchParams.set("select", "*");
+  url.searchParams.set("user_id", `eq.${userId}`);
+  url.searchParams.set("repository", `eq.${repository}`);
+  url.searchParams.set(
+    "status",
+    "in.(bridging_task,prep,awaiting_answers,awaiting_start,executing,awaiting_verification,paused)",
+  );
+  url.searchParams.set("order", "updated_at.desc");
+  url.searchParams.set("limit", "1");
+  const response = await fetch(url, {
+    headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error("aop loop query failed");
+  }
+  const rows = await response.json() as AopExecutionLoopRow[];
+  return rows[0] ? mapAopLoopRow(rows[0]) : null;
+}
+
+async function insertAopLoop(
+  supabaseUrl: string,
+  supabasePublishableKey: string,
+  accessToken: string,
+  body: Record<string, unknown>,
+): Promise<AopExecutionLoop> {
+  const url = new URL("/rest/v1/aop_execution_loops", supabaseUrl);
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      ...getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
+      Prefer: "return=representation",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw submissionRequestError(response, detail, "aop loop insert failed");
+  }
+  const rows = await response.json() as AopExecutionLoopRow[];
+  return mapAopLoopRow(rows[0]);
+}
+
+async function updateAopLoop(
+  supabaseUrl: string,
+  supabasePublishableKey: string,
+  accessToken: string,
+  loopId: string,
+  updates: Record<string, unknown>,
+): Promise<AopExecutionLoop> {
+  const url = new URL("/rest/v1/aop_execution_loops", supabaseUrl);
+  url.searchParams.set("id", `eq.${loopId}`);
+  const response = await fetch(url, {
+    method: "PATCH",
+    headers: {
+      ...getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
+      Prefer: "return=representation",
+    },
+    body: JSON.stringify({ ...updates, updated_at: new Date().toISOString() }),
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw submissionRequestError(response, detail, "aop loop update failed");
+  }
+  const rows = await response.json() as AopExecutionLoopRow[];
+  return mapAopLoopRow(rows[0]);
+}
+
+async function cancelDurableAgentTask(
+  supabaseUrl: string,
+  supabasePublishableKey: string,
+  accessToken: string,
+  taskId: string,
+) {
+  const url = new URL("/rest/v1/agent_tasks", supabaseUrl);
+  url.searchParams.set("id", `eq.${taskId}`);
+  const response = await fetch(url, {
+    method: "PATCH",
+    headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
+    body: JSON.stringify({ cancel_requested: true }),
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw submissionRequestError(response, detail, "agent task cancel failed");
   }
 }
 
