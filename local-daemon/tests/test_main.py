@@ -516,6 +516,8 @@ class BuildCodexPromptTests(unittest.TestCase):
         self.assertIn(BRIDGE_TASKING_SUFFIX.rstrip(), tasking)
         self.assertIn("next_task", tasking)
         self.assertIn("mvp_complete", tasking)
+        self.assertIn("coding history", tasking.lower())
+        self.assertIn("feature digests", tasking.lower())
 
         prep = build_codex_prompt(
             "Prep install deps",

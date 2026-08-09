@@ -2,7 +2,7 @@
 
 import type { TargetedFeature } from "@/lib/agent-chat-cache";
 import type { AgentModelsConfig } from "@/lib/agent-models";
-import type { AopExecutionLoop } from "@/lib/aop-loop";
+import type { AopExecutionLoop, AopLoopCodingSlice } from "@/lib/aop-loop";
 import type { BridgeSession, BridgeTask } from "@/lib/bridge-session";
 import { isCpDocCodingReady } from "@/lib/bridge-session";
 import type { PlanningQuestion } from "@/lib/planning-questionnaire";
@@ -13,6 +13,7 @@ type AopSessionPanelProps = {
   agentModels: AgentModelsConfig;
   availableProjectDirectories: string[];
   aopLoop: AopExecutionLoop | null;
+  aopLoopCodingHistory: AopLoopCodingSlice[];
   bridgeSession: BridgeSession | null;
   defaultProjectDirectory: string;
   directionText: string;
@@ -47,6 +48,7 @@ export default function AopSessionPanel({
   agentModels,
   availableProjectDirectories,
   aopLoop,
+  aopLoopCodingHistory,
   bridgeSession,
   defaultProjectDirectory,
   directionText,
@@ -365,8 +367,9 @@ export default function AopSessionPanel({
           </div>
           <p className="text-xs leading-5 text-slate-500">
             Loop state is durable (database: aop_execution_loops). Coding runs as agent_tasks
-            rows and only count completed when that row is completed; failures stay on the
-            same slice so you can Start task again. Vision Q&amp;A alone uses browser storage.
+            rows; the Coding history list below is the ledger (completed/failed/cancelled).
+            Only completed integrates advance the loop. Failures stay on the same slice so you
+            can Start task again. Vision Q&amp;A alone uses browser storage.
           </p>
           {aopLoop.statusDetail ? (
             <p className="rounded-[1.25rem] border border-white/10 bg-black/30 px-4 py-3 text-sm text-slate-100">
@@ -387,7 +390,9 @@ export default function AopSessionPanel({
             ) : null}
             <p>
               <span className="text-slate-500">Completed: </span>
-              {aopLoop.tasksCompletedTotal}
+              {aopLoopCodingHistory.length > 0
+                ? aopLoopCodingHistory.filter((s) => s.status === "completed").length
+                : aopLoop.tasksCompletedTotal}
               <span className="text-slate-500"> · Since verify: </span>
               {aopLoop.tasksSinceVerification}/{aopLoop.maxTasksBeforeVerification}
             </p>
@@ -397,6 +402,48 @@ export default function AopSessionPanel({
               </p>
             ) : null}
           </div>
+          {aopLoopCodingHistory.length > 0 ? (
+            <div className="grid gap-2">
+              <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
+                Coding history (agent_tasks)
+              </p>
+              <ol className="grid gap-2">
+                {aopLoopCodingHistory.map((slice, index) => (
+                  <li
+                    key={slice.id}
+                    className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm"
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-slate-500">{index + 1}.</span>
+                      <span
+                        className={
+                          slice.status === "completed"
+                            ? "rounded-full border border-emerald-300/30 bg-emerald-300/10 px-2 py-0.5 text-[11px] text-emerald-100"
+                            : slice.status === "failed" || slice.status === "blocked"
+                              ? "rounded-full border border-rose-300/30 bg-rose-300/10 px-2 py-0.5 text-[11px] text-rose-100"
+                              : "rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[11px] text-slate-200"
+                        }
+                      >
+                        {slice.status}
+                      </span>
+                      <span className="font-medium text-slate-100">{slice.title}</span>
+                    </div>
+                    {slice.completedCommit ? (
+                      <p className="mt-1 truncate text-xs text-slate-500" title={slice.completedCommit}>
+                        commit {slice.completedCommit.slice(0, 12)}
+                        {slice.branchName ? ` · ${slice.branchName}` : ""}
+                      </p>
+                    ) : slice.branchName ? (
+                      <p className="mt-1 truncate text-xs text-slate-500">{slice.branchName}</p>
+                    ) : null}
+                    {slice.error && slice.status !== "completed" ? (
+                      <p className="mt-1 text-xs text-rose-200/90">{slice.error}</p>
+                    ) : null}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          ) : null}
           {aopLoop.currentTaskPrompt ? (
             <pre className="agent-chat-scrollbar max-h-40 overflow-y-auto whitespace-pre-wrap break-words rounded-[1.25rem] border border-white/10 bg-black/25 px-4 py-3 text-sm text-slate-200">
               {aopLoop.currentTaskPrompt}

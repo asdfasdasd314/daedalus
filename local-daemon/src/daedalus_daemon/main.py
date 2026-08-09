@@ -312,6 +312,13 @@ Why MVP is complete enough.
 Rules:
 - Emit exactly ONE task when status is next_task (never a batch).
 - Prefer the smallest vertical/first step (install deps, scaffold, first page, etc.).
+- Host-injected coding history (agent_tasks for this loop) and feature digests are
+  authoritative progress. Do not re-emit completed titles or re-implement work already
+  reflected as done/shipped in State Log digests or completed history.
+- Failed or cancelled slices may be retried only when still required and not already
+  satisfied by later completed work or feature status. Prefer a net-new unfinished gap.
+- If vision MVP is already covered by completed history + feature digests, use
+  status mvp_complete (do not paraphrase a finished landing/scaffold as a new task).
 - Do not ask vision ## Questions here unless a required cp_doc section regressed
   to a placeholder; implementation questions belong to later prep.
 - Do not write files.
@@ -448,7 +455,7 @@ if __package__ in {None, ""}:
         scan_feature_file_projects,
         scan_parameter_file_projects,
     )
-    from daedalus_daemon.orchestrator import GitWorktreeOrchestrator
+    from daedalus_daemon.orchestrator import GitWorktreeOrchestrator, commit_paths
     from daedalus_daemon.execution import FeatureExecutionSupervisor
     from daedalus_daemon.architecture import ArchitectureViewSupervisor
     from daedalus_daemon.project_initializer import initialize_project
@@ -477,7 +484,7 @@ else:
     )
     from .config import get_env_config_value, load_daemon_config, load_env_files
     from .scanner import scan_feature_file_projects, scan_parameter_file_projects
-    from .orchestrator import GitWorktreeOrchestrator
+    from .orchestrator import GitWorktreeOrchestrator, commit_paths
     from .execution import FeatureExecutionSupervisor
     from .architecture import ArchitectureViewSupervisor
     from .project_initializer import initialize_project
@@ -987,8 +994,8 @@ def commit_project_cp_doc(project_directory: object) -> bool:
     """Commit only cp_doc.md on the primary worktree so coding admission stays clean."""
     if not isinstance(project_directory, (str, Path)) or not str(project_directory).strip():
         return False
-    from .orchestrator import commit_paths
-
+    # Use the top-level dual import of commit_paths (package vs script/daemon launch).
+    # A lazy `from .orchestrator import ...` fails when main runs as __main__/script.
     return commit_paths(
         str(Path(project_directory).expanduser().resolve()),
         [CP_DOC_FILENAME],

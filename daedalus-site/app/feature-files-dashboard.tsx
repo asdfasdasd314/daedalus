@@ -52,14 +52,19 @@ import {
 import {
   type AopExecutionLoop,
   type AopExecutionLoopRow,
+  type AopLoopCodingSlice,
   buildBridgeTaskingPrompt,
   buildDurableImplementationPrompt,
   buildImplPrepUserPrompt,
+  buildTargetedFeatureDigests,
   DEFAULT_MAX_TASKS_BEFORE_VERIFICATION,
   isAopCodingTaskInFlight,
   isAopCodingTaskTerminal,
   isBridgeTaskingReply,
+  loopCountersFromCompletedSlices,
+  loopHistoryNeedsSync,
   loopPatchAfterCodingTaskTerminal,
+  mapAgentTaskRowToCodingSlice,
   mapAopLoopRow,
   pauseTargetStatus,
   resumeStatusFromPaused,
@@ -245,6 +250,9 @@ type AgentTaskRow = {
   message?: string;
   updated_at: string;
   retry_generation?: number;
+  completed_commit?: string | null;
+  branch_name?: string | null;
+  source_loop_id?: string | null;
 };
 
 type ConversationDeletionRequestRow = { id: string; conversation_id: string; task_ids: string[]; status: "completed" | "rejected" | "requested"; error: string; updated_at: string };
@@ -357,6 +365,9 @@ export default function FeatureFilesDashboard({
   const [planningSession, setPlanningSession] = useState<PlanningSession | null>(null);
   const [bridgeSession, setBridgeSession] = useState<BridgeSession | null>(null);
   const [aopLoop, setAopLoop] = useState<AopExecutionLoop | null>(null);
+  const [aopLoopCodingHistory, setAopLoopCodingHistory] = useState<
+    AopLoopCodingSlice[]
+  >([]);
   const [aopDirectionText, setAopDirectionText] = useState("");
   const [bridgeOtherAnswer, setBridgeOtherAnswer] = useState("");
   const [agentPromptQueue, setAgentPromptQueue] = useState<
@@ -365,6 +376,7 @@ export default function FeatureFilesDashboard({
   const bridgeSessionRef = useRef<BridgeSession | null>(null);
   const aopLoopRef = useRef<AopExecutionLoop | null>(null);
   const aopLoopFetchGenerationRef = useRef(0);
+  const projectsRef = useRef<FeatureFileProjects | null>(null);
   const aopPendingGitRef = useRef<{
     requestId: string;
     operation: "resolve_head" | "aop_loop_revert";
@@ -592,6 +604,10 @@ export default function FeatureFilesDashboard({
   }, [aopLoop]);
 
   useEffect(() => {
+    projectsRef.current = projects;
+  }, [projects]);
+
+  useEffect(() => {
     if (!accessToken || !currentUser || !selectedProjectDirectory) {
       return;
     }
@@ -619,12 +635,14 @@ export default function FeatureFilesDashboard({
             return;
           }
           setAopLoop(null);
+          setAopLoopCodingHistory([]);
           return;
         }
         setAopLoop(loop);
+        const { loop: synced } = await syncLoopHistoryFromAgentTasks(loop);
         // Durable agent_tasks is source of truth for coding progress; reconcile if
         // the client missed a client_review while the loop stayed "executing".
-        await reconcileAopLoopWithCodingTask(loop);
+        await reconcileAopLoopWithCodingTask(synced);
       })
       .catch(() => {
         if (
@@ -642,6 +660,7 @@ export default function FeatureFilesDashboard({
           return;
         }
         setAopLoop(null);
+        setAopLoopCodingHistory([]);
       });
     return () => {
       cancelled = true;
@@ -2302,7 +2321,7 @@ export default function FeatureFilesDashboard({
         setAopLoop(existing);
         // Re-attach and recover common stuck states instead of only showing an error.
         if (existing.status === "bridging_task" && !existing.currentTaskTitle.trim()) {
-          queueBridgeTasking(existing);
+          void queueBridgeTasking(existing);
           setPromptStatus("Resumed existing build loop — choosing the next coding task.");
           return;
         }
@@ -2343,7 +2362,7 @@ export default function FeatureFilesDashboard({
       aopLoopFetchGenerationRef.current += 1;
       setAopLoop(row);
       await requestAopGit("resolve_head", bridgeSession.directory, { loopId: row.id });
-      queueBridgeTasking(row);
+      void queueBridgeTasking(row);
       setPromptStatus("Build loop started — bridge is choosing the first coding task.");
     } catch (error) {
       const detail = error instanceof Error ? error.message : "Unable to start build loop.";
@@ -2351,7 +2370,72 @@ export default function FeatureFilesDashboard({
     }
   }
 
-  function queueBridgeTasking(loop: AopExecutionLoop) {
+  function resolveFeatureMarkdown(filePath: string): string | null {
+    const normalized = normalizeFeatureFilePath(filePath);
+    const featureProjects = projectsRef.current;
+    if (!featureProjects) {
+      return null;
+    }
+    for (const records of Object.values(featureProjects)) {
+      for (const record of records) {
+        if (normalizeFeatureFilePath(record.path) === normalized) {
+          return record.markdown ?? "";
+        }
+      }
+    }
+    return null;
+  }
+
+  function buildFeatureDigestsForLoop(loop: AopExecutionLoop): string {
+    const paths = loop.targetedFeaturePaths.length > 0
+      ? loop.targetedFeaturePaths
+      : (bridgeSessionRef.current?.targetedFeatures.map((f) => f.filePath) ?? []);
+    return buildTargetedFeatureDigests(paths, resolveFeatureMarkdown);
+  }
+
+  /**
+   * Rebuild loop denormalized counters from agent_tasks for this source_loop_id.
+   * Returns the freshest loop + coding slices (agent_tasks is the ledger).
+   */
+  async function syncLoopHistoryFromAgentTasks(
+    loop: AopExecutionLoop,
+  ): Promise<{ loop: AopExecutionLoop; slices: AopLoopCodingSlice[] }> {
+    if (!accessToken || !currentUser) {
+      return { loop, slices: [] };
+    }
+    try {
+      const rows = await fetchAgentTasksForLoop(
+        supabaseUrl,
+        supabasePublishableKey,
+        accessToken,
+        currentUserId,
+        loop.id,
+      );
+      const slices = rows.map(mapAgentTaskRowToCodingSlice);
+      setAopLoopCodingHistory(slices);
+      const counters = loopCountersFromCompletedSlices(slices);
+      if (!loopHistoryNeedsSync(loop, counters)) {
+        return { loop, slices };
+      }
+      const row = await updateAopLoop(
+        supabaseUrl,
+        supabasePublishableKey,
+        accessToken,
+        loop.id,
+        {
+          tasks_completed_total: counters.tasks_completed_total,
+          recent_task_titles: counters.recent_task_titles,
+          integrated_commits: counters.integrated_commits,
+        },
+      );
+      setAopLoop(row);
+      return { loop: row, slices };
+    } catch {
+      return { loop, slices: [] };
+    }
+  }
+
+  async function queueBridgeTasking(loop: AopExecutionLoop) {
     const session = bridgeSessionRef.current;
     if (!session) {
       return;
@@ -2374,35 +2458,39 @@ export default function FeatureFilesDashboard({
       );
       return;
     }
+    const { loop: historyLoop, slices } = await syncLoopHistoryFromAgentTasks(loop);
+
     const promptId = createPromptId();
     const prompt = buildBridgeTaskingPrompt({
-      directionPrompt: loop.directionPrompt || session.directionPrompt,
+      directionPrompt: historyLoop.directionPrompt || session.directionPrompt,
       cpDoc: session.cpDoc,
-      recentTaskTitles: loop.recentTaskTitles,
+      recentTaskTitles: historyLoop.recentTaskTitles,
+      codingHistory: slices,
+      featureDigests: buildFeatureDigestsForLoop(historyLoop),
     });
     const payload: AgentPromptQueueEntry = {
       promptId,
-      conversationId: loop.conversationId || session.conversationId,
-      directory: loop.repository,
+      conversationId: historyLoop.conversationId || session.conversationId,
+      directory: historyLoop.repository,
       prompt,
-      provider: loop.provider || session.provider,
-      model: loop.model || session.model,
-      reasoning: loop.reasoning || session.reasoning,
+      provider: historyLoop.provider || session.provider,
+      model: historyLoop.model || session.model,
+      reasoning: historyLoop.reasoning || session.reasoning,
       planningMode: false,
       askMode: false,
       bridgeMode: true,
       bridgeTasking: true,
       bridgeContext: session.cpDoc,
-      targetedFeaturePaths: loop.targetedFeaturePaths,
-      sourceLoopId: loop.id,
+      targetedFeaturePaths: historyLoop.targetedFeaturePaths,
+      sourceLoopId: historyLoop.id,
       status: "queued",
       enqueuedAt: Date.now(),
     };
-    const completed = loop.tasksCompletedTotal;
+    const completed = historyLoop.tasksCompletedTotal;
     const detail = completed === 0
       ? "Bridge is choosing the first coding task…"
       : `Bridge is choosing coding task #${completed + 1}…`;
-    void patchAopLoop(loop.id, {
+    void patchAopLoop(historyLoop.id, {
       status: "bridging_task",
       active_prompt_id: promptId,
       status_detail: detail,
@@ -2610,7 +2698,7 @@ export default function FeatureFilesDashboard({
           : `Resumed at ${resume}.`,
     });
     if (resume === "bridging_task") {
-      queueBridgeTasking({
+      void queueBridgeTasking({
         ...loop,
         status: resume,
         cancelRequested: false,
@@ -2635,7 +2723,7 @@ export default function FeatureFilesDashboard({
       tasks_since_verification: 0,
       status_detail: "Verification accepted — choosing next task…",
     });
-    queueBridgeTasking({
+    void queueBridgeTasking({
       ...loop,
       status: "bridging_task",
       tasksSinceVerification: 0,
@@ -2745,12 +2833,15 @@ export default function FeatureFilesDashboard({
     loop: AopExecutionLoop,
     taskStatus: string,
     taskError?: string,
+    completedCommit?: string,
   ) {
     const patch = loopPatchAfterCodingTaskTerminal({
       tasksCompletedTotal: loop.tasksCompletedTotal,
       tasksSinceVerification: loop.tasksSinceVerification,
       maxTasksBeforeVerification: loop.maxTasksBeforeVerification,
       recentTaskTitles: loop.recentTaskTitles,
+      integratedCommits: loop.integratedCommits,
+      completedCommit,
       currentTaskTitle: loop.currentTaskTitle,
       taskStatus,
       taskError,
@@ -2759,17 +2850,35 @@ export default function FeatureFilesDashboard({
       return;
     }
     await patchAopLoop(loop.id, patch.updates);
+    // Refresh coding history ledger after any terminal coding outcome.
+    const refreshed = await syncLoopHistoryFromAgentTasks({
+      ...loop,
+      ...{
+        tasksCompletedTotal:
+          patch.updates.tasks_completed_total ?? loop.tasksCompletedTotal,
+        recentTaskTitles:
+          patch.updates.recent_task_titles ?? loop.recentTaskTitles,
+        integratedCommits:
+          patch.updates.integrated_commits ?? loop.integratedCommits,
+        currentAgentTaskId: null,
+        tasksSinceVerification:
+          patch.updates.tasks_since_verification ?? loop.tasksSinceVerification,
+      },
+      status: patch.updates.status,
+    });
     if (patch.shouldQueueBridge) {
       const nextSince = (patch.updates.tasks_since_verification
         ?? loop.tasksSinceVerification + 1);
       const titles = patch.updates.recent_task_titles ?? loop.recentTaskTitles;
-      queueBridgeTasking({
-        ...loop,
+      void queueBridgeTasking({
+        ...refreshed.loop,
         status: "bridging_task",
         tasksCompletedTotal:
           patch.updates.tasks_completed_total ?? loop.tasksCompletedTotal + 1,
         tasksSinceVerification: nextSince,
         recentTaskTitles: titles,
+        integratedCommits:
+          patch.updates.integrated_commits ?? refreshed.loop.integratedCommits,
         currentAgentTaskId: null,
         currentTaskTitle: "",
         currentTaskPrompt: "",
@@ -2790,7 +2899,27 @@ export default function FeatureFilesDashboard({
     if (!isAopCodingTaskTerminal(entry.status)) {
       return;
     }
-    await applyAopCodingTaskTerminal(loop, entry.status, entry.error);
+    let completedCommit = "";
+    if (entry.status === "completed" && accessToken) {
+      try {
+        const row = await fetchAgentTaskById(
+          supabaseUrl,
+          supabasePublishableKey,
+          accessToken,
+          currentUserId,
+          entry.durableTaskId ?? entry.promptId,
+        );
+        completedCommit = row?.completed_commit ?? "";
+      } catch {
+        // History still advances from patch + later sync.
+      }
+    }
+    await applyAopCodingTaskTerminal(
+      loop,
+      entry.status,
+      entry.error,
+      completedCommit,
+    );
   }
 
   /**
@@ -2838,7 +2967,12 @@ export default function FeatureFilesDashboard({
         return;
       }
       if (isAopCodingTaskTerminal(row.status)) {
-        await applyAopCodingTaskTerminal(loop, row.status, row.error || undefined);
+        await applyAopCodingTaskTerminal(
+          loop,
+          row.status,
+          row.error || undefined,
+          row.completed_commit ?? undefined,
+        );
       }
     } catch (error) {
       const detail = error instanceof Error ? error.message : "Unable to reconcile coding task.";
@@ -4323,6 +4457,7 @@ export default function FeatureFilesDashboard({
                 agentModels={agentModels}
                 availableProjectDirectories={availableProjectDirectories}
                 aopLoop={aopLoop}
+                aopLoopCodingHistory={aopLoopCodingHistory}
                 bridgeSession={bridgeSession}
                 defaultProjectDirectory={DEFAULT_PROJECT_DIRECTORY}
                 directionText={aopDirectionText}
@@ -6232,6 +6367,36 @@ async function insertAopLoop(
   return mapAopLoopRow(rows[0]);
 }
 
+async function fetchAgentTasksForLoop(
+  supabaseUrl: string,
+  supabasePublishableKey: string,
+  accessToken: string,
+  userId: string,
+  loopId: string,
+): Promise<AgentTaskRow[]> {
+  const url = new URL("/rest/v1/agent_tasks", supabaseUrl);
+  url.searchParams.set(
+    "select",
+    "id,prompt,status,error,completed_commit,branch_name,created_at,completed_at,source_loop_id",
+  );
+  url.searchParams.set("user_id", `eq.${userId}`);
+  url.searchParams.set("source_loop_id", `eq.${loopId}`);
+  url.searchParams.set("order", "created_at.asc");
+  const response = await fetch(url, {
+    headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    const detail = (await response.text()).trim();
+    throw new Error(
+      detail
+        ? `aop loop agent_tasks query failed (${response.status}): ${detail}`
+        : `aop loop agent_tasks query failed (${response.status})`,
+    );
+  }
+  return (await response.json()) as AgentTaskRow[];
+}
+
 async function updateAopLoop(
   supabaseUrl: string,
   supabasePublishableKey: string,
@@ -6438,7 +6603,7 @@ async function fetchAgentTaskById(
   const url = new URL("/rest/v1/agent_tasks", supabaseUrl);
   url.searchParams.set(
     "select",
-    "id,repository,prompt,provider,model,reasoning,planning_mode,targeted_feature_paths,status,queue_sequence,created_at,started_at,completed_at,error,verification_attempts,cancel_requested,message,updated_at",
+    "id,repository,prompt,provider,model,reasoning,planning_mode,targeted_feature_paths,status,queue_sequence,created_at,started_at,completed_at,error,verification_attempts,cancel_requested,message,updated_at,completed_commit,branch_name,source_loop_id",
   );
   url.searchParams.set("id", `eq.${taskId}`);
   url.searchParams.set("user_id", `eq.${userId}`);

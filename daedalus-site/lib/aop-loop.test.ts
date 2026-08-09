@@ -3,12 +3,18 @@ import test from "node:test";
 import {
   buildBridgeTaskingPrompt,
   buildDurableImplementationPrompt,
+  buildFeatureFileDigest,
   canStartAopBuildLoop,
+  extractAopTaskTitleFromPrompt,
   isAopCodingTaskInFlight,
   isBridgeTaskingReply,
+  loopCountersFromCompletedSlices,
+  loopHistoryNeedsSync,
   loopPatchAfterCodingTaskTerminal,
   nextStatusAfterTaskComplete,
   resumeStatusFromPaused,
+  summarizeLoopCodingHistory,
+  type AopLoopCodingSlice,
 } from "./aop-loop";
 import { parseImplPrepReply } from "./impl-prep";
 
@@ -24,6 +30,8 @@ test("loop advances only on completed durable coding tasks", () => {
     tasksSinceVerification: 0,
     maxTasksBeforeVerification: 3,
     recentTaskTitles: [],
+    integratedCommits: [],
+    completedCommit: "abc123def456",
     currentTaskTitle: "Landing page",
     taskStatus: "completed",
   });
@@ -31,6 +39,7 @@ test("loop advances only on completed durable coding tasks", () => {
   assert.equal(completed?.updates.status, "bridging_task");
   assert.equal(completed?.updates.tasks_completed_total, 1);
   assert.equal(completed?.updates.current_agent_task_id, null);
+  assert.deepEqual(completed?.updates.integrated_commits, ["abc123def456"]);
 
   const failed = loopPatchAfterCodingTaskTerminal({
     tasksCompletedTotal: 0,
@@ -78,16 +87,124 @@ test("resumeStatusFromPaused validates paused_from", () => {
   assert.equal(resumeStatusFromPaused("bogus"), null);
 });
 
-test("buildBridgeTaskingPrompt includes cp_doc and recents", () => {
+test("extractAopTaskTitleFromPrompt reads TASK line", () => {
+  assert.equal(
+    extractAopTaskTitleFromPrompt("TASK: Landing page\n\nBuild it"),
+    "Landing page",
+  );
+  assert.equal(extractAopTaskTitleFromPrompt("First line only"), "First line only");
+});
+
+test("loopCountersFromCompletedSlices ignores failed attempts", () => {
+  const slices: AopLoopCodingSlice[] = [
+    {
+      id: "1",
+      title: "Landing",
+      status: "completed",
+      error: "",
+      completedCommit: "aaa",
+      branchName: "t1",
+      createdAt: "",
+      completedAt: "",
+    },
+    {
+      id: "2",
+      title: "Form",
+      status: "failed",
+      error: "clean required",
+      completedCommit: "",
+      branchName: "t2",
+      createdAt: "",
+      completedAt: "",
+    },
+    {
+      id: "3",
+      title: "Polish",
+      status: "completed",
+      error: "",
+      completedCommit: "bbb",
+      branchName: "t3",
+      createdAt: "",
+      completedAt: "",
+    },
+  ];
+  const counters = loopCountersFromCompletedSlices(slices);
+  assert.equal(counters.tasks_completed_total, 2);
+  assert.deepEqual(counters.recent_task_titles, ["Landing", "Polish"]);
+  assert.deepEqual(counters.integrated_commits, ["aaa", "bbb"]);
+  assert.match(summarizeLoopCodingHistory(slices), /\[failed\] Form/);
+  assert.match(summarizeLoopCodingHistory(slices), /\[completed\] Landing/);
+  assert.equal(
+    loopHistoryNeedsSync(
+      {
+        tasksCompletedTotal: 0,
+        recentTaskTitles: [],
+        integratedCommits: [],
+      },
+      counters,
+    ),
+    true,
+  );
+  assert.equal(
+    loopHistoryNeedsSync(
+      {
+        tasksCompletedTotal: 2,
+        recentTaskTitles: ["Landing", "Polish"],
+        integratedCommits: ["aaa", "bbb"],
+      },
+      counters,
+    ),
+    false,
+  );
+});
+
+test("buildFeatureFileDigest keeps State Log and Key Points", () => {
+  const digest = buildFeatureFileDigest(
+    `# Feature\n\n## Summary\nShip activities.\n\n## Key Points\n- auth\n- forms\n\n## State Log\n- 2026-01-01: started\n- 2026-01-02: landing done\n`,
+    "feature_files/act.md",
+  );
+  assert.match(digest, /feature_files\/act\.md/);
+  assert.match(digest, /Ship activities/);
+  assert.match(digest, /landing done/);
+  assert.match(digest, /forms/);
+});
+
+test("buildBridgeTaskingPrompt includes history + feature digests", () => {
   const prompt = buildBridgeTaskingPrompt({
     directionPrompt: "Build a landing page",
     cpDoc: "## Project Summary\nLanding\n",
     recentTaskTitles: ["Scaffold Next app"],
+    codingHistory: [
+      {
+        id: "1",
+        title: "Scaffold Next app",
+        status: "completed",
+        error: "",
+        completedCommit: "deadbeef",
+        branchName: "task-1",
+        createdAt: "",
+        completedAt: "",
+      },
+      {
+        id: "2",
+        title: "Activity form",
+        status: "failed",
+        error: "dirty tree",
+        completedCommit: "",
+        branchName: "task-2",
+        createdAt: "",
+        completedAt: "",
+      },
+    ],
+    featureDigests: "### feature_files/x.md\n#### State Log\n- landing shipped",
   });
   assert.match(prompt, /next_task/);
   assert.match(prompt, /Scaffold Next app/);
-  assert.match(prompt, /Landing/);
+  assert.match(prompt, /\[failed\] Activity form/);
+  assert.match(prompt, /landing shipped/);
   assert.match(prompt, /next coding task after 1 completed/);
+  assert.match(prompt, /authoritative progress/);
+  assert.match(prompt, /Landing/);
 });
 
 test("buildBridgeTaskingPrompt marks first task when recents empty", () => {

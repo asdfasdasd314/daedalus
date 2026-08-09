@@ -83,6 +83,12 @@ When the host requests the next task (status `next_task` | `mvp_complete`):
 - Emit **exactly one** self-contained task under `## Tasks`, or declare `mvp_complete`.
 - Prefer the smallest next vertical slice toward MVP.
 - Do not batch tasks. Do not invent vision gaps as coding tasks without operator facts.
+- Treat host-injected **coding history** (`agent_tasks` for this loop: completed and
+  failed/cancelled) and **feature digests** (Summary / Key Points / recent State Log)
+  as authoritative progress. Do **not** re-emit completed titles or rephrase shipped work.
+- Failed slices may be retried only if still incomplete and not contradicted by later
+  completions or feature State Log; otherwise choose a net-new unfinished gap.
+- If MVP is already covered by completed history + digests, prefer `mvp_complete`.
 
 ## Hard rules
 

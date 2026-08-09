@@ -290,16 +290,247 @@ export type AopLoopAfterCodingTerminal = {
     tasks_completed_total?: number;
     tasks_since_verification?: number;
     recent_task_titles?: string[];
+    integrated_commits?: string[];
     paused_from?: string;
     cancel_requested?: boolean;
   };
 };
+
+/** Canonical coding slice from agent_tasks (source_loop_id). */
+export type AopLoopCodingSlice = {
+  id: string;
+  title: string;
+  status: string;
+  error: string;
+  completedCommit: string;
+  branchName: string;
+  createdAt: string;
+  completedAt: string;
+};
+
+const MAX_RECENT_TASK_TITLES = 12;
+const MAX_INTEGRATED_COMMITS = 50;
+const FEATURE_DIGEST_SECTION_BULLETS = 12;
+const FEATURE_DIGEST_PER_FILE_CHARS = 2800;
+const FEATURE_DIGEST_TOTAL_CHARS = 9000;
+
+/** Parse leading `TASK: …` from a durable implementation prompt. */
+export function extractAopTaskTitleFromPrompt(prompt: string): string {
+  const text = (prompt ?? "").replace(/\r\n/g, "\n");
+  const taskLine = text.match(/^\s*TASK:\s*(.+)$/im);
+  if (taskLine?.[1]) {
+    return taskLine[1].trim().slice(0, 200);
+  }
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed) {
+      return trimmed.replace(/^\*+\s*/, "").slice(0, 200);
+    }
+  }
+  return "(untitled)";
+}
+
+export function mapAgentTaskRowToCodingSlice(row: {
+  id: string;
+  prompt?: string | null;
+  status?: string | null;
+  error?: string | null;
+  completed_commit?: string | null;
+  branch_name?: string | null;
+  created_at?: string | null;
+  completed_at?: string | null;
+}): AopLoopCodingSlice {
+  return {
+    id: row.id,
+    title: extractAopTaskTitleFromPrompt(row.prompt ?? ""),
+    status: (row.status ?? "").trim() || "unknown",
+    error: (row.error ?? "").trim(),
+    completedCommit: (row.completed_commit ?? "").trim(),
+    branchName: (row.branch_name ?? "").trim(),
+    createdAt: row.created_at ?? "",
+    completedAt: row.completed_at ?? "",
+  };
+}
+
+/** Human lines for tasking prompts / UI ledger. */
+export function summarizeLoopCodingHistory(slices: AopLoopCodingSlice[]): string {
+  if (!slices.length) {
+    return "(none yet)";
+  }
+  return slices
+    .map((slice, index) => {
+      const commit = slice.completedCommit
+        ? ` commit=${slice.completedCommit.slice(0, 12)}`
+        : "";
+      const err = slice.error && slice.status !== "completed"
+        ? ` — ${slice.error.slice(0, 160)}`
+        : "";
+      return `${index + 1}. [${slice.status}] ${slice.title}${commit}${err}`;
+    })
+    .join("\n");
+}
+
+/**
+ * Rebuild denormalized loop caches from completed coding slices only.
+ * Canonical source is always agent_tasks.
+ */
+export function loopCountersFromCompletedSlices(slices: AopLoopCodingSlice[]): {
+  tasks_completed_total: number;
+  recent_task_titles: string[];
+  integrated_commits: string[];
+} {
+  const completed = slices.filter((slice) => slice.status === "completed");
+  const titles = completed
+    .map((slice) => slice.title)
+    .filter(Boolean)
+    .slice(-MAX_RECENT_TASK_TITLES);
+  const commits: string[] = [];
+  for (const slice of completed) {
+    if (slice.completedCommit && !commits.includes(slice.completedCommit)) {
+      commits.push(slice.completedCommit);
+    }
+  }
+  return {
+    tasks_completed_total: completed.length,
+    recent_task_titles: titles,
+    integrated_commits: commits.slice(-MAX_INTEGRATED_COMMITS),
+  };
+}
+
+/** True when loop denormalized counters differ from agent_tasks truth. */
+export function loopHistoryNeedsSync(
+  loop: Pick<
+    AopExecutionLoop,
+    "tasksCompletedTotal" | "recentTaskTitles" | "integratedCommits"
+  >,
+  counters: ReturnType<typeof loopCountersFromCompletedSlices>,
+): boolean {
+  if (loop.tasksCompletedTotal !== counters.tasks_completed_total) {
+    return true;
+  }
+  if (loop.recentTaskTitles.join("\0") !== counters.recent_task_titles.join("\0")) {
+    return true;
+  }
+  if (loop.integratedCommits.join("\0") !== counters.integrated_commits.join("\0")) {
+    return true;
+  }
+  return false;
+}
+
+export function appendIntegratedCommit(
+  existing: string[],
+  commit: string | null | undefined,
+): string[] {
+  const next = (commit ?? "").trim();
+  if (!next) {
+    return existing.slice(-MAX_INTEGRATED_COMMITS);
+  }
+  if (existing.includes(next)) {
+    return existing.slice(-MAX_INTEGRATED_COMMITS);
+  }
+  return [...existing, next].slice(-MAX_INTEGRATED_COMMITS);
+}
+
+const FEATURE_DIGEST_SECTION_HEADINGS = [
+  "Summary",
+  "Key Points",
+  "State Log",
+] as const;
+
+/**
+ * Extract capped Summary / Key Points / State Log digests from feature markdown.
+ * State Log keeps only the most recent bullets.
+ */
+export function buildFeatureFileDigest(markdown: string, filePath: string): string {
+  const text = (markdown ?? "").replace(/\r\n/g, "\n");
+  if (!text.trim()) {
+    return "";
+  }
+  const sections: string[] = [`### ${filePath}`];
+  for (const heading of FEATURE_DIGEST_SECTION_HEADINGS) {
+    const body = extractMarkdownSectionBody(text, heading);
+    if (!body) {
+      continue;
+    }
+    let clipped = body;
+    if (heading === "State Log" || heading === "Key Points") {
+      const lines = body.split("\n").filter((line) => line.trim());
+      const bullets = lines.filter((line) => /^[-*•]|\d+\./.test(line.trim()));
+      if (bullets.length > FEATURE_DIGEST_SECTION_BULLETS) {
+        clipped = bullets.slice(-FEATURE_DIGEST_SECTION_BULLETS).join("\n");
+      } else if (lines.length > FEATURE_DIGEST_SECTION_BULLETS) {
+        clipped = lines.slice(-FEATURE_DIGEST_SECTION_BULLETS).join("\n");
+      }
+    }
+    sections.push(`#### ${heading}`, clipped.trim());
+  }
+  if (sections.length === 1) {
+    // No known sections — short raw head as fallback.
+    sections.push(text.trim().slice(0, 600));
+  }
+  return sections.join("\n").slice(0, FEATURE_DIGEST_PER_FILE_CHARS);
+}
+
+function extractMarkdownSectionBody(markdown: string, heading: string): string {
+  const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const headingRe = new RegExp(`^#{1,3}\\s*${escaped}\\s*$`, "i");
+  const lines = markdown.replace(/\r\n/g, "\n").split("\n");
+  let index = 0;
+  while (index < lines.length && !headingRe.test(lines[index])) {
+    index += 1;
+  }
+  if (index >= lines.length) {
+    return "";
+  }
+  index += 1;
+  const body: string[] = [];
+  while (index < lines.length && !/^#{1,3}\s/.test(lines[index])) {
+    body.push(lines[index]);
+    index += 1;
+  }
+  return body.join("\n").trim();
+}
+
+/** Combine digests for targeted feature paths (budgeted). */
+export function buildTargetedFeatureDigests(
+  paths: string[],
+  resolveMarkdown: (path: string) => string | null | undefined,
+): string {
+  const parts: string[] = [];
+  let total = 0;
+  for (const rawPath of paths) {
+    const path = rawPath.trim();
+    if (!path) {
+      continue;
+    }
+    const md = resolveMarkdown(path);
+    if (!md) {
+      continue;
+    }
+    const digest = buildFeatureFileDigest(md, path);
+    if (!digest) {
+      continue;
+    }
+    if (total + digest.length > FEATURE_DIGEST_TOTAL_CHARS) {
+      const remaining = FEATURE_DIGEST_TOTAL_CHARS - total;
+      if (remaining > 80) {
+        parts.push(digest.slice(0, remaining));
+      }
+      break;
+    }
+    parts.push(digest);
+    total += digest.length;
+  }
+  return parts.length ? parts.join("\n\n") : "(no targeted feature digests available)";
+}
 
 export function loopPatchAfterCodingTaskTerminal(input: {
   tasksCompletedTotal: number;
   tasksSinceVerification: number;
   maxTasksBeforeVerification: number;
   recentTaskTitles: string[];
+  integratedCommits?: string[];
+  completedCommit?: string;
   currentTaskTitle: string;
   taskStatus: string;
   taskError?: string;
@@ -312,8 +543,12 @@ export function loopPatchAfterCodingTaskTerminal(input: {
     const titles = [
       ...input.recentTaskTitles,
       input.currentTaskTitle,
-    ].filter(Boolean).slice(-12);
+    ].filter(Boolean).slice(-MAX_RECENT_TASK_TITLES);
     const nextSince = input.tasksSinceVerification + 1;
+    const integrated = appendIntegratedCommit(
+      input.integratedCommits ?? [],
+      input.completedCommit,
+    );
     return {
       shouldQueueBridge: nextStatus === "bridging_task",
       updates: {
@@ -321,6 +556,7 @@ export function loopPatchAfterCodingTaskTerminal(input: {
         tasks_completed_total: input.tasksCompletedTotal + 1,
         tasks_since_verification: nextSince,
         recent_task_titles: titles,
+        integrated_commits: integrated,
         current_agent_task_id: null,
         active_prompt_id: "",
         status_detail:
@@ -370,18 +606,33 @@ export function loopPatchAfterCodingTaskTerminal(input: {
 export function buildBridgeTaskingPrompt(input: {
   directionPrompt: string;
   cpDoc: string;
-  recentTaskTitles: string[];
+  recentTaskTitles?: string[];
+  codingHistory?: AopLoopCodingSlice[];
+  featureDigests?: string;
 }): string {
-  const recent = input.recentTaskTitles.length
-    ? input.recentTaskTitles.map((title, index) => `${index + 1}. ${title}`).join("\n")
-    : "(none yet)";
-  const completedCount = input.recentTaskTitles.length;
+  const slices = input.codingHistory ?? [];
+  const completedFromHistory = slices.filter((s) => s.status === "completed");
+  const titles = completedFromHistory.length
+    ? completedFromHistory.map((s) => s.title)
+    : (input.recentTaskTitles ?? []);
+  const completedCount = titles.length;
   const taskOrdinalHint = completedCount === 0
     ? "Emit the first coding task for this build loop (nothing completed yet)."
-    : `Emit the next coding task after ${completedCount} completed slice(s). Do not re-emit completed titles.`;
+    : `Emit the next coding task after ${completedCount} completed slice(s). Do not re-emit completed titles or re-implement shipped work.`;
+  const historyBlock = slices.length
+    ? summarizeLoopCodingHistory(slices)
+    : titles.length
+      ? titles.map((title, index) => `${index + 1}. [completed] ${title}`).join("\n")
+      : "(none yet)";
+  const digests = (input.featureDigests ?? "").trim()
+    || "(no targeted feature digests available)";
   return [
     "AOP BUILD LOOP — emit exactly one coding task toward MVP.",
     taskOrdinalHint,
+    "Host-injected coding history and feature digests are authoritative progress signals.",
+    "Do not re-emit work already listed as completed. Treat feature State Log done/shipped bullets as already implemented.",
+    "Failed/cancelled slices may be retried only if still required and not contradicted by features or completed history.",
+    "If MVP vision is already reflected as complete in history + features, prefer status mvp_complete.",
     "Do not ask vision/cp_doc questions unless a required section regressed to placeholder.",
     "Prefer implementation-level gaps for later prep questions.",
     "",
@@ -391,8 +642,11 @@ export function buildBridgeTaskingPrompt(input: {
     "Current cp_doc:",
     input.cpDoc.trim(),
     "",
-    "Recently completed task titles:",
-    recent,
+    "Coding history (agent_tasks for this loop — completed AND failed/cancelled):",
+    historyBlock,
+    "",
+    "Targeted feature digests (Summary / Key Points / recent State Log):",
+    digests,
     "",
     "Respond with ## Status next_task (exactly one ## Tasks item) or mvp_complete.",
   ].join("\n");
