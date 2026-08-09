@@ -32,6 +32,8 @@
   "30": "build_codex_prompt",
   "31": "run_codex_exec",
   "32": "software-architecture-v1.schema.json",
+  "33": "validate_execution_request",
+  "34": "FeatureExecutionSupervisor",
   "35": "run_git_sync_cycle",
   "36": "coding.md",
   "37": "planning.md",
@@ -55,6 +57,7 @@
   "55": "System Architecture Visualization Engine",
   "56": "Ventures",
   "57": "architecture.md",
+  "58": "properties",
   "59": "integrating.md",
   "60": "layout.tsx",
   "61": "agent-chat-cache.ts",
@@ -78,6 +81,7 @@
   "79": "Daedalus Workspace",
   "80": "system_definition",
   "81": "integrating.md",
+  "82": "page.tsx",
   "83": "Daedalus Project Instructions",
   "84": "README.md",
   "85": "prune-local-branches.sh",
@@ -100,6 +104,5 @@
   "102": "Path",
   "103": "README.md",
   "107": "test_main.py",
-  "109": "entry-point-picker.tsx",
   "111": "system_definition"
 }

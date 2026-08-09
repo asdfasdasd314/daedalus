@@ -4,6 +4,7 @@ import {
   buildCpDocSkeleton,
   cpDocHasAllSections,
   ensureStructuredCpDoc,
+  isCpDocCodingReady,
   parseBridgeReply,
   parseBridgeTasksSection,
 } from "./bridge-session";
@@ -150,6 +151,53 @@ debugging
   assert.equal(parsed.status, "ready");
   assert.match(parsed.cpDoc, /Minimal vision/);
   assert.equal(parsed.tasks.length, 1);
+});
+
+test("isCpDocCodingReady requires real Summary/Stack/State", () => {
+  assert.equal(isCpDocCodingReady(buildCpDocSkeleton("Summary only")), false);
+
+  const ready = `## Project Summary
+App
+
+## Tech Stack
+Next.js + Supabase
+
+## Broad Principles
+(not yet established)
+
+## Project State
+mvp
+
+## Additional Notes
+(none yet)
+`;
+  assert.equal(isCpDocCodingReady(ready), true);
+});
+
+test("demotes ready when required cp_doc sections still placeheld", () => {
+  const parsed = parseBridgeReply(`## Status
+ready
+
+## Cp Doc
+## Project Summary
+App
+
+## Tech Stack
+(not yet established)
+
+## Broad Principles
+-
+
+## Project State
+mvp
+
+## Additional Notes
+-
+
+## Notes
+Should not count as ready.
+`);
+  assert.equal(parsed.status, "need_more_questions");
 });
 
 test("parseBridgeTasksSection tolerates multiline prompts", () => {

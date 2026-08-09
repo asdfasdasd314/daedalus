@@ -71,6 +71,22 @@ const QUESTIONS_HEADING = /^## Questions\s*$/im;
 const TASKS_HEADING = /^## Tasks\s*$/im;
 const TASK_LINE = /^\s*\d+\.\s+\*\*(.+?)\*\*:?\s*(.*)$/;
 
+/** Bodies that do not clear the coding-readiness gate for required sections. */
+const CP_DOC_EMPTY_BODY = new Set([
+  "",
+  "-",
+  "—",
+  "…",
+  "...",
+  "tbd",
+  "n/a",
+  "na",
+  "none",
+  "none yet",
+  "not yet established",
+  "not established",
+]);
+
 export function cpDocHasAllSections(content: string): boolean {
   if (!content.trim()) {
     return false;
@@ -79,6 +95,41 @@ export function cpDocHasAllSections(content: string): boolean {
     new RegExp(`^##\\s+${title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`, "im").test(
       content,
     ),
+  );
+}
+
+/** Body text under a top-level `## {title}` inside a structured cp_doc. */
+export function extractCpDocSectionBody(content: string, title: string): string {
+  const escaped = title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const start = new RegExp(`^##\\s+${escaped}\\s*$`, "im");
+  const match = content.match(start);
+  if (match?.index === undefined) {
+    return "";
+  }
+  const after = match.index + match[0].length;
+  const next = content.slice(after).match(/^##\s+/m);
+  const end = next?.index !== undefined ? after + next.index : content.length;
+  return content.slice(after, end).trim();
+}
+
+export function isCpDocSectionFilled(body: string): boolean {
+  const compact = body
+    .trim()
+    .toLowerCase()
+    .replace(/[()[\]*`_]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return !CP_DOC_EMPTY_BODY.has(compact);
+}
+
+/** True when Project Summary, Tech Stack, and Project State have real content. */
+export function isCpDocCodingReady(content: string): boolean {
+  const structured = ensureStructuredCpDoc(content);
+  if (!cpDocHasAllSections(structured)) {
+    return false;
+  }
+  return CP_DOC_REQUIRED_SECTIONS.every((title) =>
+    isCpDocSectionFilled(extractCpDocSectionBody(structured, title)),
   );
 }
 
@@ -215,6 +266,16 @@ export function parseBridgeReply(reply: string): {
   // Build-loop contract: at most one next task when status is next_task.
   if (status === "next_task" && tasks.length > 1) {
     tasks = tasks.slice(0, 1);
+  }
+
+  // Host-side gate: never treat vision as ready with placeheld required sections.
+  const structuredCpDoc = cpDoc.trim() ? ensureStructuredCpDoc(cpDoc) : "";
+  if (
+    (status === "ready" || status === "next_task" || status === "mvp_complete")
+    && structuredCpDoc
+    && !isCpDocCodingReady(structuredCpDoc)
+  ) {
+    status = "need_more_questions";
   }
 
   return {

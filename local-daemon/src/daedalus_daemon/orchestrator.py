@@ -1051,6 +1051,25 @@ def commit_worktree_changes(directory: str, message: str) -> bool:
     return True
 
 
+def commit_paths(directory: str, relative_paths: list[str], message: str) -> bool:
+    """Stage and commit only the given paths. No-op when not a git repo or no changes."""
+    if not relative_paths:
+        return False
+    root = Path(directory)
+    if not (root / ".git").exists():
+        return False
+    status = git_output(directory, ["status", "--porcelain", "--", *relative_paths])
+    if not status.strip():
+        return False
+    add = run_process(directory, ["git", "add", "--", *relative_paths])
+    if add.returncode != 0:
+        raise RuntimeError(format_process_failure(add.args, add.stdout, add.stderr))
+    commit = run_process(directory, ["git", "commit", "-m", message])
+    if commit.returncode != 0:
+        raise RuntimeError(format_process_failure(commit.args, commit.stdout, commit.stderr))
+    return True
+
+
 def find_migration_directories(root: Path) -> list[Path]:
     found = []
     for dirpath, dirnames, _filenames in os.walk(root):

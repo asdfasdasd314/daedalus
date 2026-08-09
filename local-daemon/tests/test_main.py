@@ -488,8 +488,13 @@ class BuildCodexPromptTests(unittest.TestCase):
         self.assertIn("Continue the answer-oriented bridge from the current cp_doc", prompt)
         self.assertIn("User auth needed", prompt)
         self.assertIn("Beat fees alone?: 1. Maker only", prompt)
+        self.assertIn("MUST apply every stated fact", prompt)
+        self.assertIn("already decided", prompt.lower())
+        self.assertIn("at most three potential answers", prompt.lower())
+        self.assertIn("enter your own", prompt.lower())
         self.assertIn("feature_files/answer-oriented-programming.md", prompt)
         self.assertNotIn("at most five questions", prompt.lower())
+        self.assertNotIn("options may be as many as useful", prompt.lower())
         self.assertNotIn(TASK_MODE_PLANNING, prompt)
         self.assertNotIn(PLANNING_PROMPT_SUFFIX.rstrip(), prompt)
 
@@ -593,6 +598,57 @@ class BridgeCpDocPersistenceTests(unittest.TestCase):
             path = write_project_cp_doc(tmp, "User auth needed")
             self.assertEqual(path.name, CP_DOC_FILENAME)
             self.assertEqual(path.read_text(encoding="utf-8"), "User auth needed\n")
+
+    def test_write_cp_doc_commits_only_that_file_in_git_repo(self):
+        import subprocess
+        import tempfile
+        from daedalus_daemon.main import CP_DOC_FILENAME, write_project_cp_doc
+
+        with tempfile.TemporaryDirectory() as tmp:
+            subprocess.run(["git", "init"], cwd=tmp, check=True, capture_output=True)
+            subprocess.run(
+                ["git", "config", "user.email", "test@example.com"],
+                cwd=tmp,
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.name", "Test"],
+                cwd=tmp,
+                check=True,
+                capture_output=True,
+            )
+            readme = Path(tmp) / "README.md"
+            readme.write_text("seed\n", encoding="utf-8")
+            subprocess.run(["git", "add", "README.md"], cwd=tmp, check=True, capture_output=True)
+            subprocess.run(
+                ["git", "commit", "-m", "init"],
+                cwd=tmp,
+                check=True,
+                capture_output=True,
+            )
+            dirty = Path(tmp) / "other.txt"
+            dirty.write_text("leave me uncommitted\n", encoding="utf-8")
+
+            write_project_cp_doc(tmp, "User auth needed")
+
+            status = subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=tmp,
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout
+            self.assertIn("?? other.txt", status)
+            self.assertNotIn(CP_DOC_FILENAME, status)
+            log = subprocess.run(
+                ["git", "log", "-1", "--pretty=%s"],
+                cwd=tmp,
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            self.assertEqual(log, "Daedalus update cp_doc.md")
 
     def test_bridge_cycle_seeds_and_persists_cp_doc_from_reply(self):
         import tempfile

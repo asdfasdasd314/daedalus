@@ -111,9 +111,39 @@ Required before coding (and before status ready): Project Summary, Tech Stack, a
 Project State must have real operator-confirmed content (not placeholders / empty).
 Broad Principles and Additional Notes are optional for that gate — fill them when useful.
 
-Questions exist only to fill holes and resolve decision axes that materially change
-cp_doc. Prefer high-coverage questions that collapse multiple downstream choices over
-low-leverage trivia. Bias early turns toward required empty/weak sections.
+Applying operator answers (critical — do this every turn):
+- Fold EVERY stated fact from the direction and Q&A into the matching section bodies
+  in the full ## Cp Doc replacement before drafting new questions.
+- If an answer names languages, frameworks, hosts, DBs, or services, Tech Stack MUST
+  list them on that turn. Never leave "(not yet established)" for any dimension the
+  operator already answered.
+- Same for Project Summary / Project State / other sections when answers speak to them.
+- Never invent stack or requirements the operator has not stated or confirmed.
+- Placeholders only for dimensions that remain unanswered after applying all answers.
+
+What to ask vs free reign:
+- Later coding agents have free implementation reign once vision is clear. You do too
+  for anything that is purely technical and does not change operator product intent.
+- Ask ONLY operator-owned decisions you cannot know without them (product goals,
+  constraints, stack choices they care about, phase priorities).
+- Do not ask questions you can decide yourself. If you do not need the answer to update
+  cp_doc, do not ask.
+
+Questions + recommended answers (same pattern as plan-mode questionnaires):
+- Prefer high-coverage questions that collapse multiple downstream choices.
+- Bias early turns toward required empty/weak sections.
+- For each question, suggest at most three potential answers (a / b / c). Prefer
+  exactly three strong alternatives when the decision space supports them.
+- Every option must be a concrete selectable choice (e.g. "Next.js + Vercel",
+  "Python FastAPI", "MVP first, polish later") — real alternatives the operator can pick.
+- The host UI already adds an implicit freeform "Enter your own" field after your
+  options. Do NOT emit freeform/escape-hatch options yourself (not as a lettered
+  choice and not as the last option): no "other", "enter your own", "something else",
+  "custom", "specify later", etc.
+- Forbidden meta-options (never emit these or close paraphrases): "already decided",
+  "this has already been decided", "you decide", "agent chooses", "use best judgment",
+  "whatever is best", "N/A", "not sure / let AI decide".
+- If a prior answer already decided a topic, update cp_doc and do not re-ask it.
 
 Concision rules for every section:
 - Short clauses; drop obvious elaborations and restatements.
@@ -125,7 +155,8 @@ Concision rules for every section:
   and section roles are rigid.
 
 Mutability guidance:
-- Change Project Summary / Tech Stack only when the operator revises foundational intent.
+- Change Project Summary / Tech Stack when the operator revises foundational intent or
+  newly answers those dimensions (answers always win over stale placeholders).
 - Broad Principles and Additional Notes may change every turn as understanding evolves.
 - Project State should track current phase and priorities without inventing a roadmap.
 
@@ -150,7 +181,7 @@ need_more_questions
 [operator-confirmed product summary, or (not yet established)]
 
 ## Tech Stack
-[languages/frameworks/services, or (not yet established)]
+[languages/frameworks/services from operator answers, or (not yet established)]
 
 ## Broad Principles
 [optional guiding principles, or (not yet established)]
@@ -173,6 +204,8 @@ are still weak, and why you asked these questions.
    - c. [potential answer]
 ```
 
+(Host UI appends freeform "Enter your own" after a–c — do not add that option yourself.)
+
 or, when understanding is solid enough (tasks optional / low priority):
 
 ```md
@@ -184,7 +217,7 @@ ready
 [confirmed summary]
 
 ## Tech Stack
-[confirmed stack]
+[confirmed stack from operator answers — never a placeholder at ready]
 
 ## Broad Principles
 [principles if any]
@@ -208,15 +241,21 @@ Rules:
 - Keep the five ## headings even when a section body is still a placeholder.
 - Prefer "(not yet established)" for empty required/optional sections, and
   "(none yet)" for empty Additional Notes — never omit a heading.
+- After answers: fill every section those answers speak to. Leaving Tech Stack as
+  "(not yet established)" when the operator already named stack facts is wrong.
 - status ready ONLY if Project Summary, Tech Stack, and Project State have real
   operator-confirmed content (not placeholders). Broad Principles and Additional Notes
   may remain thin or placeheld.
 - If any required section is still placeheld or empty, status must be
-  need_more_questions and Questions should target those gaps.
+  need_more_questions and Questions should target those gaps with concrete options.
 - If status is need_more_questions, include a non-empty ## Questions section.
 - There is no maximum number of questions per turn; ask as many high-coverage
   questions as needed in one mass batch.
-- Options may be as many as useful to span the decision surface (no artificial cap).
+- Never suggest more than three potential answers per question (a–c only), same as
+  plan mode. Each must be a concrete pickable alternative — never meta
+  "already decided" / "you decide" / freeform-escape options (UI already has
+  Enter your own).
+- Do not re-ask topics already answered; apply them to cp_doc instead.
 - When vision is ready, prefer status ready without multi-task fan-out; the host
   build loop will later request one next_task at a time. Do not emit large ## Tasks
   lists during vision Q&A (omit Tasks or keep optional single illustrative task).
@@ -291,12 +330,15 @@ Context priority (strict):
 3) graphify structure queries when needed
 4) source code only if still required after the above (expensive)
 
-Ask implementation questions only when gaps block safe execution of THIS task
-(missing packager, auth choice that affects scaffolding, etc.). Never dump a full plan —
-operators only see questions and short notes.
+Ask implementation questions only when operator-owned gaps block safe execution of THIS
+task (e.g. product constraint affecting scaffolding). You have free reign on technical
+choices the operator does not need to make — decide those yourself and do not ask.
+
+Never dump a full plan — operators only see questions and short notes.
 
 If operator answers change product vision, include ## Optional Cp Doc with a full
-five-section replacement. The host may persist it.
+five-section replacement. The host may persist it. Apply answered stack/vision facts
+into that doc; never invent; never leave answered stack as "(not yet established)".
 
 """
 IMPL_PREP_PROMPT_SUFFIX = """Always respond with this Markdown contract only (no file writes).
@@ -315,6 +357,8 @@ What still blocks starting.
    - b. [potential answer]
    - c. [potential answer]
 ```
+
+(Host UI appends freeform "Enter your own" after a–c — do not add that option yourself.)
 
 or when ready:
 
@@ -345,8 +389,13 @@ Task can be initiated.
 Rules:
 - need_more_questions requires a non-empty ## Questions section.
 - ready_to_execute means the operator can start durable coding for this task.
+- Ask only when you truly need an operator decision; otherwise choose and proceed to
+  ready_to_execute.
+- At most three potential answers per question (a–c), each a concrete selectable
+  alternative. Host UI already adds freeform "Enter your own" — never emit that or
+  meta lines like "already decided", "you decide", "use best judgment", "other".
 - Do not implement code. Do not write files.
-- Optional Cp Doc only when answers change vision/stack state.
+- Optional Cp Doc only when answers change vision/stack state; fold facts carefully.
 
 """
 CURSOR_BRIDGE_PROMPT_PREFIX = (
@@ -726,9 +775,22 @@ def run_agent_prompt_cycle(
         try:
             write_project_cp_doc(directory, seed_cp_doc)
         except Exception as error:
-            logging.getLogger(__name__).warning(
-                "Failed to seed %s for %s: %s", CP_DOC_FILENAME, directory, error,
+            detail = f"Failed to seed and commit {CP_DOC_FILENAME}: {error}"
+            logging.getLogger(__name__).error("%s (%s)", detail, directory)
+            history_publisher(
+                config, prompt_id, directory, prompt, "", detail, provider,
+                model, reasoning, mode, targeted_feature_paths, conversation_id,
+                status="failed",
+                status_detail=detail,
             )
+            if deliver_chat is None:
+                write_message(
+                    config, AGENT_PROMPT_PURPOSE, CLIENT_REVIEW,
+                    build_agent_prompt_state_message(prompt_id, DAEMON_SENT_RESPONSE),
+                )
+            else:
+                write_message(config, AGENT_PROMPT_PURPOSE, DAEMON_COMPLETE)
+            return
     final_prompt = (
         build_cursor_prompt(
             prompt,
@@ -802,19 +864,42 @@ def run_agent_prompt_cycle(
         try:
             persist_bridge_cp_doc_from_reply(directory, reply)
         except Exception as error:
-            logging.getLogger(__name__).warning(
-                "Failed to persist %s for %s: %s", CP_DOC_FILENAME, directory, error,
+            detail = f"Failed to persist and commit {CP_DOC_FILENAME}: {error}"
+            logging.getLogger(__name__).error("%s (%s)", detail, directory)
+            history_publisher(
+                config, prompt_id, directory, prompt, reply or "", detail, provider,
+                model, reasoning, mode, targeted_feature_paths, conversation_id,
+                status="failed",
+                status_detail=detail,
             )
+            if deliver_chat is None:
+                write_message(
+                    config, AGENT_PROMPT_PURPOSE, CLIENT_REVIEW,
+                    build_agent_prompt_state_message(prompt_id, DAEMON_SENT_RESPONSE),
+                )
+            else:
+                write_message(config, AGENT_PROMPT_PURPOSE, DAEMON_COMPLETE)
+            return
     elif impl_prep_mode:
         try:
             persist_optional_cp_doc_from_reply(directory, reply)
         except Exception as error:
-            logging.getLogger(__name__).warning(
-                "Failed to persist optional %s for %s: %s",
-                CP_DOC_FILENAME,
-                directory,
-                error,
+            detail = f"Failed to persist and commit optional {CP_DOC_FILENAME}: {error}"
+            logging.getLogger(__name__).error("%s (%s)", detail, directory)
+            history_publisher(
+                config, prompt_id, directory, prompt, reply or "", detail, provider,
+                model, reasoning, mode, targeted_feature_paths, conversation_id,
+                status="failed",
+                status_detail=detail,
             )
+            if deliver_chat is None:
+                write_message(
+                    config, AGENT_PROMPT_PURPOSE, CLIENT_REVIEW,
+                    build_agent_prompt_state_message(prompt_id, DAEMON_SENT_RESPONSE),
+                )
+            else:
+                write_message(config, AGENT_PROMPT_PURPOSE, DAEMON_COMPLETE)
+            return
 
     if deliver_chat is None:
         history_publisher(
@@ -898,6 +983,19 @@ def ensure_structured_cp_doc(content: object) -> str:
     return build_cp_doc_skeleton(summary)
 
 
+def commit_project_cp_doc(project_directory: object) -> bool:
+    """Commit only cp_doc.md on the primary worktree so coding admission stays clean."""
+    if not isinstance(project_directory, (str, Path)) or not str(project_directory).strip():
+        return False
+    from .orchestrator import commit_paths
+
+    return commit_paths(
+        str(Path(project_directory).expanduser().resolve()),
+        [CP_DOC_FILENAME],
+        "Daedalus update cp_doc.md",
+    )
+
+
 def write_project_cp_doc(project_directory: object, content: object) -> Path:
     """Write cp_doc.md at the project root. Agents must not write this themselves."""
     if not isinstance(project_directory, (str, Path)) or not str(project_directory).strip():
@@ -912,6 +1010,12 @@ def write_project_cp_doc(project_directory: object, content: object) -> Path:
     if target.parent != project_root:
         raise ValueError("cp_doc.md path must stay inside the selected project.")
     target.write_text(body if body.endswith("\n") else f"{body}\n", encoding="utf-8")
+    try:
+        commit_project_cp_doc(project_root)
+    except Exception as error:
+        raise RuntimeError(
+            f"Wrote {CP_DOC_FILENAME} but failed to commit it on the primary worktree: {error}"
+        ) from error
     return target
 
 
@@ -1719,7 +1823,11 @@ def build_bridge_refinement_context(
             "(Project Summary, Tech Stack, Broad Principles, Project State, "
             "Additional Notes) in that order. Prefer updating weak required "
             "sections before optional ones. status ready only when Project Summary, "
-            "Tech Stack, and Project State are operator-confirmed (not placeheld).\n\n"
+            "Tech Stack, and Project State are operator-confirmed (not placeheld). "
+            "You have free implementation reign for anything purely technical; ask "
+            "only operator-owned decisions. For each question list at most three "
+            "concrete a/b/c options (UI already provides Enter your own) — never "
+            "meta 'already decided' / 'you decide' / freeform-escape choices.\n\n"
             f"Current cp_doc:\n\n{structured.strip()}",
         )
 
@@ -1735,7 +1843,11 @@ def build_bridge_refinement_context(
 
     if answers:
         sections.append(
-            "Operator answers (apply these to update the matching cp_doc sections):\n"
+            "Operator answers — MUST apply every stated fact into the matching "
+            "## section in the full ## Cp Doc replacement this turn. If any answer "
+            "names languages/frameworks/hosts/services, write them into Tech Stack "
+            "and do not leave that dimension as (not yet established). Never invent "
+            "unstated stack. Do not re-ask dimensions already covered here:\n"
             + "\n".join(answers),
         )
 

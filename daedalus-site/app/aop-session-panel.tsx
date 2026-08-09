@@ -4,6 +4,7 @@ import type { TargetedFeature } from "@/lib/agent-chat-cache";
 import type { AgentModelsConfig } from "@/lib/agent-models";
 import type { AopExecutionLoop } from "@/lib/aop-loop";
 import type { BridgeSession, BridgeTask } from "@/lib/bridge-session";
+import { isCpDocCodingReady } from "@/lib/bridge-session";
 import type { PlanningQuestion } from "@/lib/planning-questionnaire";
 import { getCompactProjectLabel, getProjectLabel } from "./feature-workspace-utils";
 
@@ -100,7 +101,7 @@ export default function AopSessionPanel({
   const canStartLoop = Boolean(
     acceptsWork
     && bridgeSession
-    && (bridgeSession.phase === "ready" || bridgeSession.cpDoc)
+    && isCpDocCodingReady(bridgeSession.cpDoc)
     && (!aopLoop || ["completed", "cancelled", "failed"].includes(aopLoop.status)),
   );
   const loopActive = Boolean(
@@ -327,6 +328,14 @@ export default function AopSessionPanel({
           {bridgeSession.proposedTasks.length > 0 ? (
             <TaskList tasks={bridgeSession.proposedTasks} label="Latest task" />
           ) : null}
+          {bridgeSession.cpDoc && !isCpDocCodingReady(bridgeSession.cpDoc) ? (
+            <p className="text-sm text-amber-200/90">
+              Fill Project Summary, Tech Stack, and Project State before the build loop
+              (placeholders like “not yet established” do not count). Answer bridge
+              questions so those sections update — the agent must write your answers into
+              cp_doc, not leave them blank.
+            </p>
+          ) : null}
           {canStartLoop ? (
             <button
               type="button"
@@ -507,7 +516,7 @@ function BridgeQuestionnaire({
         <input
           value={otherAnswer}
           onChange={(event) => onOtherAnswerChange(event.target.value)}
-          placeholder="Other answer…"
+          placeholder="Enter your own…"
           className="min-w-[12rem] flex-1 rounded-full border border-white/10 bg-slate-900/80 px-4 py-2 text-sm text-slate-100 outline-none"
         />
         <button

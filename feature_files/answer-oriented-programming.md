@@ -6,7 +6,7 @@ Answer-oriented programming (AOP) is a top-level workspace method: vision Q&A wi
 ## Key Points
 - **Bridge profile**: `TASK_MODE: bridge` loads `.agents/profiles/bridge.md`.
 - **cp_doc sections**: Project Summary, Tech Stack, Broad Principles, Project State, Additional Notes. Coding readiness requires Summary, Tech Stack, Project State.
-- **cp_doc storage**: `BridgeSession.cpDoc` + `{project_root}/cp_doc.md` written by the daemon.
+- **cp_doc storage**: `BridgeSession.cpDoc` + `{project_root}/cp_doc.md` written by the daemon; each write is committed on the primary branch as `Daedalus update cp_doc.md` (file-scoped) so the primary worktree stays clean for coding admission.
 - **Vision questions**: Mass batches, no cap; UI “Question N of M.”
 - **Build loop table**: `aop_execution_loops` — one active row per `(user_id, repository)`. Status machine: bridging_task → prep → awaiting_answers → awaiting_start → executing → (awaiting_verification every N) → … → completed | paused | cancelled | failed.
 - **Tasking**: Bridge `bridgeTasking` emits `next_task` (exactly one task) or `mvp_complete`.
@@ -36,3 +36,4 @@ HACKING
 - 2026-08-08: Host daemon persists per-project `cp_doc.md` at the project root for operator and agent access.
 - 2026-08-08: Structured cp_doc into five fixed sections with a coding readiness gate on Summary, Tech Stack, and Project State.
 - 2026-08-08: Added durable recursive build loop (one task at a time, impl prep, Start task, Stop/Resume, verify every N, revert).
+- 2026-08-08: Host auto-commits `cp_doc.md` after seed/persist so AOP does not leave the primary tree dirty and block worktree admission.

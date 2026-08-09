@@ -45,6 +45,7 @@ import {
 } from "@/lib/planning-questionnaire";
 import {
   ensureStructuredCpDoc,
+  isCpDocCodingReady,
   parseBridgeReply,
   type BridgeSession,
 } from "@/lib/bridge-session";
@@ -2234,6 +2235,12 @@ export default function FeatureFilesDashboard({
       return;
     }
     setPromptSubmissionError("");
+    if (!isCpDocCodingReady(bridgeSession.cpDoc)) {
+      setPromptSubmissionError(
+        "Build loop needs Project Summary, Tech Stack, and Project State filled in cp_doc (not placeholders). Answer the bridge questions so those sections update first.",
+      );
+      return;
+    }
     try {
       const existing = await fetchActiveAopLoop(
         supabaseUrl,
