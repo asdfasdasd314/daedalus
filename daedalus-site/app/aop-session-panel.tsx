@@ -356,6 +356,11 @@ export default function AopSessionPanel({
               {aopLoop.status}
             </span>
           </div>
+          <p className="text-xs leading-5 text-slate-500">
+            Loop state is durable (database: aop_execution_loops). Coding runs as agent_tasks
+            rows and only count completed when that row is completed; failures stay on the
+            same slice so you can Start task again. Vision Q&amp;A alone uses browser storage.
+          </p>
           {aopLoop.statusDetail ? (
             <p className="rounded-[1.25rem] border border-white/10 bg-black/30 px-4 py-3 text-sm text-slate-100">
               {aopLoop.statusDetail}
@@ -366,6 +371,11 @@ export default function AopSessionPanel({
               <p>
                 <span className="text-slate-500">Task: </span>
                 {aopLoop.currentTaskTitle}
+              </p>
+            ) : null}
+            {aopLoop.currentAgentTaskId ? (
+              <p className="truncate text-xs text-slate-500" title={aopLoop.currentAgentTaskId}>
+                agent_tasks {aopLoop.currentAgentTaskId}
               </p>
             ) : null}
             <p>
@@ -416,7 +426,9 @@ export default function AopSessionPanel({
                 disabled={!acceptsWork}
                 className="rounded-full bg-cyan-300 px-5 py-3 text-sm font-semibold text-slate-950 hover:bg-cyan-200 disabled:opacity-50"
               >
-                Start task
+                {/Start task again|failed|clean|Could not queue/i.test(aopLoop.statusDetail)
+                  ? "Retry Start task"
+                  : "Start task"}
               </button>
             ) : null}
             {aopLoop.status === "awaiting_verification" ? (

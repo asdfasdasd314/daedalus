@@ -9,6 +9,7 @@ Answer-oriented programming (AOP) is a top-level workspace method: vision Q&A wi
 - **cp_doc storage**: `BridgeSession.cpDoc` + `{project_root}/cp_doc.md` written by the daemon; each write is committed on the primary branch as `Daedalus update cp_doc.md` (file-scoped) so the primary worktree stays clean for coding admission.
 - **Vision questions**: Mass batches, no cap; UI “Question N of M.”
 - **Build loop table**: `aop_execution_loops` — one active row per `(user_id, repository)`. Status machine: bridging_task → prep → awaiting_answers → awaiting_start → executing → (awaiting_verification every N) → … → completed | paused | cancelled | failed.
+- **Authority**: Loop control plane is the database row. Vision `BridgeSession` may hydrate from localStorage for Q&A UX only. Coding progress is `agent_tasks` (`source_loop_id` + `current_agent_task_id`); the loop only advances to the next bridge emission when that durable task is **completed**. Failed/blocked launch returns to **awaiting_start** on the same slice (retry Start task). Cancelled → paused at awaiting_start. Client reconcilies stuck `executing` loops against `agent_tasks` on load.
 - **Tasking**: Bridge `bridgeTasking` emits `next_task` (exactly one task) or `mvp_complete`.
 - **Impl prep**: `implPrepMode` direct prompts (read-only); questions only; optional ## Optional Cp Doc; operator must click **Start task** after `ready_to_execute`.
 - **Execution**: durable `agent_tasks` (`source_loop_id`) via existing worktree orchestrator (per-task commit + integrate + cancel).
@@ -37,3 +38,4 @@ HACKING
 - 2026-08-08: Structured cp_doc into five fixed sections with a coding readiness gate on Summary, Tech Stack, and Project State.
 - 2026-08-08: Added durable recursive build loop (one task at a time, impl prep, Start task, Stop/Resume, verify every N, revert).
 - 2026-08-08: Host auto-commits `cp_doc.md` after seed/persist so AOP does not leave the primary tree dirty and block worktree admission.
+- 2026-08-08: Loop advances only on completed agent_tasks; launch failures return to awaiting_start for retry; reconcile stuck executing on hydrate.

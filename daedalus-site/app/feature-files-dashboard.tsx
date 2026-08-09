@@ -56,8 +56,10 @@ import {
   buildDurableImplementationPrompt,
   buildImplPrepUserPrompt,
   DEFAULT_MAX_TASKS_BEFORE_VERIFICATION,
+  isAopCodingTaskInFlight,
+  isAopCodingTaskTerminal,
+  loopPatchAfterCodingTaskTerminal,
   mapAopLoopRow,
-  nextStatusAfterTaskComplete,
   pauseTargetStatus,
   resumeStatusFromPaused,
 } from "@/lib/aop-loop";
@@ -599,10 +601,18 @@ export default function FeatureFilesDashboard({
       currentUserId,
       selectedProjectDirectory,
     )
-      .then((loop) => {
-        if (!cancelled) {
-          setAopLoop(loop);
+      .then(async (loop) => {
+        if (cancelled) {
+          return;
         }
+        if (!loop) {
+          setAopLoop(null);
+          return;
+        }
+        setAopLoop(loop);
+        // Durable agent_tasks is source of truth for coding progress; reconcile if
+        // the client missed a client_review while the loop stayed "executing".
+        await reconcileAopLoopWithCodingTask(loop);
       })
       .catch(() => {
         if (!cancelled) {
@@ -2281,6 +2291,24 @@ export default function FeatureFilesDashboard({
     if (!session) {
       return;
     }
+    // Never emit a new bridge task while an unfinished coding slice still owns the loop.
+    if (
+      loop.status === "executing"
+      || loop.status === "awaiting_start"
+      || loop.status === "prep"
+      || loop.status === "awaiting_answers"
+    ) {
+      setPromptSubmissionError(
+        "Cannot choose a new coding task until the current slice is completed or cancelled.",
+      );
+      return;
+    }
+    if (loop.currentAgentTaskId) {
+      setPromptSubmissionError(
+        "A durable agent_tasks row is still linked to this loop. Wait for complete/cancel, or Start again after a failed launch.",
+      );
+      return;
+    }
     const promptId = createPromptId();
     const prompt = buildBridgeTaskingPrompt({
       directionPrompt: loop.directionPrompt || session.directionPrompt,
@@ -2305,10 +2333,14 @@ export default function FeatureFilesDashboard({
       status: "queued",
       enqueuedAt: Date.now(),
     };
+    const completed = loop.tasksCompletedTotal;
+    const detail = completed === 0
+      ? "Bridge is choosing the first coding task…"
+      : `Bridge is choosing coding task #${completed + 1}…`;
     void patchAopLoop(loop.id, {
       status: "bridging_task",
       active_prompt_id: promptId,
-      status_detail: "Bridge is choosing the next coding task…",
+      status_detail: detail,
     });
     setBridgeSession((current) =>
       current
@@ -2330,6 +2362,37 @@ export default function FeatureFilesDashboard({
     if (!daemonAcceptsWork) {
       setPromptSubmissionError(DAEMON_ADMISSION_MESSAGE);
       return;
+    }
+    if (!loop.currentTaskTitle.trim() || !loop.currentTaskPrompt.trim()) {
+      setPromptSubmissionError("No current coding task on this loop. Wait for bridge tasking, or restart the loop.");
+      return;
+    }
+    // If a prior agent_tasks row is still linked and not terminal, do not insert another.
+    if (loop.currentAgentTaskId) {
+      try {
+        const existing = await fetchAgentTaskById(
+          supabaseUrl,
+          supabasePublishableKey,
+          accessToken,
+          currentUserId,
+          loop.currentAgentTaskId,
+        );
+        if (existing && isAopCodingTaskInFlight(existing.status)) {
+          setPromptSubmissionError(
+            `Coding task ${loop.currentAgentTaskId} is still ${existing.status}. Stop/cancel it or wait for complete before starting again.`,
+          );
+          return;
+        }
+        if (existing && isAopCodingTaskTerminal(existing.status)) {
+          await patchAopLoop(loop.id, {
+            current_agent_task_id: null,
+            status_detail: `Prior coding task was ${existing.status}. Ready to Start again on the same slice.`,
+          });
+        }
+      } catch {
+        // If lookup fails, clear the link so retry can insert a fresh durable row.
+        await patchAopLoop(loop.id, { current_agent_task_id: null });
+      }
     }
     const promptId = createPromptId();
     const durablePrompt = buildDurableImplementationPrompt({
@@ -2361,10 +2424,11 @@ export default function FeatureFilesDashboard({
       );
       await patchAopLoop(loop.id, {
         status: "executing",
-        status_detail: `Executing: ${loop.currentTaskTitle}`,
+        status_detail: `Executing: ${loop.currentTaskTitle} (agent_tasks ${promptId})`,
         current_agent_task_id: promptId,
         active_prompt_id: promptId,
       });
+      previousDurableTaskStatusesRef.current.set(promptId, "queued");
       setDurableAgentTasks((current) => [
         ...current,
         {
@@ -2385,9 +2449,17 @@ export default function FeatureFilesDashboard({
         },
       ]);
       setPromptStatus(`Durable coding task queued: ${loop.currentTaskTitle}`);
+      setPromptSubmissionError("");
     } catch (error) {
       const detail = error instanceof Error ? error.message : "Unable to start coding task.";
       setPromptSubmissionError(detail);
+      // Stay on this slice (awaiting_start) so operator can retry.
+      await patchAopLoop(loop.id, {
+        status: "awaiting_start",
+        current_agent_task_id: null,
+        active_prompt_id: "",
+        status_detail: `Could not queue coding task: ${detail}`,
+      });
     }
   }
 
@@ -2396,7 +2468,12 @@ export default function FeatureFilesDashboard({
     if (!loop || !isLoopActiveStatus(loop.status)) {
       return;
     }
-    const pausedFrom = pauseTargetStatus(loop.status);
+    // Cancelling an in-flight coding task should resume at Start task, not
+    // re-enter a dead "executing" status without an agent_tasks row.
+    const pausedFrom =
+      loop.status === "executing"
+        ? "awaiting_start"
+        : (pauseTargetStatus(loop.status) ?? loop.status);
     if (loop.currentAgentTaskId && loop.status === "executing") {
       try {
         await cancelDurableAgentTask(
@@ -2411,10 +2488,12 @@ export default function FeatureFilesDashboard({
     }
     await patchAopLoop(loop.id, {
       status: "paused",
-      paused_from: pausedFrom ?? "",
+      paused_from: pausedFrom,
       cancel_requested: true,
       status_detail: "Loop stopped by operator.",
       active_prompt_id: "",
+      current_agent_task_id:
+        loop.status === "executing" ? null : loop.currentAgentTaskId,
     });
     setPromptStatus("AOP build loop stopped.");
   }
@@ -2424,15 +2503,54 @@ export default function FeatureFilesDashboard({
     if (!loop || loop.status !== "paused" || !daemonAcceptsWork) {
       return;
     }
-    const resume = resumeStatusFromPaused(loop.pausedFrom) ?? "bridging_task";
+    let resume = resumeStatusFromPaused(loop.pausedFrom) ?? "bridging_task";
+    // Never re-enter "executing" without a live agent_tasks row. Prefer retry gate.
+    if (resume === "executing") {
+      if (loop.currentAgentTaskId && accessToken && currentUser) {
+        try {
+          const existing = await fetchAgentTaskById(
+            supabaseUrl,
+            supabasePublishableKey,
+            accessToken,
+            currentUserId,
+            loop.currentAgentTaskId,
+          );
+          if (existing && isAopCodingTaskInFlight(existing.status)) {
+            await patchAopLoop(loop.id, {
+              status: "executing",
+              cancel_requested: false,
+              paused_from: "",
+              status_detail: `Resumed coding (${existing.status}): ${loop.currentTaskTitle}`,
+            });
+            setPromptStatus(`Resumed in-flight coding task: ${loop.currentTaskTitle}`);
+            return;
+          }
+        } catch {
+          // fall through to awaiting_start
+        }
+      }
+      resume = "awaiting_start";
+    }
     await patchAopLoop(loop.id, {
       status: resume,
       cancel_requested: false,
       paused_from: "",
-      status_detail: `Resumed at ${resume}.`,
+      current_agent_task_id:
+        resume === "awaiting_start" || resume === "bridging_task"
+          ? null
+          : loop.currentAgentTaskId,
+      status_detail:
+        resume === "awaiting_start"
+          ? `Resumed — Start task to run: ${loop.currentTaskTitle}`
+          : `Resumed at ${resume}.`,
     });
     if (resume === "bridging_task") {
-      queueBridgeTasking({ ...loop, status: resume, cancelRequested: false });
+      queueBridgeTasking({
+        ...loop,
+        status: resume,
+        cancelRequested: false,
+        currentAgentTaskId: null,
+      });
     } else if (resume === "prep" || resume === "awaiting_answers") {
       queueImplPrep(loop.currentTaskTitle, loop.currentTaskPrompt);
     } else if (resume === "awaiting_start") {
@@ -2558,6 +2676,44 @@ export default function FeatureFilesDashboard({
     return !["completed", "cancelled", "failed"].includes(status);
   }
 
+  async function applyAopCodingTaskTerminal(
+    loop: AopExecutionLoop,
+    taskStatus: string,
+    taskError?: string,
+  ) {
+    const patch = loopPatchAfterCodingTaskTerminal({
+      tasksCompletedTotal: loop.tasksCompletedTotal,
+      tasksSinceVerification: loop.tasksSinceVerification,
+      maxTasksBeforeVerification: loop.maxTasksBeforeVerification,
+      recentTaskTitles: loop.recentTaskTitles,
+      currentTaskTitle: loop.currentTaskTitle,
+      taskStatus,
+      taskError,
+    });
+    if (!patch) {
+      return;
+    }
+    await patchAopLoop(loop.id, patch.updates);
+    if (patch.shouldQueueBridge) {
+      const nextSince = (patch.updates.tasks_since_verification
+        ?? loop.tasksSinceVerification + 1);
+      const titles = patch.updates.recent_task_titles ?? loop.recentTaskTitles;
+      queueBridgeTasking({
+        ...loop,
+        status: "bridging_task",
+        tasksCompletedTotal:
+          patch.updates.tasks_completed_total ?? loop.tasksCompletedTotal + 1,
+        tasksSinceVerification: nextSince,
+        recentTaskTitles: titles,
+        currentAgentTaskId: null,
+        currentTaskTitle: "",
+        currentTaskPrompt: "",
+      });
+    } else if (patch.updates.status === "awaiting_start") {
+      setPromptStatus(patch.updates.status_detail);
+    }
+  }
+
   async function onAopDurableTaskTerminal(entry: AgentPromptQueueEntry) {
     const loop = aopLoopRef.current;
     if (!loop || loop.status !== "executing") {
@@ -2566,58 +2722,62 @@ export default function FeatureFilesDashboard({
     if (entry.promptId !== loop.currentAgentTaskId && entry.durableTaskId !== loop.currentAgentTaskId) {
       return;
     }
-    if (entry.status === "completed") {
-      const nextSince = loop.tasksSinceVerification;
-      const nextStatus = nextStatusAfterTaskComplete(
-        nextSince,
-        loop.maxTasksBeforeVerification,
-      );
-      const titles = [
-        ...loop.recentTaskTitles,
-        loop.currentTaskTitle,
-      ].filter(Boolean).slice(-12);
+    if (!isAopCodingTaskTerminal(entry.status)) {
+      return;
+    }
+    await applyAopCodingTaskTerminal(loop, entry.status, entry.error);
+  }
+
+  /**
+   * Re-sync aop_execution_loops with agent_tasks when the loop claims to be
+   * executing. Missed client_review notifications (reload, acked inbox) used to
+   * leave the loop stranded in "executing" and then wrongly look like a "next"
+   * bridge turn after the operator forced progress.
+   */
+  async function reconcileAopLoopWithCodingTask(loop: AopExecutionLoop) {
+    if (!accessToken || !currentUser) {
+      return;
+    }
+    if (loop.status !== "executing") {
+      return;
+    }
+    const taskId = loop.currentAgentTaskId;
+    if (!taskId) {
       await patchAopLoop(loop.id, {
-        status: nextStatus,
-        tasks_completed_total: loop.tasksCompletedTotal + 1,
-        tasks_since_verification:
-          nextStatus === "awaiting_verification" ? nextSince + 1 : nextSince + 1,
-        recent_task_titles: titles,
-        current_agent_task_id: null,
-        active_prompt_id: "",
+        status: "awaiting_start",
         status_detail:
-          nextStatus === "awaiting_verification"
-            ? `Verify the last ${loop.maxTasksBeforeVerification} integrated task(s) before continuing.`
-            : "Task integrated — requesting next bridge task…",
+          "Loop was executing without a linked agent_tasks row. Start task to re-queue the same slice.",
+        active_prompt_id: "",
       });
-      if (nextStatus === "bridging_task") {
-        queueBridgeTasking({
-          ...loop,
-          status: "bridging_task",
-          tasksCompletedTotal: loop.tasksCompletedTotal + 1,
-          tasksSinceVerification: nextSince + 1,
-          recentTaskTitles: titles,
+      return;
+    }
+    try {
+      const row = await fetchAgentTaskById(
+        supabaseUrl,
+        supabasePublishableKey,
+        accessToken,
+        currentUserId,
+        taskId,
+      );
+      if (!row) {
+        await patchAopLoop(loop.id, {
+          status: "awaiting_start",
+          current_agent_task_id: null,
+          active_prompt_id: "",
+          status_detail:
+            "Linked coding task row is missing. Start task to re-queue the same slice.",
         });
+        return;
       }
-      return;
-    }
-    if (entry.status === "cancelled") {
-      await patchAopLoop(loop.id, {
-        status: "paused",
-        paused_from: "executing",
-        cancel_requested: true,
-        status_detail: "Coding task cancelled.",
-        current_agent_task_id: null,
-        active_prompt_id: "",
-      });
-      return;
-    }
-    if (entry.status === "failed" || entry.status === "blocked") {
-      await patchAopLoop(loop.id, {
-        status: "failed",
-        status_detail: entry.error || "Coding task failed.",
-        current_agent_task_id: null,
-        active_prompt_id: "",
-      });
+      if (isAopCodingTaskInFlight(row.status)) {
+        return;
+      }
+      if (isAopCodingTaskTerminal(row.status)) {
+        await applyAopCodingTaskTerminal(loop, row.status, row.error || undefined);
+      }
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "Unable to reconcile coding task.";
+      setPromptSubmissionError(detail);
     }
   }
 

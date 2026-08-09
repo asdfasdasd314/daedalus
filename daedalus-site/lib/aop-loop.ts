@@ -200,6 +200,136 @@ export function nextStatusAfterTaskComplete(
   return "bridging_task";
 }
 
+/** Durable coding-task statuses still owned by the daemon / worktree orchestrator. */
+export const AOP_CODING_IN_FLIGHT_STATUSES = [
+  "queued",
+  "running",
+  "verifying",
+  "ready",
+  "integrating",
+  "resolving",
+] as const;
+
+export type AopCodingTaskStatus =
+  | (typeof AOP_CODING_IN_FLIGHT_STATUSES)[number]
+  | "completed"
+  | "failed"
+  | "blocked"
+  | "cancelled"
+  | "stalled";
+
+export function isAopCodingTaskInFlight(
+  status: string | null | undefined,
+): boolean {
+  return AOP_CODING_IN_FLIGHT_STATUSES.includes(
+    status as (typeof AOP_CODING_IN_FLIGHT_STATUSES)[number],
+  );
+}
+
+export function isAopCodingTaskTerminal(
+  status: string | null | undefined,
+): boolean {
+  return (
+    status === "completed"
+    || status === "failed"
+    || status === "blocked"
+    || status === "cancelled"
+  );
+}
+
+/**
+ * Only a completed durable agent_tasks row may advance the loop to the next
+ * bridge emission. Failed / blocked / cancelled keep the same slice so the
+ * operator can retry (Start task) or resume.
+ */
+export type AopLoopAfterCodingTerminal = {
+  /** True only when integrate completed and we should emit the next bridge task. */
+  shouldQueueBridge: boolean;
+  updates: {
+    status: AopLoopStatus;
+    status_detail: string;
+    current_agent_task_id: null;
+    active_prompt_id: string;
+    tasks_completed_total?: number;
+    tasks_since_verification?: number;
+    recent_task_titles?: string[];
+    paused_from?: string;
+    cancel_requested?: boolean;
+  };
+};
+
+export function loopPatchAfterCodingTaskTerminal(input: {
+  tasksCompletedTotal: number;
+  tasksSinceVerification: number;
+  maxTasksBeforeVerification: number;
+  recentTaskTitles: string[];
+  currentTaskTitle: string;
+  taskStatus: string;
+  taskError?: string;
+}): AopLoopAfterCodingTerminal | null {
+  if (input.taskStatus === "completed") {
+    const nextStatus = nextStatusAfterTaskComplete(
+      input.tasksSinceVerification,
+      input.maxTasksBeforeVerification,
+    );
+    const titles = [
+      ...input.recentTaskTitles,
+      input.currentTaskTitle,
+    ].filter(Boolean).slice(-12);
+    const nextSince = input.tasksSinceVerification + 1;
+    return {
+      shouldQueueBridge: nextStatus === "bridging_task",
+      updates: {
+        status: nextStatus,
+        tasks_completed_total: input.tasksCompletedTotal + 1,
+        tasks_since_verification: nextSince,
+        recent_task_titles: titles,
+        current_agent_task_id: null,
+        active_prompt_id: "",
+        status_detail:
+          nextStatus === "awaiting_verification"
+            ? `Verify the last ${input.maxTasksBeforeVerification} integrated task(s) before continuing.`
+            : "Task integrated — requesting another coding task…",
+      },
+    };
+  }
+
+  if (input.taskStatus === "cancelled") {
+    return {
+      shouldQueueBridge: false,
+      updates: {
+        status: "paused",
+        paused_from: "awaiting_start",
+        cancel_requested: true,
+        status_detail:
+          "Coding task cancelled. Resume, then Start task to retry the same slice.",
+        current_agent_task_id: null,
+        active_prompt_id: "",
+      },
+    };
+  }
+
+  if (input.taskStatus === "failed" || input.taskStatus === "blocked") {
+    const detail = (input.taskError || "").trim()
+      || (input.taskStatus === "blocked"
+        ? "Coding task blocked."
+        : "Coding task failed.");
+    return {
+      shouldQueueBridge: false,
+      updates: {
+        // Keep the same current_task_* / prep answers; operator must Start again.
+        status: "awaiting_start",
+        status_detail: `${detail} Fix the issue, then Start task again (same slice — not a new bridge task).`,
+        current_agent_task_id: null,
+        active_prompt_id: "",
+        cancel_requested: false,
+      },
+    };
+  }
+
+  return null;
+}
+
 export function buildBridgeTaskingPrompt(input: {
   directionPrompt: string;
   cpDoc: string;
@@ -208,8 +338,13 @@ export function buildBridgeTaskingPrompt(input: {
   const recent = input.recentTaskTitles.length
     ? input.recentTaskTitles.map((title, index) => `${index + 1}. ${title}`).join("\n")
     : "(none yet)";
+  const completedCount = input.recentTaskTitles.length;
+  const taskOrdinalHint = completedCount === 0
+    ? "Emit the first coding task for this build loop (nothing completed yet)."
+    : `Emit the next coding task after ${completedCount} completed slice(s). Do not re-emit completed titles.`;
   return [
-    "AOP BUILD LOOP — emit the next single coding task toward MVP.",
+    "AOP BUILD LOOP — emit exactly one coding task toward MVP.",
+    taskOrdinalHint,
     "Do not ask vision/cp_doc questions unless a required section regressed to placeholder.",
     "Prefer implementation-level gaps for later prep questions.",
     "",

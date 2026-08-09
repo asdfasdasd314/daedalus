@@ -230,13 +230,13 @@
     "semantic_hash": "191baa0624e6004930827fbf85382d75"
   },
   "local-daemon/src/daedalus_daemon/main.py": {
-    "mtime": 1786243581.172414,
-    "ast_hash": "beb5af116cdfdd8aed3efaf30449d850",
+    "mtime": 1786246831.209418,
+    "ast_hash": "f18c081fa92d91ba6d61c6568887919c",
     "semantic_hash": ""
   },
   "local-daemon/src/daedalus_daemon/orchestrator.py": {
-    "mtime": 1785187678.8170576,
-    "ast_hash": "e7451c7deaf3b67202cb7394dd682cb6",
+    "mtime": 1786246820.2269003,
+    "ast_hash": "d525c41a0779d029e88973dbd1a79d6e",
     "semantic_hash": ""
   },
   "local-daemon/src/daedalus_daemon/scanner.py": {
@@ -260,8 +260,8 @@
     "semantic_hash": "3e0102a25e9c26d0b9504a900a991504"
   },
   "local-daemon/tests/test_main.py": {
-    "mtime": 1786243573.6984482,
-    "ast_hash": "384afc8ba2f3c6bf29eda2fe2f3feb54",
+    "mtime": 1786246844.6180336,
+    "ast_hash": "d689d8d1f06d3a3ed943be38115cae7e",
     "semantic_hash": ""
   },
   "local-daemon/tests/test_orchestrator.py": {
@@ -815,8 +815,8 @@
     "semantic_hash": ""
   },
   "feature_files/answer-oriented-programming.md": {
-    "mtime": 1786241706.4380352,
-    "ast_hash": "1d39b9fcb9219cd8f90f025cc7b365dc",
+    "mtime": 1786246847.3488705,
+    "ast_hash": "d518cf9d11669f2defa346d25a952fda",
     "semantic_hash": ""
   },
   "feature_files/automated-project-initialization.md": {
