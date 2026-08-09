@@ -50,8 +50,8 @@
     "semantic_hash": "eb708572688fbc0c243f038a1dcd39bb"
   },
   "daedalus-site/app/feature-files-dashboard.tsx": {
-    "mtime": 1786308074.5562196,
-    "ast_hash": "2c182d62b4d10a3f519fbd08ea91a35f",
+    "mtime": 1786247689.746344,
+    "ast_hash": "2a740fb1c0583d16b626a1ca406193c0",
     "semantic_hash": ""
   },
   "daedalus-site/app/feature-search-dialog.tsx": {
@@ -730,8 +730,8 @@
     "semantic_hash": ""
   },
   "daedalus-site/app/aop-session-panel.tsx": {
-    "mtime": 1786308046.1997104,
-    "ast_hash": "f43353bcca13ffc0f2ccf436d26e447b",
+    "mtime": 1786247737.5739527,
+    "ast_hash": "0892f6fb96177f243565d8b4b58c1a0d",
     "semantic_hash": ""
   },
   "daedalus-site/app/project-initialization-types.ts": {
@@ -815,8 +815,8 @@
     "semantic_hash": ""
   },
   "feature_files/answer-oriented-programming.md": {
-    "mtime": 1786308048.3037202,
-    "ast_hash": "9dc9cdb7785fec20e3b99e5b6bc8dc92",
+    "mtime": 1786247742.1674995,
+    "ast_hash": "0c5db2af76f24257898a202c9ef46ef1",
     "semantic_hash": ""
   },
   "feature_files/automated-project-initialization.md": {
@@ -855,13 +855,13 @@
     "semantic_hash": ""
   },
   "daedalus-site/lib/aop-loop.test.ts": {
-    "mtime": 1786307992.0324476,
-    "ast_hash": "db31d47e025b44b92304511ee6b0d9b0",
+    "mtime": 1786247742.167801,
+    "ast_hash": "9e17ac5ca745a701928b5da407d1dbef",
     "semantic_hash": ""
   },
   "daedalus-site/lib/aop-loop.ts": {
-    "mtime": 1786307983.264518,
-    "ast_hash": "7ee59b828cc918ee921e09803366424e",
+    "mtime": 1786247633.7119553,
+    "ast_hash": "d5c2fcf347139b9e69cd5d3c97f740d1",
     "semantic_hash": ""
   },
   "daedalus-site/lib/impl-prep.ts": {

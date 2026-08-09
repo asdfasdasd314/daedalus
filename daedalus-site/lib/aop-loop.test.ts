@@ -5,6 +5,7 @@ import {
   buildDurableImplementationPrompt,
   canStartAopBuildLoop,
   isAopCodingTaskInFlight,
+  isBridgeTaskingReply,
   loopPatchAfterCodingTaskTerminal,
   nextStatusAfterTaskComplete,
   resumeStatusFromPaused,
@@ -152,4 +153,43 @@ mvp
 `);
   assert.equal(parsed.status, "ready_to_execute");
   assert.match(parsed.optionalCpDoc, /Vite/);
+});
+
+test("isBridgeTaskingReply uses capture, session phase, or bridging_task loop", () => {
+  assert.equal(isBridgeTaskingReply({ capturedBridgeTasking: true }), true);
+  assert.equal(isBridgeTaskingReply({ sessionPhase: "tasking" }), true);
+  assert.equal(
+    isBridgeTaskingReply({
+      loopStatus: "bridging_task",
+      promptId: "p1",
+      loopActivePromptId: "p1",
+    }),
+    true,
+  );
+  // Queue already finalized — still tasking while loop owns the prompt.
+  assert.equal(
+    isBridgeTaskingReply({
+      capturedBridgeTasking: false,
+      loopStatus: "bridging_task",
+      promptId: "p1",
+      sessionActiveBridgePromptId: "p1",
+    }),
+    true,
+  );
+  assert.equal(
+    isBridgeTaskingReply({
+      loopStatus: "awaiting_start",
+      promptId: "p1",
+    }),
+    false,
+  );
+  assert.equal(
+    isBridgeTaskingReply({
+      loopStatus: "bridging_task",
+      promptId: "other",
+      loopActivePromptId: "p1",
+      sessionActiveBridgePromptId: "p1",
+    }),
+    false,
+  );
 });

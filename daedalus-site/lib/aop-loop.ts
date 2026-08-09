@@ -238,6 +238,43 @@ export function isAopCodingTaskTerminal(
 }
 
 /**
+ * Detect build-loop task selection replies (vs vision Q&A).
+ *
+ * Must not rely solely on the client prompt queue: finalize removes the entry
+ * before async history fetch completes, which previously dropped bridgeTasking
+ * and applied next_task as a vision "Latest task" without prep/coding.
+ */
+export function isBridgeTaskingReply(input: {
+  capturedBridgeTasking?: boolean;
+  sessionPhase?: string;
+  loopStatus?: string | null;
+  loopActivePromptId?: string;
+  sessionActiveBridgePromptId?: string;
+  promptId?: string;
+}): boolean {
+  if (input.capturedBridgeTasking) {
+    return true;
+  }
+  if (input.sessionPhase === "tasking") {
+    return true;
+  }
+  if (input.loopStatus !== "bridging_task") {
+    return false;
+  }
+  const promptId = (input.promptId ?? "").trim();
+  if (!promptId) {
+    return true;
+  }
+  const loopActive = (input.loopActivePromptId ?? "").trim();
+  const sessionActive = (input.sessionActiveBridgePromptId ?? "").trim();
+  // If the loop has no active prompt recorded yet, still treat as tasking.
+  if (!loopActive && !sessionActive) {
+    return true;
+  }
+  return loopActive === promptId || sessionActive === promptId;
+}
+
+/**
  * Only a completed durable agent_tasks row may advance the loop to the next
  * bridge emission. Failed / blocked / cancelled keep the same slice so the
  * operator can retry (Start task) or resume.

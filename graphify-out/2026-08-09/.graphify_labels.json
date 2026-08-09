@@ -60,7 +60,6 @@
   "58": "properties",
   "59": "integrating.md",
   "60": "layout.tsx",
-  "61": "SupabaseUnavailableError",
   "62": "Daedalus Project Instructions",
   "63": "route.ts",
   "64": "README.md",
@@ -104,10 +103,6 @@
   "102": "Path",
   "103": "README.md",
   "104": "entry-point-picker.tsx",
-  "105": "FeatureExecutionSupervisor",
-  "106": "ensure_structured_cp_doc",
   "107": "test_main.py",
-  "108": "run_git_sync_cycle",
-  "109": "properties",
   "111": "system_definition"
 }

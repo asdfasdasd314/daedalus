@@ -10,9 +10,9 @@ Answer-oriented programming (AOP) is a top-level workspace method: vision Q&A wi
 - **Vision questions**: Mass batches, no cap; UI “Question N of M.”
 - **Build loop table**: `aop_execution_loops` — one active row per `(user_id, repository)`. Status machine: bridging_task → prep → awaiting_answers → awaiting_start → executing → (awaiting_verification every N) → … → completed | paused | cancelled | failed.
 - **Authority**: Loop control plane is the database row. Vision `BridgeSession` may hydrate from localStorage for Q&A UX only. Coding progress is `agent_tasks` (`source_loop_id` + `current_agent_task_id`); the loop only advances to the next bridge emission when that durable task is **completed**. Failed/blocked launch returns to **awaiting_start** on the same slice (retry Start task). Cancelled → paused at awaiting_start. Client reconcilies stuck `executing` loops against `agent_tasks` on load.
-- **Tasking**: Bridge `bridgeTasking` emits `next_task` (exactly one task) or `mvp_complete`.
+- **Tasking**: Bridge `bridgeTasking` emits `next_task` (exactly one task) or `mvp_complete`. Client must treat tasking replies via loop status / captured `bridgeTasking` flag — never only the ephemeral prompt queue after finalize (otherwise `next_task` is mis-applied as vision “Latest task” with no prep/coding).
 - **Impl prep**: `implPrepMode` direct prompts (read-only); questions only; optional ## Optional Cp Doc; operator must click **Start task** after `ready_to_execute`.
-- **Execution**: durable `agent_tasks` (`source_loop_id`) via existing worktree orchestrator (per-task commit + integrate + cancel).
+- **Execution**: durable `agent_tasks` (`source_loop_id`) via existing worktree orchestrator (per-task commit + integrate + cancel). Coding/worktrees only after **Start task**, not after vision or bridge tasking alone.
 - **Safety**: Stop pauses loop and cancels in-flight task; Resume restores `paused_from`; every N tasks requires Verify OK; Revert hard-resets primary to `loop_base_commit` via `git_sync` ops `resolve_head` / `aop_loop_revert`.
 - **Workspace home**: AOP Beta peer of Feature/Architecture views.
 
@@ -39,3 +39,4 @@ HACKING
 - 2026-08-08: Added durable recursive build loop (one task at a time, impl prep, Start task, Stop/Resume, verify every N, revert).
 - 2026-08-08: Host auto-commits `cp_doc.md` after seed/persist so AOP does not leave the primary tree dirty and block worktree admission.
 - 2026-08-08: Loop advances only on completed agent_tasks; launch failures return to awaiting_start for retry; reconcile stuck executing on hydrate.
+- 2026-08-09: Fixed build-loop tasking mis-routed as vision after queue finalize; stale loop hydrate no longer clears a just-started loop; no worktree until Start task.

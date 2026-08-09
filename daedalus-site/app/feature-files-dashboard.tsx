@@ -58,6 +58,7 @@ import {
   DEFAULT_MAX_TASKS_BEFORE_VERIFICATION,
   isAopCodingTaskInFlight,
   isAopCodingTaskTerminal,
+  isBridgeTaskingReply,
   loopPatchAfterCodingTaskTerminal,
   mapAopLoopRow,
   pauseTargetStatus,
@@ -363,6 +364,7 @@ export default function FeatureFilesDashboard({
   >([]);
   const bridgeSessionRef = useRef<BridgeSession | null>(null);
   const aopLoopRef = useRef<AopExecutionLoop | null>(null);
+  const aopLoopFetchGenerationRef = useRef(0);
   const aopPendingGitRef = useRef<{
     requestId: string;
     operation: "resolve_head" | "aop_loop_revert";
@@ -594,6 +596,7 @@ export default function FeatureFilesDashboard({
       return;
     }
     let cancelled = false;
+    const fetchGeneration = ++aopLoopFetchGenerationRef.current;
     void fetchActiveAopLoop(
       supabaseUrl,
       supabasePublishableKey,
@@ -602,10 +605,19 @@ export default function FeatureFilesDashboard({
       selectedProjectDirectory,
     )
       .then(async (loop) => {
-        if (cancelled) {
+        if (cancelled || fetchGeneration !== aopLoopFetchGenerationRef.current) {
           return;
         }
         if (!loop) {
+          // Do not wipe an active loop the client just created while this request was in flight.
+          const local = aopLoopRef.current;
+          if (
+            local
+            && local.repository === selectedProjectDirectory
+            && !["completed", "cancelled", "failed"].includes(local.status)
+          ) {
+            return;
+          }
           setAopLoop(null);
           return;
         }
@@ -615,9 +627,21 @@ export default function FeatureFilesDashboard({
         await reconcileAopLoopWithCodingTask(loop);
       })
       .catch(() => {
-        if (!cancelled) {
-          setAopLoop(null);
+        if (
+          cancelled
+          || fetchGeneration !== aopLoopFetchGenerationRef.current
+        ) {
+          return;
         }
+        const local = aopLoopRef.current;
+        if (
+          local
+          && local.repository === selectedProjectDirectory
+          && !["completed", "cancelled", "failed"].includes(local.status)
+        ) {
+          return;
+        }
+        setAopLoop(null);
       });
     return () => {
       cancelled = true;
@@ -1939,7 +1963,10 @@ export default function FeatureFilesDashboard({
     setAgentPromptQueue((currentQueue) => [...currentQueue, nextPromptPayload]);
   }
 
-  async function applyBridgeReply(promptId: string) {
+  async function applyBridgeReply(
+    promptId: string,
+    options: { bridgeTasking?: boolean } = {},
+  ) {
     const session = bridgeSessionRef.current;
     if (!session || session.activeBridgePromptId !== promptId) {
       return;
@@ -1972,10 +1999,17 @@ export default function FeatureFilesDashboard({
       const nextCpDoc = parsed.cpDoc.trim()
         ? ensureStructuredCpDoc(parsed.cpDoc)
         : undefined;
-      const queueEntry = agentPromptQueueRef.current.find(
-        (item) => item.promptId === promptId,
-      );
-      const isTasking = Boolean(queueEntry?.bridgeTasking);
+      // Prefer the flag captured before queue finalize — the queue entry is often gone
+      // by the time history fetch returns.
+      const loop = aopLoopRef.current;
+      const isTasking = isBridgeTaskingReply({
+        capturedBridgeTasking: options.bridgeTasking === true,
+        sessionPhase: session.phase,
+        loopStatus: loop?.status,
+        loopActivePromptId: loop?.activePromptId,
+        sessionActiveBridgePromptId: session.activeBridgePromptId,
+        promptId,
+      });
 
       if (isTasking) {
         await applyBridgeTaskingReply(promptId, parsed, nextCpDoc, turn.output);
@@ -1991,6 +2025,7 @@ export default function FeatureFilesDashboard({
               notes: parsed.notes || current.notes,
               pendingQuestions: parsed.questions,
               questionIndex: 0,
+              // Vision may still draft a task; it is not coding until the build loop runs.
               proposedTasks: parsed.tasks.slice(0, 1),
               phase: parsed.questions.length > 0 ? "questioning" : "ready",
               activeBridgePromptId: "",
@@ -2241,10 +2276,14 @@ export default function FeatureFilesDashboard({
   }
 
   async function startAopBuildLoop() {
-    if (!bridgeSession || !currentUser || !accessToken || !daemonAcceptsWork) {
+    if (!bridgeSession || !currentUser || !accessToken) {
       return;
     }
     setPromptSubmissionError("");
+    if (!daemonAcceptsWork) {
+      setPromptSubmissionError(DAEMON_ADMISSION_MESSAGE);
+      return;
+    }
     if (!isCpDocCodingReady(bridgeSession.cpDoc)) {
       setPromptSubmissionError(
         "Build loop needs Project Summary, Tech Stack, and Project State filled in cp_doc (not placeholders). Answer the bridge questions so those sections update first.",
@@ -2261,7 +2300,30 @@ export default function FeatureFilesDashboard({
       );
       if (existing) {
         setAopLoop(existing);
-        setPromptSubmissionError("An active build loop already exists for this project.");
+        // Re-attach and recover common stuck states instead of only showing an error.
+        if (existing.status === "bridging_task" && !existing.currentTaskTitle.trim()) {
+          queueBridgeTasking(existing);
+          setPromptStatus("Resumed existing build loop — choosing the next coding task.");
+          return;
+        }
+        if (
+          (existing.status === "prep" || existing.status === "awaiting_answers")
+          && existing.currentTaskTitle.trim()
+          && !existing.activePromptId
+        ) {
+          queueImplPrep(existing.currentTaskTitle, existing.currentTaskPrompt);
+          setPromptStatus(`Resumed implementation prep for: ${existing.currentTaskTitle}`);
+          return;
+        }
+        if (existing.status === "awaiting_start") {
+          setPromptStatus(
+            `Build loop already has a task ready: ${existing.currentTaskTitle || "(untitled)"}. Click Start task to run coding in a worktree.`,
+          );
+          return;
+        }
+        setPromptSubmissionError(
+          `An active build loop already exists for this project (status: ${existing.status}). Use Stop/Resume/Start task on the Build loop panel.`,
+        );
         return;
       }
       const row = await insertAopLoop(supabaseUrl, supabasePublishableKey, accessToken, {
@@ -2277,9 +2339,12 @@ export default function FeatureFilesDashboard({
         max_tasks_before_verification: DEFAULT_MAX_TASKS_BEFORE_VERIFICATION,
         status_detail: "Resolving project HEAD and requesting first task…",
       });
+      // Bump fetch generation so an in-flight hydrate cannot clear this row.
+      aopLoopFetchGenerationRef.current += 1;
       setAopLoop(row);
       await requestAopGit("resolve_head", bridgeSession.directory, { loopId: row.id });
       queueBridgeTasking(row);
+      setPromptStatus("Build loop started — bridge is choosing the first coding task.");
     } catch (error) {
       const detail = error instanceof Error ? error.message : "Unable to start build loop.";
       setPromptSubmissionError(detail);
@@ -2961,17 +3026,31 @@ export default function FeatureFilesDashboard({
           (item) => item.promptId === nextPromptId && item.bridgeMode,
         ) || bridgeSessionRef.current?.activeBridgePromptId === nextPromptId,
       );
+      const wasBridgeTasking = Boolean(
+        agentPromptQueueRef.current.find(
+          (item) => item.promptId === nextPromptId && item.bridgeTasking,
+        )
+        || isBridgeTaskingReply({
+          sessionPhase: bridgeSessionRef.current?.phase,
+          loopStatus: aopLoopRef.current?.status,
+          loopActivePromptId: aopLoopRef.current?.activePromptId,
+          sessionActiveBridgePromptId:
+            bridgeSessionRef.current?.activeBridgePromptId,
+          promptId: nextPromptId,
+        }),
+      );
       const wasImplPrep = Boolean(
         agentPromptQueueRef.current.find(
           (item) => item.promptId === nextPromptId && item.implPrepMode,
         ) || aopLoopRef.current?.activePromptId === nextPromptId
           && aopLoopRef.current?.status === "prep",
       );
+      // Capture flags before finalize removes the queue entry (ref updates after render).
       finalizeQueuedAgentPrompt(nextPromptId, latestChatRef.current);
       if (wasImplPrep) {
         void applyImplPrepReply(nextPromptId);
       } else if (wasBridge) {
-        void applyBridgeReply(nextPromptId);
+        void applyBridgeReply(nextPromptId, { bridgeTasking: wasBridgeTasking });
       }
     }
   }

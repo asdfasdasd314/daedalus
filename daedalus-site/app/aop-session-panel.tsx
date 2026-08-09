@@ -326,7 +326,14 @@ export default function AopSessionPanel({
             </div>
           ) : null}
           {bridgeSession.proposedTasks.length > 0 ? (
-            <TaskList tasks={bridgeSession.proposedTasks} label="Latest task" />
+            <TaskList
+              tasks={bridgeSession.proposedTasks}
+              label={
+                loopActive
+                  ? "Latest task"
+                  : "Proposed task (not built yet — needs Build loop → Start task)"
+              }
+            />
           ) : null}
           {bridgeSession.cpDoc && !isCpDocCodingReady(bridgeSession.cpDoc) ? (
             <p className="text-sm text-amber-200/90">
