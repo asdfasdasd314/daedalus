@@ -29,7 +29,9 @@ type AopSessionPanelProps = {
   onSubmitDirection: () => void;
   onStartBuildLoop: () => void;
   onStopLoop: () => void;
+  onCancelLoop: () => void;
   onResumeLoop: () => void;
+  onRetryBridgeTasking: () => void;
   onStartTask: () => void;
   onVerifyLoop: () => void;
   onRevertLoop: () => void;
@@ -64,7 +66,9 @@ export default function AopSessionPanel({
   onSubmitDirection,
   onStartBuildLoop,
   onStopLoop,
+  onCancelLoop,
   onResumeLoop,
+  onRetryBridgeTasking,
   onStartTask,
   onVerifyLoop,
   onRevertLoop,
@@ -369,7 +373,8 @@ export default function AopSessionPanel({
             Loop state is durable (database: aop_execution_loops). Coding runs as agent_tasks
             rows; the Coding history list below is the ledger (completed/failed/cancelled).
             Only completed integrates advance the loop. Failures stay on the same slice so you
-            can Start task again. Vision Q&amp;A alone uses browser storage.
+            can Start task again. Vision Q&amp;A alone uses browser storage. Bridge phase
+            &quot;idle&quot; means vision Q&amp;A is done — the build loop panel below is separate.
           </p>
           {aopLoop.statusDetail ? (
             <p className="rounded-[1.25rem] border border-white/10 bg-black/30 px-4 py-3 text-sm text-slate-100">
@@ -473,6 +478,16 @@ export default function AopSessionPanel({
             </div>
           ) : null}
           <div className="flex flex-wrap gap-2">
+            {aopLoop.status === "bridging_task" ? (
+              <button
+                type="button"
+                onClick={onRetryBridgeTasking}
+                disabled={!acceptsWork}
+                className="rounded-full bg-emerald-300 px-5 py-3 text-sm font-semibold text-slate-950 hover:bg-emerald-200 disabled:opacity-50"
+              >
+                Retry choose task
+              </button>
+            ) : null}
             {aopLoop.status === "awaiting_start" ? (
               <button
                 type="button"
@@ -511,6 +526,15 @@ export default function AopSessionPanel({
                 className="rounded-full bg-emerald-300 px-5 py-3 text-sm font-semibold text-slate-950 hover:bg-emerald-200 disabled:opacity-50"
               >
                 Resume
+              </button>
+            ) : null}
+            {loopActive ? (
+              <button
+                type="button"
+                onClick={onCancelLoop}
+                className="rounded-full border border-white/15 px-5 py-3 text-sm font-semibold text-slate-200 hover:bg-white/5"
+              >
+                Cancel loop
               </button>
             ) : null}
             {aopLoop.loopBaseCommit && aopLoop.status !== "executing" ? (

@@ -1,16 +1,16 @@
 # Graph Report - daedalus  (2026-08-09)
 
 ## Corpus Check
-- 169 files · ~144,505 words
+- 169 files · ~144,870 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1498 nodes · 2770 edges · 115 communities (96 shown, 19 thin omitted)
+- 1498 nodes · 2770 edges · 115 communities (95 shown, 20 thin omitted)
 - Extraction: 91% EXTRACTED · 9% INFERRED · 0% AMBIGUOUS · INFERRED: 262 edges (avg confidence: 0.76)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `9b3cc3ef`
+- Built from commit: `0bfa2432`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -155,7 +155,7 @@
 ## Import Cycles
 - None detected.
 
-## Communities (115 total, 19 thin omitted)
+## Communities (115 total, 20 thin omitted)
 
 ### Community 0 - "orchestrator.py"
 Cohesion: 0.19
@@ -226,8 +226,8 @@ Cohesion: 0.16
 Nodes (21): ParameterVariableSelector(), ParameterVariableSelectorProps, ParameterFileRecord, ExecutionEntryPointMetadata, isDoubleQuotedString(), isSingleQuotedString(), isSupportedArrayLiteral(), isValidFloat() (+13 more)
 
 ### Community 17 - "main.py"
-Cohesion: 0.15
-Nodes (20): snapshot_communication_messages(), apply_parameter_file_update(), build_entry_point_update_state_message(), build_parameter_file_update_state_message(), build_skipped_push_step(), DirectPromptSupervisor, execute_git_sync_operation(), is_toml_float() (+12 more)
+Cohesion: 0.13
+Nodes (21): snapshot_communication_messages(), apply_parameter_file_update(), build_entry_point_update_state_message(), build_parameter_file_update_state_message(), build_skipped_push_step(), DirectPromptSupervisor, execute_git_sync_operation(), is_toml_float() (+13 more)
 
 ### Community 18 - "README.md"
 Cohesion: 0.20
@@ -250,8 +250,8 @@ Cohesion: 0.13
 Nodes (16): boolean, integer, null, number, string, properties, primitive_field_definition, additionalProperties (+8 more)
 
 ### Community 23 - "primitive_field_definition"
-Cohesion: 0.23
-Nodes (5): build_agent_prompt_state_message(), parse_agent_prompt_message(), run_agent_prompt_cycle(), AgentOutputHistoryPublicationTests, RunAgentPromptCycleTests
+Cohesion: 0.17
+Nodes (7): build_agent_prompt_state_message(), filter_targeted_feature_paths(), parse_agent_prompt_message(), run_agent_prompt_cycle(), AgentOutputHistoryPublicationTests, FilterTargetedFeaturePathsTests, RunAgentPromptCycleTests
 
 ### Community 24 - "recurrent-supabase-queries.test.ts"
 Cohesion: 0.11
@@ -262,7 +262,7 @@ Cohesion: 0.23
 Nodes (14): fields, files, id, items, name, source_system_id, summary, target_system_id (+6 more)
 
 ### Community 26 - "$ref"
-Cohesion: 0.13
+Cohesion: 0.14
 Nodes (7): build_migration_resolver_prompt(), Publish optional deployment telemetry without blocking a database repair., record_migration_deployment_event(), MigrationDeploymentEventTests, MigrationResolverLoopTests, VerificationTests, WorktreeSettingsTests
 
 ### Community 27 - "git-sync-panel.tsx"
@@ -302,8 +302,8 @@ Cohesion: 0.45
 Nodes (4): record_daemon_event(), update_agent_task(), load_worktree_settings(), utc_now()
 
 ### Community 37 - "planning.md"
-Cohesion: 0.27
-Nodes (5): run_parameter_file_poll_cycle(), run_poll_cycle(), run_project_load_cycle(), RunParameterFilePollCycleTests, RunPollCycleTests
+Cohesion: 0.15
+Nodes (8): run_parameter_file_poll_cycle(), run_poll_cycle(), run_project_load_cycle(), CursorProviderRoutingTests, FakeGitProcess, RunParameterFilePollCycleTests, RunParameterFileUpdateCycleTests, RunPollCycleTests
 
 ### Community 38 - "agent-task-notifications.tsx"
 Cohesion: 0.26
@@ -426,7 +426,7 @@ Cohesion: 0.29
 Nodes (6): Dev Mode, Key Points, Relevant Files, State Log, Summary, Ventures
 
 ### Community 82 - "page.tsx"
-Cohesion: 0.20
+Cohesion: 0.18
 Nodes (5): build_resolver_prompt(), build_task_prompt(), build_task_repair_prompt(), reply_indicates_cancel(), PromptTests
 
 ### Community 83 - "Daedalus Project Instructions"
@@ -489,10 +489,6 @@ Nodes (14): call_daemon_rpc(), claim_architecture_view(), claim_feature_executio
 Cohesion: 0.50
 Nodes (3): Daedalus Project Instructions, graphify, Task mode
 
-### Community 104 - "entry-point-picker.tsx"
-Cohesion: 0.12
-Nodes (8): filter_targeted_feature_paths(), run_project_initialization_cycle(), CursorProviderRoutingTests, FakeGitProcess, FilterTargetedFeaturePathsTests, ParameterFileUpdateTests, RunParameterFileUpdateCycleTests, RunProjectInitializationCycleTests
-
 ### Community 105 - "FeatureExecutionSupervisor"
 Cohesion: 0.38
 Nodes (3): update_feature_execution_run(), FeatureExecutionSupervisor, Popen
@@ -532,7 +528,7 @@ Nodes (7): object_field_definition, items, type, additionalProperties, propertie
 ## Knowledge Gaps
 - **432 isolated node(s):** `AgentOutputDetailProps`, `AgentOutputViewerProps`, `AgentOutputViewerPresentation`, `AgentPromptMode`, `AgentSessionPanelProps` (+427 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **19 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **20 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_

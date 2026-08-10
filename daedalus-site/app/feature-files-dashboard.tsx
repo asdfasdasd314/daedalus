@@ -2318,17 +2318,26 @@ export default function FeatureFilesDashboard({
         bridgeSession.directory,
       );
       if (existing) {
+        // Keep hydrate from wiping the re-attached loop.
+        aopLoopFetchGenerationRef.current += 1;
         setAopLoop(existing);
+        void syncLoopHistoryFromAgentTasks(existing);
         // Re-attach and recover common stuck states instead of only showing an error.
-        if (existing.status === "bridging_task" && !existing.currentTaskTitle.trim()) {
-          void queueBridgeTasking(existing);
-          setPromptStatus("Resumed existing build loop — choosing the next coding task.");
+        // bridging_task is recovered even when a stale currentTaskTitle remains on the row.
+        if (existing.status === "bridging_task") {
+          void queueBridgeTasking({
+            ...existing,
+            status: "bridging_task",
+            currentAgentTaskId: null,
+          });
+          setPromptStatus(
+            "Resumed existing build loop — bridge is choosing the next coding task. Use Stop / Cancel loop on the Build loop panel if you need to abandon it.",
+          );
           return;
         }
         if (
           (existing.status === "prep" || existing.status === "awaiting_answers")
           && existing.currentTaskTitle.trim()
-          && !existing.activePromptId
         ) {
           queueImplPrep(existing.currentTaskTitle, existing.currentTaskPrompt);
           setPromptStatus(`Resumed implementation prep for: ${existing.currentTaskTitle}`);
@@ -2340,8 +2349,26 @@ export default function FeatureFilesDashboard({
           );
           return;
         }
-        setPromptSubmissionError(
-          `An active build loop already exists for this project (status: ${existing.status}). Use Stop/Resume/Start task on the Build loop panel.`,
+        if (existing.status === "paused") {
+          setPromptStatus(
+            "Build loop is paused. Click Resume on the Build loop panel (or Cancel loop to abandon).",
+          );
+          return;
+        }
+        if (existing.status === "awaiting_verification") {
+          setPromptStatus(
+            "Build loop is waiting for verification. Click Verify OK on the Build loop panel.",
+          );
+          return;
+        }
+        if (existing.status === "executing") {
+          setPromptStatus(
+            `Coding is in progress${existing.currentTaskTitle ? `: ${existing.currentTaskTitle}` : ""}. Use Stop if you need to halt, then Retry Start task.`,
+          );
+          return;
+        }
+        setPromptStatus(
+          `Build loop active (status: ${existing.status}). Controls are on the Build loop panel below.`,
         );
         return;
       }
@@ -2438,6 +2465,9 @@ export default function FeatureFilesDashboard({
   async function queueBridgeTasking(loop: AopExecutionLoop) {
     const session = bridgeSessionRef.current;
     if (!session) {
+      setPromptSubmissionError(
+        "No bridge session open. Keep AOP Beta session (cp_doc ready) so the build loop can task.",
+      );
       return;
     }
     // Never emit a new bridge task while an unfinished coding slice still owns the loop.
@@ -2649,6 +2679,58 @@ export default function FeatureFilesDashboard({
         loop.status === "executing" ? null : loop.currentAgentTaskId,
     });
     setPromptStatus("AOP build loop stopped.");
+  }
+
+  /** Terminal-cancel the loop so a fresh Start build loop can create a new row. */
+  async function cancelAopLoop() {
+    const loop = aopLoopRef.current;
+    if (!loop || !isLoopActiveStatus(loop.status)) {
+      return;
+    }
+    if (loop.currentAgentTaskId && loop.status === "executing") {
+      try {
+        await cancelDurableAgentTask(
+          supabaseUrl,
+          supabasePublishableKey,
+          accessToken!,
+          loop.currentAgentTaskId,
+        );
+      } catch {
+        // best-effort cancel of in-flight coding
+      }
+    }
+    aopLoopFetchGenerationRef.current += 1;
+    await patchAopLoop(loop.id, {
+      status: "cancelled",
+      cancel_requested: true,
+      status_detail: "Loop cancelled by operator.",
+      active_prompt_id: "",
+      current_agent_task_id: null,
+      paused_from: "",
+    });
+    setAopLoop(null);
+    setAopLoopCodingHistory([]);
+    setPromptStatus("AOP build loop cancelled. You can Start build loop again when ready.");
+  }
+
+  async function retryBridgeTasking() {
+    const loop = aopLoopRef.current;
+    if (!loop || loop.status !== "bridging_task") {
+      return;
+    }
+    if (!daemonAcceptsWork) {
+      setPromptSubmissionError(DAEMON_ADMISSION_MESSAGE);
+      return;
+    }
+    setPromptSubmissionError("");
+    if (loop.currentAgentTaskId) {
+      await patchAopLoop(loop.id, { current_agent_task_id: null });
+    }
+    void queueBridgeTasking({
+      ...loop,
+      currentAgentTaskId: null,
+    });
+    setPromptStatus("Retrying bridge task selection…");
   }
 
   async function resumeAopLoop() {
@@ -4473,7 +4555,9 @@ export default function FeatureFilesDashboard({
                 onSubmitDirection={() => void sendBridgeDirection()}
                 onStartBuildLoop={() => void startAopBuildLoop()}
                 onStopLoop={() => void stopAopLoop()}
+                onCancelLoop={() => void cancelAopLoop()}
                 onResumeLoop={() => void resumeAopLoop()}
+                onRetryBridgeTasking={() => void retryBridgeTasking()}
                 onStartTask={() => void startAopTask()}
                 onVerifyLoop={() => void verifyAopLoop()}
                 onRevertLoop={() => void revertAopLoop()}
