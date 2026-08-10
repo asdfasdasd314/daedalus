@@ -66,8 +66,11 @@ import {
   loopPatchAfterCodingTaskTerminal,
   mapAgentTaskRowToCodingSlice,
   mapAopLoopRow,
+  needsBridgeTaskingRetry,
+  needsManualCodingRetry,
   pauseTargetStatus,
   resumeStatusFromPaused,
+  shouldAutoStartCoding,
 } from "@/lib/aop-loop";
 import { parseImplPrepReply } from "@/lib/impl-prep";
 import { fetchAgentOutputConversation } from "@/lib/agent-output-history";
@@ -376,6 +379,10 @@ export default function FeatureFilesDashboard({
   const bridgeSessionRef = useRef<BridgeSession | null>(null);
   const aopLoopRef = useRef<AopExecutionLoop | null>(null);
   const aopLoopFetchGenerationRef = useRef(0);
+  /** Prevents double auto-start for the same awaiting_start slice. */
+  const aopAutoStartKeyRef = useRef("");
+  /** Prevents double driver re-queue for the same hydrate generation. */
+  const aopDriveKeyRef = useRef("");
   const projectsRef = useRef<FeatureFileProjects | null>(null);
   const aopPendingGitRef = useRef<{
     requestId: string;
@@ -608,7 +615,7 @@ export default function FeatureFilesDashboard({
   }, [projects]);
 
   useEffect(() => {
-    if (!accessToken || !currentUser || !selectedProjectDirectory) {
+    if (!accessToken || !currentUser || !selectedProjectDirectory || !isAgentPromptQueueHydrated) {
       return;
     }
     let cancelled = false;
@@ -639,10 +646,18 @@ export default function FeatureFilesDashboard({
           return;
         }
         setAopLoop(loop);
+        aopLoopRef.current = loop;
         const { loop: synced } = await syncLoopHistoryFromAgentTasks(loop);
         // Durable agent_tasks is source of truth for coding progress; reconcile if
         // the client missed a client_review while the loop stayed "executing".
         await reconcileAopLoopWithCodingTask(synced);
+        // Soft re-attach: continue automation after tab/nav without requiring
+        // another "Start build loop" click. Wait until prompt queue hydrate so
+        // we do not re-queue a tasking turn that is already restored from storage.
+        const latest = aopLoopRef.current ?? synced;
+        if (latest && !["completed", "cancelled", "failed"].includes(latest.status)) {
+          void driveAopLoop(latest, { reason: "hydrate" });
+        }
       })
       .catch(() => {
         if (
@@ -669,6 +684,7 @@ export default function FeatureFilesDashboard({
     accessToken,
     currentUser,
     currentUserId,
+    isAgentPromptQueueHydrated,
     selectedProjectDirectory,
     supabasePublishableKey,
     supabaseUrl,
@@ -2192,6 +2208,12 @@ export default function FeatureFilesDashboard({
     if (!loop || !session) {
       return;
     }
+    if (loop.status === "paused" || loop.cancelRequested || loop.pauseRequested) {
+      return;
+    }
+    if (hasInFlightLoopQueueWork(loop.id, "prep")) {
+      return;
+    }
     const promptId = createPromptId();
     const prompt = buildImplPrepUserPrompt({
       taskTitle,
@@ -2231,6 +2253,9 @@ export default function FeatureFilesDashboard({
     if (!loop || loop.activePromptId !== promptId) {
       return;
     }
+    if (loop.status === "paused" || loop.cancelRequested) {
+      return;
+    }
     if (!currentUser || !accessToken) {
       return;
     }
@@ -2262,14 +2287,38 @@ export default function FeatureFilesDashboard({
         );
       }
       if (parsed.status === "ready_to_execute") {
+        const latest = aopLoopRef.current ?? loop;
+        if (latest.status === "paused" || latest.cancelRequested) {
+          return;
+        }
+        if (latest.pauseRequested) {
+          await patchAopLoop(loop.id, {
+            status: "paused",
+            paused_from: "awaiting_start",
+            pause_requested: false,
+            prep_notes: parsed.notes,
+            pending_questions: [],
+            active_prompt_id: "",
+            status_detail:
+              `Prep ready for ${loop.currentTaskTitle}. Paused before coding — Resume to start.`,
+          });
+          setPromptStatus(`Paused before coding: ${loop.currentTaskTitle}`);
+          return;
+        }
         await patchAopLoop(loop.id, {
           status: "awaiting_start",
-          status_detail: `Task ready to initiate: ${loop.currentTaskTitle}`,
+          status_detail: `Starting coding automatically: ${loop.currentTaskTitle}`,
           prep_notes: parsed.notes,
           pending_questions: [],
           active_prompt_id: "",
         });
-        setPromptStatus(`Task ready to initiate: ${loop.currentTaskTitle}`);
+        setPromptStatus(`Starting coding: ${loop.currentTaskTitle}`);
+        // Software layer queues durable coding immediately; Pause holds at task boundary.
+        void maybeAutoStartAopTask(aopLoopRef.current ?? {
+          ...loop,
+          status: "awaiting_start",
+          statusDetail: `Starting coding automatically: ${loop.currentTaskTitle}`,
+        });
         return;
       }
       await patchAopLoop(loop.id, {
@@ -2321,54 +2370,12 @@ export default function FeatureFilesDashboard({
         // Keep hydrate from wiping the re-attached loop.
         aopLoopFetchGenerationRef.current += 1;
         setAopLoop(existing);
+        aopLoopRef.current = existing;
         void syncLoopHistoryFromAgentTasks(existing);
-        // Re-attach and recover common stuck states instead of only showing an error.
-        // bridging_task is recovered even when a stale currentTaskTitle remains on the row.
-        if (existing.status === "bridging_task") {
-          void queueBridgeTasking({
-            ...existing,
-            status: "bridging_task",
-            currentAgentTaskId: null,
-          });
-          setPromptStatus(
-            "Resumed existing build loop — bridge is choosing the next coding task. Use Stop / Cancel loop on the Build loop panel if you need to abandon it.",
-          );
-          return;
-        }
-        if (
-          (existing.status === "prep" || existing.status === "awaiting_answers")
-          && existing.currentTaskTitle.trim()
-        ) {
-          queueImplPrep(existing.currentTaskTitle, existing.currentTaskPrompt);
-          setPromptStatus(`Resumed implementation prep for: ${existing.currentTaskTitle}`);
-          return;
-        }
-        if (existing.status === "awaiting_start") {
-          setPromptStatus(
-            `Build loop already has a task ready: ${existing.currentTaskTitle || "(untitled)"}. Click Start task to run coding in a worktree.`,
-          );
-          return;
-        }
-        if (existing.status === "paused") {
-          setPromptStatus(
-            "Build loop is paused. Click Resume on the Build loop panel (or Cancel loop to abandon).",
-          );
-          return;
-        }
-        if (existing.status === "awaiting_verification") {
-          setPromptStatus(
-            "Build loop is waiting for verification. Click Verify OK on the Build loop panel.",
-          );
-          return;
-        }
-        if (existing.status === "executing") {
-          setPromptStatus(
-            `Coding is in progress${existing.currentTaskTitle ? `: ${existing.currentTaskTitle}` : ""}. Use Stop if you need to halt, then Retry Start task.`,
-          );
-          return;
-        }
+        // Soft re-attach: do not re-kick work that is already progressing.
+        void driveAopLoop(existing, { reason: "reattach", force: false });
         setPromptStatus(
-          `Build loop active (status: ${existing.status}). Controls are on the Build loop panel below.`,
+          `Build loop already active (${existing.status}). Continuing from durable state — use Stop if you need to halt coding.`,
         );
         return;
       }
@@ -2387,6 +2394,7 @@ export default function FeatureFilesDashboard({
       });
       // Bump fetch generation so an in-flight hydrate cannot clear this row.
       aopLoopFetchGenerationRef.current += 1;
+      aopLoopRef.current = row;
       setAopLoop(row);
       await requestAopGit("resolve_head", bridgeSession.directory, { loopId: row.id });
       void queueBridgeTasking(row);
@@ -2462,12 +2470,115 @@ export default function FeatureFilesDashboard({
     }
   }
 
+  /**
+   * Soft driver: continue the loop after hydrate/nav without re-issuing work
+   * that is already queued, and without requiring another "Start build loop".
+   */
+  async function driveAopLoop(
+    loop: AopExecutionLoop,
+    options: { reason: string; force?: boolean } = { reason: "drive" },
+  ) {
+    if (["completed", "cancelled", "failed", "paused", "awaiting_verification"].includes(
+      loop.status,
+    )) {
+      return;
+    }
+    if (loop.cancelRequested || loop.pauseRequested) {
+      // pause_requested mid-execute: do not start prep/tasking/another coding slice
+      return;
+    }
+    if (!daemonAcceptsWork) {
+      return;
+    }
+    // Operator must answer prep questions before coding can auto-start.
+    if (loop.status === "awaiting_answers") {
+      return;
+    }
+
+    const driveKey = `${loop.id}:${loop.status}:${loop.activePromptId}:${loop.currentTaskTitle}:${options.reason}`;
+    if (!options.force && aopDriveKeyRef.current === driveKey) {
+      return;
+    }
+    aopDriveKeyRef.current = driveKey;
+
+    if (loop.status === "bridging_task") {
+      if (
+        options.force
+        || needsBridgeTaskingRetry(loop)
+        || !hasInFlightLoopQueueWork(loop.id, "tasking")
+      ) {
+        // Only re-queue when nothing is already selecting the next task.
+        if (
+          options.force
+          || !hasInFlightLoopQueueWork(loop.id, "tasking")
+        ) {
+          void queueBridgeTasking({
+            ...loop,
+            status: "bridging_task",
+            currentAgentTaskId: null,
+          });
+        }
+      }
+      return;
+    }
+
+    if (loop.status === "prep" && loop.currentTaskTitle.trim()) {
+      if (options.force || !hasInFlightLoopQueueWork(loop.id, "prep")) {
+        queueImplPrep(loop.currentTaskTitle, loop.currentTaskPrompt);
+      }
+      return;
+    }
+
+    if (loop.status === "awaiting_start") {
+      void maybeAutoStartAopTask(loop);
+      return;
+    }
+
+    // executing: durable agent_tasks row is the worker — do not re-queue coding
+  }
+
+  function hasInFlightLoopQueueWork(
+    loopId: string,
+    kind: "tasking" | "prep",
+  ): boolean {
+    return agentPromptQueueRef.current.some((item) => {
+      if (item.sourceLoopId !== loopId) {
+        return false;
+      }
+      if (isFinalizedAgentTaskStatus(item.status)) {
+        return false;
+      }
+      if (kind === "tasking") {
+        return item.bridgeTasking === true;
+      }
+      return item.implPrepMode === true;
+    });
+  }
+
+  async function maybeAutoStartAopTask(loop: AopExecutionLoop) {
+    if (!shouldAutoStartCoding(loop) || !daemonAcceptsWork) {
+      return;
+    }
+    if (loop.status === "paused" || loop.cancelRequested || loop.pauseRequested) {
+      return;
+    }
+    const key = `${loop.id}:${loop.currentTaskTitle}`;
+    if (aopAutoStartKeyRef.current === key) {
+      return;
+    }
+    aopAutoStartKeyRef.current = key;
+    await startAopTask();
+  }
+
   async function queueBridgeTasking(loop: AopExecutionLoop) {
     const session = bridgeSessionRef.current;
     if (!session) {
       setPromptSubmissionError(
         "No bridge session open. Keep AOP Beta session (cp_doc ready) so the build loop can task.",
       );
+      return;
+    }
+    if (loop.status === "paused" || loop.cancelRequested || loop.pauseRequested) {
       return;
     }
     // Never emit a new bridge task while an unfinished coding slice still owns the loop.
@@ -2486,6 +2597,10 @@ export default function FeatureFilesDashboard({
       setPromptSubmissionError(
         "A durable agent_tasks row is still linked to this loop. Wait for complete/cancel, or Start again after a failed launch.",
       );
+      return;
+    }
+    // Avoid stacking duplicate tasking prompts when navigate/retry races.
+    if (hasInFlightLoopQueueWork(loop.id, "tasking")) {
       return;
     }
     const { loop: historyLoop, slices } = await syncLoopHistoryFromAgentTasks(loop);
@@ -2544,10 +2659,12 @@ export default function FeatureFilesDashboard({
     }
     if (!daemonAcceptsWork) {
       setPromptSubmissionError(DAEMON_ADMISSION_MESSAGE);
+      aopAutoStartKeyRef.current = "";
       return;
     }
     if (!loop.currentTaskTitle.trim() || !loop.currentTaskPrompt.trim()) {
       setPromptSubmissionError("No current coding task on this loop. Wait for bridge tasking, or restart the loop.");
+      aopAutoStartKeyRef.current = "";
       return;
     }
     // If a prior agent_tasks row is still linked and not terminal, do not insert another.
@@ -2636,6 +2753,7 @@ export default function FeatureFilesDashboard({
     } catch (error) {
       const detail = error instanceof Error ? error.message : "Unable to start coding task.";
       setPromptSubmissionError(detail);
+      aopAutoStartKeyRef.current = "";
       // Stay on this slice (awaiting_start) so operator can retry.
       await patchAopLoop(loop.id, {
         status: "awaiting_start",
@@ -2646,39 +2764,56 @@ export default function FeatureFilesDashboard({
     }
   }
 
-  async function stopAopLoop() {
+  /**
+   * Operator pause: halt automation without ending the loop.
+   * Mid-coding: soft-pause (finish current agent_tasks row, then hold) — does not cancel.
+   * Other statuses: pause immediately so prep/tasking/auto-start stop.
+   */
+  async function pauseAopLoop() {
+    const loop = aopLoopRef.current;
+    if (!loop || !isLoopActiveStatus(loop.status) || loop.status === "paused") {
+      return;
+    }
+    aopAutoStartKeyRef.current = "";
+    aopDriveKeyRef.current = "";
+
+    if (loop.status === "executing") {
+      // Let the in-flight coding task complete, then hold for inspection.
+      await patchAopLoop(loop.id, {
+        pause_requested: true,
+        cancel_requested: false,
+        status_detail:
+          "Pause requested — finishing the current coding task, then holding for inspection.",
+      });
+      setPromptStatus("Pause requested — loop will hold after this coding task finishes.");
+      return;
+    }
+
+    const pausedFrom = pauseTargetStatus(loop.status) ?? loop.status;
+    await patchAopLoop(loop.id, {
+      status: "paused",
+      paused_from: pausedFrom,
+      pause_requested: false,
+      cancel_requested: false,
+      status_detail: "Loop paused by operator. Resume when ready.",
+      active_prompt_id: "",
+    });
+    setPromptStatus("AOP build loop paused.");
+  }
+
+  async function setAopPauseAfterTask(enabled: boolean) {
     const loop = aopLoopRef.current;
     if (!loop || !isLoopActiveStatus(loop.status)) {
       return;
     }
-    // Cancelling an in-flight coding task should resume at Start task, not
-    // re-enter a dead "executing" status without an agent_tasks row.
-    const pausedFrom =
-      loop.status === "executing"
-        ? "awaiting_start"
-        : (pauseTargetStatus(loop.status) ?? loop.status);
-    if (loop.currentAgentTaskId && loop.status === "executing") {
-      try {
-        await cancelDurableAgentTask(
-          supabaseUrl,
-          supabasePublishableKey,
-          accessToken!,
-          loop.currentAgentTaskId,
-        );
-      } catch {
-        // best-effort cancel
-      }
-    }
     await patchAopLoop(loop.id, {
-      status: "paused",
-      paused_from: pausedFrom,
-      cancel_requested: true,
-      status_detail: "Loop stopped by operator.",
-      active_prompt_id: "",
-      current_agent_task_id:
-        loop.status === "executing" ? null : loop.currentAgentTaskId,
+      pause_after_task: enabled,
     });
-    setPromptStatus("AOP build loop stopped.");
+    setPromptStatus(
+      enabled
+        ? "Will pause after each integrated coding task for inspection."
+        : "Continuous loop restored (no auto-pause after tasks).",
+    );
   }
 
   /** Terminal-cancel the loop so a fresh Start build loop can create a new row. */
@@ -2687,6 +2822,8 @@ export default function FeatureFilesDashboard({
     if (!loop || !isLoopActiveStatus(loop.status)) {
       return;
     }
+    aopAutoStartKeyRef.current = "";
+    aopDriveKeyRef.current = "";
     if (loop.currentAgentTaskId && loop.status === "executing") {
       try {
         await cancelDurableAgentTask(
@@ -2718,26 +2855,49 @@ export default function FeatureFilesDashboard({
     if (!loop || loop.status !== "bridging_task") {
       return;
     }
+    if (!needsBridgeTaskingRetry(loop) && hasInFlightLoopQueueWork(loop.id, "tasking")) {
+      setPromptStatus("Bridge is already choosing a task — Retry is only for stuck/failed selection.");
+      return;
+    }
     if (!daemonAcceptsWork) {
       setPromptSubmissionError(DAEMON_ADMISSION_MESSAGE);
       return;
     }
     setPromptSubmissionError("");
+    aopDriveKeyRef.current = "";
     if (loop.currentAgentTaskId) {
       await patchAopLoop(loop.id, { current_agent_task_id: null });
     }
     void queueBridgeTasking({
       ...loop,
       currentAgentTaskId: null,
+      activePromptId: "",
     });
     setPromptStatus("Retrying bridge task selection…");
   }
 
   async function resumeAopLoop() {
     const loop = aopLoopRef.current;
-    if (!loop || loop.status !== "paused" || !daemonAcceptsWork) {
+    if (!loop || !daemonAcceptsWork) {
       return;
     }
+    // Soft-pause was armed mid-coding: operator chose "Keep going".
+    if (loop.pauseRequested && loop.status !== "paused") {
+      await patchAopLoop(loop.id, {
+        pause_requested: false,
+        status_detail:
+          loop.status === "executing"
+            ? `Continuing current coding task: ${loop.currentTaskTitle}`
+            : loop.statusDetail,
+      });
+      setPromptStatus("Pause request cleared — loop will keep going.");
+      return;
+    }
+    if (loop.status !== "paused") {
+      return;
+    }
+    aopAutoStartKeyRef.current = "";
+    aopDriveKeyRef.current = "";
     let resume = resumeStatusFromPaused(loop.pausedFrom) ?? "bridging_task";
     // Never re-enter "executing" without a live agent_tasks row. Prefer retry gate.
     if (resume === "executing") {
@@ -2754,6 +2914,7 @@ export default function FeatureFilesDashboard({
             await patchAopLoop(loop.id, {
               status: "executing",
               cancel_requested: false,
+              pause_requested: false,
               paused_from: "",
               status_detail: `Resumed coding (${existing.status}): ${loop.currentTaskTitle}`,
             });
@@ -2766,9 +2927,10 @@ export default function FeatureFilesDashboard({
       }
       resume = "awaiting_start";
     }
-    await patchAopLoop(loop.id, {
+    const resumed = await patchAopLoop(loop.id, {
       status: resume,
       cancel_requested: false,
+      pause_requested: false,
       paused_from: "",
       current_agent_task_id:
         resume === "awaiting_start" || resume === "bridging_task"
@@ -2776,20 +2938,28 @@ export default function FeatureFilesDashboard({
           : loop.currentAgentTaskId,
       status_detail:
         resume === "awaiting_start"
-          ? `Resumed — Start task to run: ${loop.currentTaskTitle}`
+          ? `Resuming coding: ${loop.currentTaskTitle}`
           : `Resumed at ${resume}.`,
     });
     if (resume === "bridging_task") {
       void queueBridgeTasking({
-        ...loop,
+        ...(resumed ?? loop),
         status: resume,
         cancelRequested: false,
+        pauseRequested: false,
         currentAgentTaskId: null,
       });
     } else if (resume === "prep" || resume === "awaiting_answers") {
       queueImplPrep(loop.currentTaskTitle, loop.currentTaskPrompt);
     } else if (resume === "awaiting_start") {
-      setPromptStatus(`Task ready to initiate: ${loop.currentTaskTitle}`);
+      void maybeAutoStartAopTask(resumed ?? {
+        ...loop,
+        status: "awaiting_start",
+        statusDetail: `Resuming coding: ${loop.currentTaskTitle}`,
+        cancelRequested: false,
+        pauseRequested: false,
+        currentAgentTaskId: null,
+      });
     } else if (resume === "awaiting_verification") {
       setPromptStatus("Verify recent AOP changes, then continue.");
     }
@@ -2819,7 +2989,7 @@ export default function FeatureFilesDashboard({
       return;
     }
     if (loop.status === "executing") {
-      await stopAopLoop();
+      await pauseAopLoop();
     }
     await requestAopGit("aop_loop_revert", loop.repository, {
       loopId: loop.id,
@@ -2893,9 +3063,9 @@ export default function FeatureFilesDashboard({
   async function patchAopLoop(
     loopId: string,
     updates: Record<string, unknown>,
-  ) {
+  ): Promise<AopExecutionLoop | undefined> {
     if (!accessToken) {
-      return;
+      return undefined;
     }
     const row = await updateAopLoop(
       supabaseUrl,
@@ -2904,7 +3074,9 @@ export default function FeatureFilesDashboard({
       loopId,
       updates,
     );
+    aopLoopRef.current = row;
     setAopLoop(row);
+    return row;
   }
 
   function isLoopActiveStatus(status: string) {
@@ -2927,10 +3099,15 @@ export default function FeatureFilesDashboard({
       currentTaskTitle: loop.currentTaskTitle,
       taskStatus,
       taskError,
+      pauseAfterTask: loop.pauseAfterTask,
+      pauseRequested: loop.pauseRequested,
     });
     if (!patch) {
       return;
     }
+    // Allow the next slice (or a failed-retry) to auto-start when appropriate.
+    aopAutoStartKeyRef.current = "";
+    aopDriveKeyRef.current = "";
     await patchAopLoop(loop.id, patch.updates);
     // Refresh coding history ledger after any terminal coding outcome.
     const refreshed = await syncLoopHistoryFromAgentTasks({
@@ -2965,8 +3142,18 @@ export default function FeatureFilesDashboard({
         currentTaskTitle: "",
         currentTaskPrompt: "",
       });
-    } else if (patch.updates.status === "awaiting_start") {
+    } else if (patch.updates.status === "paused") {
       setPromptStatus(patch.updates.status_detail);
+    } else if (patch.updates.status === "awaiting_start") {
+      const nextLoop: AopExecutionLoop = {
+        ...refreshed.loop,
+        status: "awaiting_start",
+        statusDetail: patch.updates.status_detail ?? refreshed.loop.statusDetail,
+        currentAgentTaskId: null,
+      };
+      setPromptStatus(patch.updates.status_detail);
+      // Only auto-retry when detail does not indicate a coding failure (stop/fix required).
+      void maybeAutoStartAopTask(nextLoop);
     }
   }
 
@@ -3022,8 +3209,15 @@ export default function FeatureFilesDashboard({
       await patchAopLoop(loop.id, {
         status: "awaiting_start",
         status_detail:
-          "Loop was executing without a linked agent_tasks row. Start task to re-queue the same slice.",
+          "Loop was executing without a linked agent_tasks row. Starting coding again for the same slice…",
         active_prompt_id: "",
+      });
+      void maybeAutoStartAopTask({
+        ...loop,
+        status: "awaiting_start",
+        statusDetail:
+          "Loop was executing without a linked agent_tasks row. Starting coding again for the same slice…",
+        currentAgentTaskId: null,
       });
       return;
     }
@@ -3041,7 +3235,14 @@ export default function FeatureFilesDashboard({
           current_agent_task_id: null,
           active_prompt_id: "",
           status_detail:
-            "Linked coding task row is missing. Start task to re-queue the same slice.",
+            "Linked coding task row is missing. Starting coding again for the same slice…",
+        });
+        void maybeAutoStartAopTask({
+          ...loop,
+          status: "awaiting_start",
+          statusDetail:
+            "Linked coding task row is missing. Starting coding again for the same slice…",
+          currentAgentTaskId: null,
         });
         return;
       }
@@ -4554,9 +4755,10 @@ export default function FeatureFilesDashboard({
                 onSelectModel={selectModel}
                 onSubmitDirection={() => void sendBridgeDirection()}
                 onStartBuildLoop={() => void startAopBuildLoop()}
-                onStopLoop={() => void stopAopLoop()}
+                onPauseLoop={() => void pauseAopLoop()}
                 onCancelLoop={() => void cancelAopLoop()}
                 onResumeLoop={() => void resumeAopLoop()}
+                onPauseAfterTaskChange={(enabled) => void setAopPauseAfterTask(enabled)}
                 onRetryBridgeTasking={() => void retryBridgeTasking()}
                 onStartTask={() => void startAopTask()}
                 onVerifyLoop={() => void verifyAopLoop()}

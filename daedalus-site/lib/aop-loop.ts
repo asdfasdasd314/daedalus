@@ -75,6 +75,10 @@ export type AopExecutionLoop = {
   recentTaskTitles: string[];
   statusDetail: string;
   cancelRequested: boolean;
+  /** Sticky debug: after each integrated coding slice, pause before next bridge turn. */
+  pauseAfterTask: boolean;
+  /** One-shot: operator Pause while work in flight — apply at next safe boundary. */
+  pauseRequested: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -106,6 +110,8 @@ export type AopExecutionLoopRow = {
   recent_task_titles: string[] | null;
   status_detail: string;
   cancel_requested: boolean;
+  pause_after_task?: boolean;
+  pause_requested?: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -145,6 +151,8 @@ export function mapAopLoopRow(row: AopExecutionLoopRow): AopExecutionLoop {
       : [],
     statusDetail: row.status_detail ?? "",
     cancelRequested: Boolean(row.cancel_requested),
+    pauseAfterTask: Boolean(row.pause_after_task),
+    pauseRequested: Boolean(row.pause_requested),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -275,6 +283,58 @@ export function isBridgeTaskingReply(input: {
 }
 
 /**
+ * Manual "Retry choose task" only when bridging is stuck/failed — not while a
+ * task-selection prompt is still in flight.
+ */
+export function needsBridgeTaskingRetry(input: {
+  status: string;
+  activePromptId?: string;
+  statusDetail?: string;
+}): boolean {
+  if (input.status !== "bridging_task") {
+    return false;
+  }
+  const detail = (input.statusDetail ?? "").trim();
+  if (
+    /fail|error|unable|without a reply|timed out|stalled|missing next_task/i
+      .test(detail)
+  ) {
+    return true;
+  }
+  // No active prompt id means the driver never started or the turn already ended
+  // without advancing — operator may re-issue task selection.
+  return !(input.activePromptId ?? "").trim();
+}
+
+/**
+ * Coding starts automatically after prep readiness. Manual retry only after a
+ * launch/coding failure on the same slice (Stop is still available mid-run).
+ */
+export function needsManualCodingRetry(statusDetail?: string): boolean {
+  const detail = (statusDetail ?? "").trim();
+  if (!detail) {
+    return false;
+  }
+  return /Could not queue|Start task again|Coding task failed|Coding task blocked|Primary worktree|fix the issue/i
+    .test(detail);
+}
+
+export function shouldAutoStartCoding(loop: {
+  status: string;
+  currentTaskTitle?: string;
+  currentTaskPrompt?: string;
+  statusDetail?: string;
+}): boolean {
+  if (loop.status !== "awaiting_start") {
+    return false;
+  }
+  if (!(loop.currentTaskTitle ?? "").trim() || !(loop.currentTaskPrompt ?? "").trim()) {
+    return false;
+  }
+  return !needsManualCodingRetry(loop.statusDetail);
+}
+
+/**
  * Only a completed durable agent_tasks row may advance the loop to the next
  * bridge emission. Failed / blocked / cancelled keep the same slice so the
  * operator can retry (Start task) or resume.
@@ -293,6 +353,7 @@ export type AopLoopAfterCodingTerminal = {
     integrated_commits?: string[];
     paused_from?: string;
     cancel_requested?: boolean;
+    pause_requested?: boolean;
   };
 };
 
@@ -534,6 +595,9 @@ export function loopPatchAfterCodingTaskTerminal(input: {
   currentTaskTitle: string;
   taskStatus: string;
   taskError?: string;
+  /** Sticky or one-shot: hold automation after this successful integrate. */
+  pauseAfterTask?: boolean;
+  pauseRequested?: boolean;
 }): AopLoopAfterCodingTerminal | null {
   if (input.taskStatus === "completed") {
     const nextStatus = nextStatusAfterTaskComplete(
@@ -549,6 +613,28 @@ export function loopPatchAfterCodingTaskTerminal(input: {
       input.integratedCommits ?? [],
       input.completedCommit,
     );
+    const holdForOperator = Boolean(input.pauseAfterTask || input.pauseRequested);
+    if (holdForOperator) {
+      return {
+        shouldQueueBridge: false,
+        updates: {
+          status: "paused",
+          paused_from: nextStatus,
+          tasks_completed_total: input.tasksCompletedTotal + 1,
+          tasks_since_verification: nextSince,
+          recent_task_titles: titles,
+          integrated_commits: integrated,
+          current_agent_task_id: null,
+          active_prompt_id: "",
+          pause_requested: false,
+          cancel_requested: false,
+          status_detail:
+            nextStatus === "awaiting_verification"
+              ? `Task integrated. Paused for inspection — Resume → verify the last ${input.maxTasksBeforeVerification} task(s).`
+              : "Task integrated. Paused for inspection — run the app or debug, then Resume to choose the next task.",
+        },
+      };
+    }
     return {
       shouldQueueBridge: nextStatus === "bridging_task",
       updates: {
@@ -559,6 +645,7 @@ export function loopPatchAfterCodingTaskTerminal(input: {
         integrated_commits: integrated,
         current_agent_task_id: null,
         active_prompt_id: "",
+        pause_requested: false,
         status_detail:
           nextStatus === "awaiting_verification"
             ? `Verify the last ${input.maxTasksBeforeVerification} integrated task(s) before continuing.`
@@ -574,8 +661,9 @@ export function loopPatchAfterCodingTaskTerminal(input: {
         status: "paused",
         paused_from: "awaiting_start",
         cancel_requested: true,
+        pause_requested: false,
         status_detail:
-          "Coding task cancelled. Resume, then Start task to retry the same slice.",
+          "Coding task cancelled. Resume continues the same slice automatically (or Cancel loop).",
         current_agent_task_id: null,
         active_prompt_id: "",
       },
@@ -587,15 +675,32 @@ export function loopPatchAfterCodingTaskTerminal(input: {
       || (input.taskStatus === "blocked"
         ? "Coding task blocked."
         : "Coding task failed.");
+    // One-shot Pause mid-task still holds on failure so the operator can inspect.
+    // Sticky "pause after each task" only applies to successful integrates.
+    if (input.pauseRequested) {
+      return {
+        shouldQueueBridge: false,
+        updates: {
+          status: "paused",
+          paused_from: "awaiting_start",
+          status_detail: `${detail} Paused after failure — fix, Resume (or Retry Start task), then continue.`,
+          current_agent_task_id: null,
+          active_prompt_id: "",
+          cancel_requested: false,
+          pause_requested: false,
+        },
+      };
+    }
     return {
       shouldQueueBridge: false,
       updates: {
-        // Keep the same current_task_* / prep answers; operator must Start again.
+        // Keep the same current_task_* / prep answers; software retries only on operator click.
         status: "awaiting_start",
         status_detail: `${detail} Fix the issue, then Start task again (same slice — not a new bridge task).`,
         current_agent_task_id: null,
         active_prompt_id: "",
         cancel_requested: false,
+        pause_requested: false,
       },
     };
   }

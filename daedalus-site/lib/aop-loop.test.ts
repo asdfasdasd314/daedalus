@@ -11,8 +11,11 @@ import {
   loopCountersFromCompletedSlices,
   loopHistoryNeedsSync,
   loopPatchAfterCodingTaskTerminal,
+  needsBridgeTaskingRetry,
+  needsManualCodingRetry,
   nextStatusAfterTaskComplete,
   resumeStatusFromPaused,
+  shouldAutoStartCoding,
   summarizeLoopCodingHistory,
   type AopLoopCodingSlice,
 } from "./aop-loop";
@@ -40,6 +43,36 @@ test("loop advances only on completed durable coding tasks", () => {
   assert.equal(completed?.updates.tasks_completed_total, 1);
   assert.equal(completed?.updates.current_agent_task_id, null);
   assert.deepEqual(completed?.updates.integrated_commits, ["abc123def456"]);
+
+  const pauseAfter = loopPatchAfterCodingTaskTerminal({
+    tasksCompletedTotal: 0,
+    tasksSinceVerification: 0,
+    maxTasksBeforeVerification: 3,
+    recentTaskTitles: [],
+    integratedCommits: [],
+    completedCommit: "abc123def456",
+    currentTaskTitle: "Landing page",
+    taskStatus: "completed",
+    pauseAfterTask: true,
+  });
+  assert.equal(pauseAfter?.shouldQueueBridge, false);
+  assert.equal(pauseAfter?.updates.status, "paused");
+  assert.equal(pauseAfter?.updates.paused_from, "bridging_task");
+  assert.equal(pauseAfter?.updates.pause_requested, false);
+  assert.equal(pauseAfter?.updates.tasks_completed_total, 1);
+
+  const pauseRequested = loopPatchAfterCodingTaskTerminal({
+    tasksCompletedTotal: 2,
+    tasksSinceVerification: 2,
+    maxTasksBeforeVerification: 3,
+    recentTaskTitles: ["A", "B"],
+    currentTaskTitle: "C",
+    taskStatus: "completed",
+    completedCommit: "ccc",
+    pauseRequested: true,
+  });
+  assert.equal(pauseRequested?.updates.status, "paused");
+  assert.equal(pauseRequested?.updates.paused_from, "awaiting_verification");
 
   const failed = loopPatchAfterCodingTaskTerminal({
     tasksCompletedTotal: 0,
@@ -75,11 +108,66 @@ test("isAopCodingTaskInFlight covers worktree orchestrator statuses", () => {
   assert.equal(isAopCodingTaskInFlight("completed"), false);
 });
 
-test("canStartAopBuildLoop only for idle or terminal", () => {
-  assert.equal(canStartAopBuildLoop(null), true);
-  assert.equal(canStartAopBuildLoop("completed"), true);
-  assert.equal(canStartAopBuildLoop("executing"), false);
-  assert.equal(canStartAopBuildLoop("paused"), false);
+test("needsBridgeTaskingRetry only when stuck or failed", () => {
+  assert.equal(
+    needsBridgeTaskingRetry({
+      status: "bridging_task",
+      activePromptId: "p1",
+      statusDetail: "Bridge is choosing coding task #2…",
+    }),
+    false,
+  );
+  assert.equal(
+    needsBridgeTaskingRetry({
+      status: "bridging_task",
+      activePromptId: "",
+      statusDetail: "Bridge is choosing…",
+    }),
+    true,
+  );
+  assert.equal(
+    needsBridgeTaskingRetry({
+      status: "bridging_task",
+      activePromptId: "p1",
+      statusDetail: "Bridge tasking failed: missing next_task",
+    }),
+    true,
+  );
+  assert.equal(
+    needsBridgeTaskingRetry({
+      status: "executing",
+      activePromptId: "",
+      statusDetail: "",
+    }),
+    false,
+  );
+});
+
+test("shouldAutoStartCoding skips manual failure gates", () => {
+  assert.equal(
+    shouldAutoStartCoding({
+      status: "awaiting_start",
+      currentTaskTitle: "Landing",
+      currentTaskPrompt: "Build it",
+      statusDetail: "Starting coding automatically: Landing",
+    }),
+    true,
+  );
+  assert.equal(
+    shouldAutoStartCoding({
+      status: "awaiting_start",
+      currentTaskTitle: "Landing",
+      currentTaskPrompt: "Build it",
+      statusDetail: "Could not queue coding task: dirty tree",
+    }),
+    false,
+  );
+  assert.equal(
+    needsManualCodingRetry(
+      "Primary worktree must be clean. Fix the issue, then Start task again (same slice — not a new bridge task).",
+    ),
+    true,
+  );
 });
 
 test("resumeStatusFromPaused validates paused_from", () => {

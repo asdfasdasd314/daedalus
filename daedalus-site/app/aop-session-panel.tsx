@@ -3,6 +3,7 @@
 import type { TargetedFeature } from "@/lib/agent-chat-cache";
 import type { AgentModelsConfig } from "@/lib/agent-models";
 import type { AopExecutionLoop, AopLoopCodingSlice } from "@/lib/aop-loop";
+import { needsBridgeTaskingRetry, needsManualCodingRetry } from "@/lib/aop-loop";
 import type { BridgeSession, BridgeTask } from "@/lib/bridge-session";
 import { isCpDocCodingReady } from "@/lib/bridge-session";
 import type { PlanningQuestion } from "@/lib/planning-questionnaire";
@@ -28,9 +29,10 @@ type AopSessionPanelProps = {
   onSelectModel: (modelId: string) => void;
   onSubmitDirection: () => void;
   onStartBuildLoop: () => void;
-  onStopLoop: () => void;
+  onPauseLoop: () => void;
   onCancelLoop: () => void;
   onResumeLoop: () => void;
+  onPauseAfterTaskChange: (enabled: boolean) => void;
   onRetryBridgeTasking: () => void;
   onStartTask: () => void;
   onVerifyLoop: () => void;
@@ -65,9 +67,10 @@ export default function AopSessionPanel({
   onSelectModel,
   onSubmitDirection,
   onStartBuildLoop,
-  onStopLoop,
+  onPauseLoop,
   onCancelLoop,
   onResumeLoop,
+  onPauseAfterTaskChange,
   onRetryBridgeTasking,
   onStartTask,
   onVerifyLoop,
@@ -337,7 +340,7 @@ export default function AopSessionPanel({
               label={
                 loopActive
                   ? "Latest task"
-                  : "Proposed task (not built yet — needs Build loop → Start task)"
+                  : "Proposed task (not built yet — needs Build loop)"
               }
             />
           ) : null}
@@ -371,16 +374,35 @@ export default function AopSessionPanel({
           </div>
           <p className="text-xs leading-5 text-slate-500">
             Loop state is durable (database: aop_execution_loops). Coding runs as agent_tasks
-            rows; the Coding history list below is the ledger (completed/failed/cancelled).
-            Only completed integrates advance the loop. Failures stay on the same slice so you
-            can Start task again. Vision Q&amp;A alone uses browser storage. Bridge phase
-            &quot;idle&quot; means vision Q&amp;A is done — the build loop panel below is separate.
+            rows; Coding history below is the ledger. After prep readiness, coding starts
+            automatically. Pause holds automation (if a task is mid-flight it finishes first);
+            Resume continues from the same place. Cancel ends the loop. Enable
+            &quot;Pause after each task&quot; to step through integrates for debugging.
+            Navigate away and back: the active loop re-attaches without another Start build
+            loop click. Bridge phase &quot;idle&quot; is vision Q&amp;A only.
           </p>
           {aopLoop.statusDetail ? (
             <p className="rounded-[1.25rem] border border-white/10 bg-black/30 px-4 py-3 text-sm text-slate-100">
               {aopLoop.statusDetail}
             </p>
           ) : null}
+          <label className="flex cursor-pointer items-start gap-3 rounded-[1.25rem] border border-white/10 bg-black/20 px-4 py-3 text-sm text-slate-200">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={aopLoop.pauseAfterTask}
+              onChange={(event) => onPauseAfterTaskChange(event.target.checked)}
+              disabled={aopLoop.status === "completed" || aopLoop.status === "cancelled" || aopLoop.status === "failed"}
+            />
+            <span>
+              <span className="font-medium text-slate-100">Pause after each task</span>
+              <span className="mt-1 block text-xs leading-5 text-slate-500">
+                After a coding slice integrates, hold so you can run the app and inspect before
+                the next task is chosen. Resume continues. (Same idea as mid-loop Pause, but
+                automatic at every task boundary.)
+              </span>
+            </span>
+          </label>
           <div className="grid gap-1 text-sm text-slate-300">
             {aopLoop.currentTaskTitle ? (
               <p>
@@ -478,7 +500,7 @@ export default function AopSessionPanel({
             </div>
           ) : null}
           <div className="flex flex-wrap gap-2">
-            {aopLoop.status === "bridging_task" ? (
+            {needsBridgeTaskingRetry(aopLoop) ? (
               <button
                 type="button"
                 onClick={onRetryBridgeTasking}
@@ -488,16 +510,14 @@ export default function AopSessionPanel({
                 Retry choose task
               </button>
             ) : null}
-            {aopLoop.status === "awaiting_start" ? (
+            {aopLoop.status === "awaiting_start" && needsManualCodingRetry(aopLoop.statusDetail) ? (
               <button
                 type="button"
                 onClick={onStartTask}
                 disabled={!acceptsWork}
                 className="rounded-full bg-cyan-300 px-5 py-3 text-sm font-semibold text-slate-950 hover:bg-cyan-200 disabled:opacity-50"
               >
-                {/Start task again|failed|clean|Could not queue/i.test(aopLoop.statusDetail)
-                  ? "Retry Start task"
-                  : "Start task"}
+                Retry Start task
               </button>
             ) : null}
             {aopLoop.status === "awaiting_verification" ? (
@@ -512,10 +532,11 @@ export default function AopSessionPanel({
             {loopActive && aopLoop.status !== "paused" ? (
               <button
                 type="button"
-                onClick={onStopLoop}
-                className="rounded-full border border-rose-300/40 px-5 py-3 text-sm font-semibold text-rose-100 hover:bg-rose-300/10"
+                onClick={onPauseLoop}
+                disabled={aopLoop.pauseRequested}
+                className="rounded-full border border-amber-300/40 px-5 py-3 text-sm font-semibold text-amber-100 hover:bg-amber-300/10 disabled:opacity-50"
               >
-                Stop
+                {aopLoop.pauseRequested ? "Pausing after task…" : "Pause"}
               </button>
             ) : null}
             {aopLoop.status === "paused" ? (
@@ -526,6 +547,15 @@ export default function AopSessionPanel({
                 className="rounded-full bg-emerald-300 px-5 py-3 text-sm font-semibold text-slate-950 hover:bg-emerald-200 disabled:opacity-50"
               >
                 Resume
+              </button>
+            ) : null}
+            {aopLoop.pauseRequested && aopLoop.status !== "paused" ? (
+              <button
+                type="button"
+                onClick={onResumeLoop}
+                className="rounded-full border border-white/15 px-5 py-3 text-sm font-semibold text-slate-200 hover:bg-white/5"
+              >
+                Keep going
               </button>
             ) : null}
             {loopActive ? (

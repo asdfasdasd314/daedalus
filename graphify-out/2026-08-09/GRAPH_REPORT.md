@@ -1,16 +1,16 @@
 # Graph Report - daedalus  (2026-08-09)
 
 ## Corpus Check
-- 169 files · ~144,505 words
+- 169 files · ~145,643 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1498 nodes · 2770 edges · 115 communities (96 shown, 19 thin omitted)
+- 1501 nodes · 2784 edges · 105 communities (87 shown, 18 thin omitted)
 - Extraction: 91% EXTRACTED · 9% INFERRED · 0% AMBIGUOUS · INFERRED: 262 edges (avg confidence: 0.76)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `9b3cc3ef`
+- Built from commit: `3d611d88`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -51,7 +51,6 @@
 - validate_execution_request
 - FeatureExecutionSupervisor
 - run_git_sync_cycle
-- coding.md
 - planning.md
 - agent-task-notifications.tsx
 - daemon-manager-panel.tsx
@@ -73,10 +72,8 @@
 - System Architecture Visualization Engine
 - Ventures
 - architecture.md
-- properties
 - integrating.md
 - layout.tsx
-- SupabaseUnavailableError
 - Daedalus Project Instructions
 - README.md
 - Shared Database Artifacts
@@ -105,27 +102,20 @@
 - Path
 - Popen
 - Exception
-- Exception
 - Path
 - Exception
 - Path
 - Path
 - Popen
-- Path
 - Popen
 - Path
 - Path
 - README.md
 - entry-point-picker.tsx
-- FeatureExecutionSupervisor
-- ensure_structured_cp_doc
-- test_main.py
 - run_git_sync_cycle
-- properties
 - entry-point-picker.tsx
 - system_definition
 - agent-models.ts
-- properties
 - FakeResponse
 
 ## God Nodes (most connected - your core abstractions)
@@ -141,8 +131,6 @@
 10. `main()` - 19 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `extractFeatureFileReferences()` --indirect_call--> `normalizeFeatureFilePath()`  [INFERRED]
-  daedalus-site/app/feature-file-graph.tsx → daedalus-site/app/feature-workspace-utils.ts
 - `FeatureFilesDashboard()` --indirect_call--> `exchange()`  [INFERRED]
   daedalus-site/app/feature-files-dashboard.tsx → daedalus-site/lib/agent-output-history.test.ts
 - `DirectPromptSupervisor` --uses--> `ArchitectureViewSupervisor`  [INFERRED]
@@ -151,35 +139,37 @@
   local-daemon/src/daedalus_daemon/main.py → local-daemon/src/daedalus_daemon/communications.py
 - `GitWorktreeOrchestrator` --uses--> `SupabaseUnavailableError`  [INFERRED]
   local-daemon/src/daedalus_daemon/orchestrator.py → local-daemon/src/daedalus_daemon/communications.py
+- `DirectPromptSupervisor` --uses--> `FeatureExecutionSupervisor`  [INFERRED]
+  local-daemon/src/daedalus_daemon/main.py → local-daemon/src/daedalus_daemon/execution.py
 
 ## Import Cycles
 - None detected.
 
-## Communities (115 total, 19 thin omitted)
+## Communities (105 total, 18 thin omitted)
 
 ### Community 0 - "orchestrator.py"
-Cohesion: 0.19
-Nodes (3): GitWorktreeOrchestrator, CancelOrchestratorTests, PerTaskIntegrationTests
+Cohesion: 0.18
+Nodes (4): get_agent_task_control(), GitWorktreeOrchestrator, CancelOrchestratorTests, PerTaskIntegrationTests
 
 ### Community 1 - "feature-files-dashboard.tsx"
-Cohesion: 0.05
-Nodes (62): acknowledgeClientReviews(), AgentPromptPayload, AgentPromptQueueEntry, AgentPromptQueueStatus, AgentTaskRow, AuthMode, callRecoveryRpc(), cancelDurableAgentTask() (+54 more)
+Cohesion: 0.04
+Nodes (83): acknowledgeClientReviews(), AgentPromptPayload, AgentPromptQueueEntry, AgentPromptQueueStatus, AgentTaskRow, AuthMode, callRecoveryRpc(), cancelDurableAgentTask() (+75 more)
 
 ### Community 2 - "architecture_document.py"
-Cohesion: 0.10
-Nodes (21): clampNumber(), FeatureFilesDashboard(), fetchActiveAgentTaskSummaries(), fetchAgentTaskById(), fetchDaemonPayload(), fetchFeatureExecutionHistorySummaries(), fetchFeatureExecutionRunDetail(), findParameterFileByPath() (+13 more)
+Cohesion: 0.12
+Nodes (13): BaseModel, ArchitectureDocumentModel, ArrayFieldDefinition, ChannelDefinition, load_published_architecture_schema(), NamedFieldDefinition, ObjectFieldDefinition, parse_and_validate_architecture_response() (+5 more)
 
 ### Community 3 - "agent-output-viewer.tsx"
-Cohesion: 0.08
-Nodes (49): AgentOutputDetailProps, AgentOutputViewer(), AgentOutputViewerPresentation, AgentOutputViewerProps, architectureActionLabel(), architectureProgressLabel(), formatTime(), logViewerRequest() (+41 more)
+Cohesion: 0.07
+Nodes (60): AgentOutputDetailProps, AgentOutputViewer(), AgentOutputViewerPresentation, AgentOutputViewerProps, architectureActionLabel(), architectureProgressLabel(), formatTime(), logViewerRequest() (+52 more)
 
 ### Community 4 - "feature-file-graph.tsx"
 Cohesion: 0.05
-Nodes (51): applyNodeVisualMetrics(), applyZoomAtPoint(), buildGraphData(), buildProjectFeatureLayout(), centerGraphViewport(), clamp(), ClientPoint, ClusterColor (+43 more)
+Nodes (50): applyNodeVisualMetrics(), applyZoomAtPoint(), buildGraphData(), buildProjectFeatureLayout(), centerGraphViewport(), clamp(), ClientPoint, ClusterColor (+42 more)
 
 ### Community 5 - "architecture.py"
-Cohesion: 0.15
-Nodes (11): find_project_directories(), is_linked_git_worktree(), load_snapshot_limits(), Path, Read one explicitly requested file within its project and response bound., read_project_file(), scan_feature_file_projects(), scan_parameter_file_projects() (+3 more)
+Cohesion: 0.07
+Nodes (22): claim_feature_execution_run(), list_active_feature_execution_runs(), update_feature_execution_run(), FeatureExecutionSupervisor, paired_parameter_file_path(), Path, Popen, resolve_inside_project() (+14 more)
 
 ### Community 6 - "main.py"
 Cohesion: 0.12
@@ -202,56 +192,56 @@ Cohesion: 0.07
 Nodes (28): compilerOptions, allowJs, esModuleInterop, incremental, isolatedModules, jsx, lib, module (+20 more)
 
 ### Community 11 - "ensure_structured_cp_doc"
-Cohesion: 0.09
-Nodes (23): apply_entry_point_update(), build_cp_doc_skeleton(), commit_project_cp_doc(), cp_doc_has_all_sections(), ensure_structured_cp_doc(), extract_bridge_cp_doc(), extract_optional_cp_doc(), persist_bridge_cp_doc_from_reply() (+15 more)
+Cohesion: 0.10
+Nodes (22): apply_parameter_file_update(), build_bridge_refinement_context(), build_cp_doc_skeleton(), commit_project_cp_doc(), cp_doc_has_all_sections(), ensure_structured_cp_doc(), extract_bridge_cp_doc(), extract_optional_cp_doc() (+14 more)
 
 ### Community 12 - "migration_deployment.py"
 Cohesion: 0.12
-Nodes (14): blocked(), deploy_pending_migrations(), diagnostic_text(), migration_files_changed(), project_lock(), project_ref_for_repository(), Path, Select the sole configured project for an exactly resolved repository. (+6 more)
+Nodes (16): blocked(), deploy_pending_migrations(), diagnostic_text(), load_deployment_settings(), migration_files_changed(), positive_int(), project_lock(), project_ref_for_repository() (+8 more)
 
 ### Community 13 - "scan_feature_file_projects"
-Cohesion: 0.06
-Nodes (41): BaseModel, add_snapshot_worktree(), architecture_document_path(), architecture_failure_details(), architecture_log_path(), architecture_operational_failure(), architecture_snapshot_path(), ArchitectureViewSupervisor (+33 more)
+Cohesion: 0.09
+Nodes (32): add_snapshot_worktree(), architecture_document_path(), architecture_failure_details(), architecture_log_path(), architecture_operational_failure(), architecture_snapshot_path(), ArchitectureViewSupervisor, build_architecture_correction_prompt() (+24 more)
 
 ### Community 14 - "feature-workspace-utils.ts"
 Cohesion: 0.15
-Nodes (23): AgentPromptMode, AgentSessionPanel(), AgentSessionPanelProps, AopSessionPanel(), FeatureGraphSelection, FeatureSearchDialog(), FeatureSearchDialogProps, FeatureSearchMode (+15 more)
+Nodes (18): extractFeatureFileReferences(), FeatureGraphSelection, FeatureSearchDialog(), FeatureSearchDialogProps, FeatureSearchMode, buildFeatureExecutionRequest(), buildFeatureSearchRecords(), FeatureSearchRecord (+10 more)
 
 ### Community 15 - "run_agent_prompt_cycle"
-Cohesion: 0.17
-Nodes (16): find_github_url(), initialize_project(), load_initializer_settings(), matching_request_marker(), materialize_templates(), normalize_github_url(), publish(), Path (+8 more)
+Cohesion: 0.15
+Nodes (17): find_github_url(), initialize_project(), load_initializer_settings(), matching_request_marker(), materialize_templates(), normalize_github_url(), publish(), Path (+9 more)
 
 ### Community 16 - "parameter-file-parser.ts"
-Cohesion: 0.16
-Nodes (21): ParameterVariableSelector(), ParameterVariableSelectorProps, ParameterFileRecord, ExecutionEntryPointMetadata, isDoubleQuotedString(), isSingleQuotedString(), isSupportedArrayLiteral(), isValidFloat() (+13 more)
+Cohesion: 0.17
+Nodes (20): ParameterVariableSelector(), ParameterVariableSelectorProps, ExecutionEntryPointMetadata, isDoubleQuotedString(), isSingleQuotedString(), isSupportedArrayLiteral(), isValidFloat(), normalizeFloatLiteral() (+12 more)
 
 ### Community 17 - "main.py"
-Cohesion: 0.15
-Nodes (20): snapshot_communication_messages(), apply_parameter_file_update(), build_entry_point_update_state_message(), build_parameter_file_update_state_message(), build_skipped_push_step(), DirectPromptSupervisor, execute_git_sync_operation(), is_toml_float() (+12 more)
+Cohesion: 0.16
+Nodes (18): snapshot_communication_messages(), apply_entry_point_update(), build_entry_point_update_state_message(), build_parameter_file_update_state_message(), build_skipped_push_step(), DirectPromptSupervisor, execute_git_sync_operation(), is_toml_float() (+10 more)
 
 ### Community 18 - "README.md"
-Cohesion: 0.20
-Nodes (25): load_deployment_settings(), positive_int(), commit_paths(), commit_worktree_changes(), create_task_worktree(), delete_merged_branch(), find_migration_directories(), format_process_failure() (+17 more)
+Cohesion: 0.21
+Nodes (24): commit_paths(), commit_worktree_changes(), create_task_worktree(), delete_merged_branch(), find_migration_directories(), format_process_failure(), git_output(), is_clean_worktree() (+16 more)
 
 ### Community 19 - "summary"
-Cohesion: 0.24
-Nodes (15): BridgePhase, BridgeStatus, buildCpDocSkeleton(), CP_DOC_EMPTY_BODY, CP_DOC_REQUIRED_SECTIONS, CP_DOC_SECTIONS, cpDocHasAllSections(), ensureStructuredCpDoc() (+7 more)
+Cohesion: 0.28
+Nodes (5): split_toml_value_and_comment(), update_execution_entry_point_in_toml(), update_parameter_variable_in_toml(), EntryPointTomlUpdateTests, ParameterFileUpdateTests
 
 ### Community 20 - "load_daemon_config"
 Cohesion: 0.10
 Nodes (20): 1. Daedalus Site, 2. Backend, 3. Persistent Idea Space, 4. Local Daemon, 5. AI Execution Layer, Core Subsystems, Daedalus, Design Philosophy (+12 more)
 
 ### Community 21 - "$defs"
-Cohesion: 0.22
-Nodes (5): is_cursor_plan_mode_unsupported(), parse_cursor_plan_stream(), parse_cursor_result(), run_cursor_exec(), RunCursorExecTests
+Cohesion: 0.17
+Nodes (9): is_cursor_plan_mode_unsupported(), parse_cursor_plan_stream(), parse_cursor_result(), Popen, register_agent_process(), run_cursor_exec(), run_tracked_agent_command(), unregister_agent_process() (+1 more)
 
 ### Community 22 - "run_cursor_exec"
-Cohesion: 0.13
-Nodes (16): boolean, integer, null, number, string, properties, primitive_field_definition, additionalProperties (+8 more)
+Cohesion: 0.17
+Nodes (13): additionalProperties, properties, type, array_field_definition, primitive_field_definition, additionalProperties, properties, type (+5 more)
 
 ### Community 23 - "primitive_field_definition"
-Cohesion: 0.23
-Nodes (5): build_agent_prompt_state_message(), parse_agent_prompt_message(), run_agent_prompt_cycle(), AgentOutputHistoryPublicationTests, RunAgentPromptCycleTests
+Cohesion: 0.11
+Nodes (12): build_agent_prompt_state_message(), filter_targeted_feature_paths(), map_reasoning_for_codex(), parse_agent_prompt_message(), run_agent_prompt_cycle(), run_codex_exec(), CursorProviderRoutingTests, FakeGitProcess (+4 more)
 
 ### Community 24 - "recurrent-supabase-queries.test.ts"
 Cohesion: 0.11
@@ -262,44 +252,44 @@ Cohesion: 0.23
 Nodes (14): fields, files, id, items, name, source_system_id, summary, target_system_id (+6 more)
 
 ### Community 26 - "$ref"
-Cohesion: 0.13
-Nodes (7): build_migration_resolver_prompt(), Publish optional deployment telemetry without blocking a database repair., record_migration_deployment_event(), MigrationDeploymentEventTests, MigrationResolverLoopTests, VerificationTests, WorktreeSettingsTests
+Cohesion: 0.14
+Nodes (7): plan_migration_renames(), Publish optional deployment telemetry without blocking a database repair., record_migration_deployment_event(), MigrationDeploymentEventTests, MigrationReconcileTests, VerificationTests, WorktreeSettingsTests
 
 ### Community 27 - "git-sync-panel.tsx"
-Cohesion: 0.29
-Nodes (8): GitSyncPanelProps, GitSyncOperation, GitSyncResult, GitSyncStep, ParsedGitSyncRow, formatGitSyncOutput(), formatStepOutput(), parseGitSyncRowMessage()
+Cohesion: 0.18
+Nodes (15): AgentPromptMode, AgentSessionPanel(), AgentSessionPanelProps, getCompactProjectLabel(), getProjectLabel(), getSharedProjectRoot(), GitSyncPanel(), GitSyncPanelProps (+7 more)
 
 ### Community 28 - "__init__.py"
 Cohesion: 0.12
-Nodes (16): additionalProperties, type, additionalProperties, type, $defs, array_field_definition, channel_definition, field_definition (+8 more)
+Nodes (16): additionalProperties, type, $defs, channel_definition, field_definition, identifier, non_empty_string, system_definition (+8 more)
 
 ### Community 29 - "update_execution_entry_point_in_toml"
-Cohesion: 0.15
-Nodes (6): cleanup_task_worktree(), Remove a task worktree once, accepting an already-absent workspace., remove_empty_worktree_directories(), remove_task_worktree_and_branch(), remove_worktree(), TaskDeletionRequestTests
+Cohesion: 0.12
+Nodes (7): cleanup_task_worktree(), Remove a task worktree once, accepting an already-absent workspace., remove_empty_worktree_directories(), remove_task_worktree_and_branch(), remove_worktree(), TaskDeletionRequestTests, WorktreeTests
 
 ### Community 30 - "build_codex_prompt"
 Cohesion: 0.14
 Nodes (15): items, type, items, type, uniqueItems, $ref, properties, channels (+7 more)
 
 ### Community 31 - "run_codex_exec"
-Cohesion: 0.21
-Nodes (6): build_bridge_refinement_context(), build_codex_prompt(), build_cursor_prompt(), build_impl_prep_refinement_context(), build_planning_refinement_context(), BuildCodexPromptTests
+Cohesion: 0.22
+Nodes (5): build_codex_prompt(), build_cursor_prompt(), build_impl_prep_refinement_context(), build_planning_refinement_context(), BuildCodexPromptTests
 
 ### Community 32 - "software-architecture-v1.schema.json"
 Cohesion: 0.18
 Nodes (10): channels, schema_version, systems, additionalProperties, description, $id, required, $schema (+2 more)
 
 ### Community 33 - "validate_execution_request"
-Cohesion: 0.25
-Nodes (6): paired_parameter_file_path(), Path, resolve_inside_project(), validate_execution_entry_point(), validate_execution_request(), ExecutionContractTests
+Cohesion: 0.33
+Nodes (6): boolean, integer, null, number, string, enum
 
 ### Community 34 - "FeatureExecutionSupervisor"
-Cohesion: 0.10
-Nodes (32): AOP_ACTIVE_STATUSES, AOP_CODING_IN_FLIGHT_STATUSES, AOP_TERMINAL_STATUSES, AopCodingTaskStatus, AopExecutionLoopRow, AopLoopAfterCodingTerminal, AopLoopAnswer, AopLoopQuestion (+24 more)
+Cohesion: 0.05
+Nodes (58): AopSessionPanel(), AopSessionPanelProps, AgentChatExchange, TargetedFeature, AOP_ACTIVE_STATUSES, AOP_CODING_IN_FLIGHT_STATUSES, AOP_TERMINAL_STATUSES, AopCodingTaskStatus (+50 more)
 
 ### Community 35 - "run_git_sync_cycle"
-Cohesion: 0.45
-Nodes (4): record_daemon_event(), update_agent_task(), load_worktree_settings(), utc_now()
+Cohesion: 0.24
+Nodes (10): call_daemon_rpc(), complete_conversation_deletion(), list_agent_tasks(), list_conversation_deletion_requests(), record_daemon_event(), record_rpc_metrics(), update_agent_task(), load_worktree_settings() (+2 more)
 
 ### Community 37 - "planning.md"
 Cohesion: 0.27
@@ -314,8 +304,8 @@ Cohesion: 0.33
 Nodes (5): DaemonManagerPanel(), DaemonManagerRequest, DaemonManagerStatus, formatTime(), Props
 
 ### Community 40 - "Agent Task Notifications"
-Cohesion: 0.18
-Nodes (7): post_feature_files(), post_git_sync_result(), post_parameter_files(), post_project_initialization_result(), upsert_daemon_payload(), PostGitSyncResultTests, ProjectInitializationCommunicationTests
+Cohesion: 0.10
+Nodes (20): fetch_communication_rows(), fetch_current_message(), fetch_current_messages(), fetch_work_snapshot(), get_supabase_headers(), open_supabase_request(), post_feature_files(), post_git_sync_result() (+12 more)
 
 ### Community 41 - "Auth-Scoped Supabase Access"
 Cohesion: 0.22
@@ -385,10 +375,6 @@ Nodes (6): Dev Mode, Feature-First Graph Workspace Shell, Key Points, Relevant F
 Cohesion: 0.29
 Nodes (6): Dev Mode, Feature Search / Fuzzy Finder, Key Points, Relevant Files, State Log, Summary
 
-### Community 58 - "properties"
-Cohesion: 0.14
-Nodes (7): fetch_current_message(), fetch_work_snapshot(), publish_architecture_progress_event(), Publish one generation-scoped Architecture View progress event., Fetch and normalize the single bounded recurrent response for a cycle., upsert_agent_task_turn(), UpdateCurrentMessageTests
-
 ### Community 59 - "integrating.md"
 Cohesion: 0.29
 Nodes (6): Dev Mode, Git Sync, Key Points, Relevant Files, State Log, Summary
@@ -396,10 +382,6 @@ Nodes (6): Dev Mode, Git Sync, Key Points, Relevant Files, State Log, Summary
 ### Community 60 - "layout.tsx"
 Cohesion: 0.40
 Nodes (3): geistMono, geistSans, metadata
-
-### Community 61 - "SupabaseUnavailableError"
-Cohesion: 0.33
-Nodes (5): open_supabase_request(), Exception, SupabaseUnavailableError, update_current_message(), Request
 
 ### Community 62 - "Daedalus Project Instructions"
 Cohesion: 0.29
@@ -426,8 +408,8 @@ Cohesion: 0.29
 Nodes (6): Dev Mode, Key Points, Relevant Files, State Log, Summary, Ventures
 
 ### Community 82 - "page.tsx"
-Cohesion: 0.20
-Nodes (5): build_resolver_prompt(), build_task_prompt(), build_task_repair_prompt(), reply_indicates_cancel(), PromptTests
+Cohesion: 0.14
+Nodes (7): build_migration_resolver_prompt(), build_resolver_prompt(), build_task_prompt(), build_task_repair_prompt(), reply_indicates_cancel(), MigrationResolverLoopTests, PromptTests
 
 ### Community 83 - "Daedalus Project Instructions"
 Cohesion: 0.29
@@ -481,68 +463,40 @@ Nodes (9): Applying answers (critical), Bridge Agent Profile, Build-loop tasking
 Cohesion: 0.50
 Nodes (3): Deploy on Vercel, Getting Started, Learn More
 
-### Community 99 - "Path"
-Cohesion: 0.23
-Nodes (14): call_daemon_rpc(), claim_architecture_view(), claim_feature_execution_run(), complete_architecture_view(), complete_conversation_deletion(), fetch_communication_rows(), fetch_current_messages(), get_agent_task_control() (+6 more)
-
 ### Community 100 - "Popen"
 Cohesion: 0.50
 Nodes (3): Daedalus Project Instructions, graphify, Task mode
-
-### Community 104 - "entry-point-picker.tsx"
-Cohesion: 0.12
-Nodes (8): filter_targeted_feature_paths(), run_project_initialization_cycle(), CursorProviderRoutingTests, FakeGitProcess, FilterTargetedFeaturePathsTests, ParameterFileUpdateTests, RunParameterFileUpdateCycleTests, RunProjectInitializationCycleTests
-
-### Community 105 - "FeatureExecutionSupervisor"
-Cohesion: 0.38
-Nodes (3): update_feature_execution_run(), FeatureExecutionSupervisor, Popen
-
-### Community 106 - "ensure_structured_cp_doc"
-Cohesion: 0.22
-Nodes (13): PlanningResponse(), ImplPrepStatus, parseImplPrepReply(), sectionBody(), unwrapMarkdownCodeFence(), buildImplementationPrompt(), buildPlanningAnswersSuffix(), parsePlanningReply() (+5 more)
-
-### Community 107 - "test_main.py"
-Cohesion: 0.26
-Nodes (7): map_reasoning_for_codex(), Popen, register_agent_process(), run_codex_exec(), run_tracked_agent_command(), unregister_agent_process(), RunCodexExecTests
 
 ### Community 108 - "run_git_sync_cycle"
 Cohesion: 0.39
 Nodes (3): parse_git_sync_message(), run_git_sync_cycle(), RunGitSyncCycleTests
 
-### Community 109 - "properties"
-Cohesion: 0.17
-Nodes (7): AopSessionPanelProps, AgentChatExchange, TargetedFeature, AopExecutionLoop, AopLoopCodingSlice, BridgeSession, BridgeTask
-
 ### Community 110 - "entry-point-picker.tsx"
-Cohesion: 0.31
-Nodes (5): EntryPointPicker(), Props, getRelevantFileEntryPointSuggestions(), normalizeEntryPointPath(), ParameterFileProjects
+Cohesion: 0.29
+Nodes (6): EntryPointPicker(), Props, getRelevantFileEntryPointSuggestions(), normalizeEntryPointPath(), ParameterFileProjects, ParameterFileRecord
 
 ### Community 111 - "system_definition"
-Cohesion: 0.15
-Nodes (15): properties, system_definition, $ref, $ref, id, name, source_system_id, summary (+7 more)
+Cohesion: 0.13
+Nodes (19): properties, object_field_definition, items, type, $ref, $ref, additionalProperties, properties (+11 more)
 
 ### Community 112 - "agent-models.ts"
 Cohesion: 0.33
 Nodes (6): Home(), AgentModel, AgentModelsConfig, loadAgentModels(), FrontendConfig, loadFrontendConfig()
 
-### Community 113 - "properties"
-Cohesion: 0.29
-Nodes (7): object_field_definition, items, type, additionalProperties, properties, type, fields
-
 ## Knowledge Gaps
 - **432 isolated node(s):** `AgentOutputDetailProps`, `AgentOutputViewerProps`, `AgentOutputViewerPresentation`, `AgentPromptMode`, `AgentSessionPanelProps` (+427 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **19 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **18 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `GitWorktreeOrchestrator` connect `orchestrator.py` to `run_git_sync_cycle`, `Path`, `coding.md`, `Agent Task Notifications`, `main.py`, `README.md`, `update_execution_entry_point_in_toml`, `page.tsx`, `$ref`, `Exception`, `SupabaseUnavailableError`?**
-  _High betweenness centrality (0.011) - this node is a cross-community bridge._
-- **Why does `load_daemon_config()` connect `Auth-Scoped Supabase Access` to `Agent Task Notifications`, `main.py`, `README.md`?**
-  _High betweenness centrality (0.010) - this node is a cross-community bridge._
-- **Why does `main()` connect `main.py` to `README.md`?**
+- **Why does `GitWorktreeOrchestrator` connect `orchestrator.py` to `run_git_sync_cycle`, `Agent Task Notifications`, `main.py`, `README.md`, `page.tsx`, `$ref`, `update_execution_entry_point_in_toml`?**
+  _High betweenness centrality (0.012) - this node is a cross-community bridge._
+- **Why does `scan_feature_file_projects()` connect `architecture.py` to `Agent Task Notifications`, `main.py`?**
   _High betweenness centrality (0.006) - this node is a cross-community bridge._
+- **Why does `load_daemon_config()` connect `Auth-Scoped Supabase Access` to `Agent Task Notifications`, `main.py`, `README.md`?**
+  _High betweenness centrality (0.005) - this node is a cross-community bridge._
 - **Are the 27 inferred relationships involving `GitWorktreeOrchestrator` (e.g. with `DirectPromptSupervisor` and `SupabaseUnavailableError`) actually correct?**
   _`GitWorktreeOrchestrator` has 27 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 2 inferred relationships involving `FeatureFilesDashboard()` (e.g. with `mapAgentTaskRowToQueueEntry()` and `exchange()`) actually correct?**

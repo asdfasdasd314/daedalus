@@ -1716,6 +1716,8 @@ create table if not exists aop_execution_loops (
   recent_task_titles text[] not null default '{}',
   status_detail text not null default '',
   cancel_requested boolean not null default false,
+  pause_after_task boolean not null default false,
+  pause_requested boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
