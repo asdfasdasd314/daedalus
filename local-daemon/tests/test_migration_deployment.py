@@ -158,6 +158,8 @@ class MigrationDeploymentTests(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertIn("No allowlisted", result["error"])
         self.assertIn(str(Path(directory).resolve()), result["error"])
+        self.assertEqual(result["operator_handoff"]["service"], "Supabase")
+        self.assertIn(str(Path(directory).resolve()) + "::YOUR_PROJECT_REF", result["operator_handoff"]["steps"][2])
         self.assertEqual(commands, [["git", "diff", "--name-only", "base..HEAD"]])
 
     def test_ambiguous_repository_mapping_is_blocked_before_supabase_preflight(self):

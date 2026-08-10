@@ -229,8 +229,10 @@ type AgentPromptQueueEntry = AgentPromptPayload & {
   // round-trip it through Date, which drops PostgreSQL's microseconds.
   updatedAt?: string;
   error?: string;
+  statusDetail?: string;
   verificationAttempts?: number;
   cancelRequested?: boolean;
+  operatorHandoff?: HistoryExchange["operatorHandoff"];
 };
 
 type AgentTaskRow = {
@@ -248,6 +250,8 @@ type AgentTaskRow = {
   started_at: string | null;
   completed_at: string | null;
   error: string;
+  status_detail?: string;
+  operator_handoff?: HistoryExchange["operatorHandoff"];
   verification_attempts: number;
   cancel_requested?: boolean;
   message?: string;
@@ -979,7 +983,7 @@ export default function FeatureFilesDashboard({
               nextNotifications.push({
                 id: crypto.randomUUID(), taskId: entry.promptId,
                 status: entry.status as AgentTaskNotification["status"], prompt: entry.prompt,
-                repository: entry.directory, error: entry.error, createdAt: Date.now(), read: false,
+                repository: entry.directory, error: entry.error, operatorHandoffTitle: entry.operatorHandoff?.title, createdAt: Date.now(), read: false,
               });
             }
             previousDurableTaskStatusesRef.current.set(entry.promptId, entry.status);
@@ -2806,14 +2810,41 @@ export default function FeatureFilesDashboard({
     if (!loop || !isLoopActiveStatus(loop.status)) {
       return;
     }
-    await patchAopLoop(loop.id, {
-      pause_after_task: enabled,
-    });
-    setPromptStatus(
-      enabled
-        ? "Will pause after each integrated coding task for inspection."
-        : "Continuous loop restored (no auto-pause after tasks).",
-    );
+    // Optimistic so the checkbox sticks while mid-flight coding is in progress.
+    // Terminal completion reads pauseAfterTask from aopLoopRef, not a hydrate snapshot.
+    const optimistic: AopExecutionLoop = {
+      ...loop,
+      pauseAfterTask: enabled,
+    };
+    aopLoopRef.current = optimistic;
+    setAopLoop(optimistic);
+    try {
+      await patchAopLoop(loop.id, {
+        pause_after_task: enabled,
+      });
+      setPromptSubmissionError("");
+      setPromptStatus(
+        enabled
+          ? loop.status === "executing"
+            ? "Pause after each task on — will hold after this coding task integrates (and each after that)."
+            : "Will pause after each integrated coding task for inspection."
+          : "Continuous loop restored (no auto-pause after tasks).",
+      );
+    } catch (error) {
+      // Roll back local flag if the DB write failed (e.g. migration 048 not applied).
+      const reverted: AopExecutionLoop = {
+        ...(aopLoopRef.current ?? loop),
+        pauseAfterTask: loop.pauseAfterTask,
+      };
+      aopLoopRef.current = reverted;
+      setAopLoop(reverted);
+      const detail = error instanceof Error ? error.message : "Unable to update pause-after-task.";
+      setPromptSubmissionError(
+        /pause_after_task|column|schema cache/i.test(detail)
+          ? `Pause after each task needs DB migration 048 (pause_after_task column). ${detail}`
+          : detail,
+      );
+    }
   }
 
   /** Terminal-cancel the loop so a fresh Start build loop can create a new row. */
@@ -3089,18 +3120,21 @@ export default function FeatureFilesDashboard({
     taskError?: string,
     completedCommit?: string,
   ) {
+    // Prefer live ref so mid-task checkbox toggles (pause after each / pause requested)
+    // are honored even when the caller still holds a pre-toggle snapshot.
+    const live = aopLoopRef.current?.id === loop.id ? aopLoopRef.current : loop;
     const patch = loopPatchAfterCodingTaskTerminal({
-      tasksCompletedTotal: loop.tasksCompletedTotal,
-      tasksSinceVerification: loop.tasksSinceVerification,
-      maxTasksBeforeVerification: loop.maxTasksBeforeVerification,
-      recentTaskTitles: loop.recentTaskTitles,
-      integratedCommits: loop.integratedCommits,
+      tasksCompletedTotal: live.tasksCompletedTotal,
+      tasksSinceVerification: live.tasksSinceVerification,
+      maxTasksBeforeVerification: live.maxTasksBeforeVerification,
+      recentTaskTitles: live.recentTaskTitles,
+      integratedCommits: live.integratedCommits,
       completedCommit,
-      currentTaskTitle: loop.currentTaskTitle,
+      currentTaskTitle: live.currentTaskTitle || loop.currentTaskTitle,
       taskStatus,
       taskError,
-      pauseAfterTask: loop.pauseAfterTask,
-      pauseRequested: loop.pauseRequested,
+      pauseAfterTask: live.pauseAfterTask,
+      pauseRequested: live.pauseRequested,
     });
     if (!patch) {
       return;
@@ -3183,8 +3217,10 @@ export default function FeatureFilesDashboard({
         // History still advances from patch + later sync.
       }
     }
+    // Re-read loop after async commit fetch so pause_after_task toggles mid-flight are applied.
+    const latestLoop = aopLoopRef.current ?? loop;
     await applyAopCodingTaskTerminal(
-      loop,
+      latestLoop,
       entry.status,
       entry.error,
       completedCommit,
@@ -3250,8 +3286,11 @@ export default function FeatureFilesDashboard({
         return;
       }
       if (isAopCodingTaskTerminal(row.status)) {
+        const latestLoop = aopLoopRef.current?.id === loop.id
+          ? aopLoopRef.current
+          : loop;
         await applyAopCodingTaskTerminal(
-          loop,
+          latestLoop,
           row.status,
           row.error || undefined,
           row.completed_commit ?? undefined,
@@ -3695,7 +3734,8 @@ export default function FeatureFilesDashboard({
       source,
       targetedFeaturePaths: entry.targetedFeaturePaths,
       status: normalizeStatus(entry.status),
-      statusDetail: entry.cancelRequested ? "Cancellation requested." : "",
+      statusDetail: entry.cancelRequested ? "Cancellation requested." : entry.statusDetail ?? "",
+      operatorHandoff: entry.operatorHandoff,
       createdAt: new Date(entry.enqueuedAt).toISOString(),
       startedAt: entry.sentAt ? new Date(entry.sentAt).toISOString() : null,
       completedAt: entry.completedAt ? new Date(entry.completedAt).toISOString() : null,
@@ -6432,8 +6472,10 @@ function mapAgentTaskRowToQueueEntry(row: AgentTaskRow): AgentPromptQueueEntry {
     completedAt: row.completed_at ? Date.parse(row.completed_at) : undefined,
     updatedAt: row.updated_at || row.created_at,
     error: row.error || undefined,
+    statusDetail: row.status_detail ?? "",
     verificationAttempts: row.verification_attempts,
     cancelRequested: Boolean(row.cancel_requested),
+    operatorHandoff: row.operator_handoff ?? null,
   };
 }
 
@@ -6705,7 +6747,20 @@ async function updateAopLoop(
     throw submissionRequestError(response, detail, "aop loop update failed");
   }
   const rows = await response.json() as AopExecutionLoopRow[];
-  return mapAopLoopRow(rows[0]);
+  if (!rows[0]) {
+    throw new Error("aop loop update returned no row");
+  }
+  const mapped = mapAopLoopRow(rows[0]);
+  // If PostgREST schema cache is stale, representation may omit new columns even
+  // after a successful write of fields that were accepted — or client typed them
+  // as optional. Never clobber an explicit pause flag we just sent.
+  if ("pause_after_task" in updates && rows[0].pause_after_task === undefined) {
+    mapped.pauseAfterTask = Boolean(updates.pause_after_task);
+  }
+  if ("pause_requested" in updates && rows[0].pause_requested === undefined) {
+    mapped.pauseRequested = Boolean(updates.pause_requested);
+  }
+  return mapped;
 }
 
 async function cancelDurableAgentTask(

@@ -50,8 +50,8 @@
     "semantic_hash": "eb708572688fbc0c243f038a1dcd39bb"
   },
   "daedalus-site/app/feature-files-dashboard.tsx": {
-    "mtime": 1786324734.3524103,
-    "ast_hash": "1f1c4deb3b19c7ca6ae768ba13e60e76",
+    "mtime": 1786325146.603171,
+    "ast_hash": "585e6e9d98f403d68de4586ef7c459aa",
     "semantic_hash": ""
   },
   "daedalus-site/app/feature-search-dialog.tsx": {
@@ -275,8 +275,8 @@
     "semantic_hash": ""
   },
   "shared/database/schema.sql": {
-    "mtime": 1786241741.2476592,
-    "ast_hash": "1067c347ae3e5bcbcba49c809eecb5a2",
+    "mtime": 1786325018.4645948,
+    "ast_hash": "562aebc9391bed3d84dba790cbb20ccf",
     "semantic_hash": ""
   },
   "AGENTS.md": {
@@ -730,8 +730,8 @@
     "semantic_hash": ""
   },
   "daedalus-site/app/aop-session-panel.tsx": {
-    "mtime": 1786324682.3955653,
-    "ast_hash": "efabf0a43ffdf6920a83ac3aea66d524",
+    "mtime": 1786325073.5998716,
+    "ast_hash": "047a2edda461111cca4d95a0a3ed04eb",
     "semantic_hash": ""
   },
   "daedalus-site/app/project-initialization-types.ts": {
@@ -815,8 +815,8 @@
     "semantic_hash": ""
   },
   "feature_files/answer-oriented-programming.md": {
-    "mtime": 1786324712.5823665,
-    "ast_hash": "58ea3deaf445b5b905121adf24afb096",
+    "mtime": 1786325223.442237,
+    "ast_hash": "7446218bf5e7ef0cd27c8b271671c84f",
     "semantic_hash": ""
   },
   "feature_files/automated-project-initialization.md": {
@@ -855,13 +855,13 @@
     "semantic_hash": ""
   },
   "daedalus-site/lib/aop-loop.test.ts": {
-    "mtime": 1786324706.1734083,
-    "ast_hash": "304a987da4bffc1c5e71b35a6e250682",
+    "mtime": 1786325196.5284383,
+    "ast_hash": "34b2bff048e3a9df6b5d17ba4295f2be",
     "semantic_hash": ""
   },
   "daedalus-site/lib/aop-loop.ts": {
-    "mtime": 1786324525.5871763,
-    "ast_hash": "4317c65eec395d2a5385d84303f4f8b2",
+    "mtime": 1786325178.7523558,
+    "ast_hash": "a710b6f6737f70e67f7e57fac1e28906",
     "semantic_hash": ""
   },
   "daedalus-site/lib/impl-prep.ts": {
@@ -872,6 +872,11 @@
   "supabase/migrations/047_aop_execution_loops.sql": {
     "mtime": 1786241252.453066,
     "ast_hash": "0ee89ed073b1401722bd14865505351d",
+    "semantic_hash": ""
+  },
+  "supabase/migrations/048_aop_loop_pause_after_task.sql": {
+    "mtime": 1786325016.697873,
+    "ast_hash": "60278aa19254fcfb60dcf25312b1358f",
     "semantic_hash": ""
   }
 }

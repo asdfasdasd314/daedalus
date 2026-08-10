@@ -21,6 +21,7 @@ from .migration_deployment import (
     deploy_pending_migrations,
     load_deployment_settings,
 )
+from .operator_handoff import operator_handoff_prompt, parse_operator_handoff
 
 
 DAEDALUS_ROOT = Path(__file__).resolve().parents[3]
@@ -335,6 +336,12 @@ class GitWorktreeOrchestrator:
         if recovering:
             prompt = "The previous agent failed to complete this task. Resume the existing work in this worktree; inspect and continue from the current state.\n\n" + prompt
         reply = self._run_task_agent(worktree_path, task, prompt)
+        handoff, reply = parse_operator_handoff(reply)
+        if handoff:
+            return {
+                "ok": False, "reply": reply, "error": handoff["reason"],
+                "operator_handoff": handoff,
+            }
 
         if reply_indicates_failure(reply):
             cancelled = reply_indicates_cancel(reply) or self._refresh_cancel_requested(task)
@@ -580,11 +587,13 @@ class GitWorktreeOrchestrator:
                 )
                 continue
 
-            next_status = "ready" if outcome["ok"] else "failed"
+            next_status = "ready" if outcome["ok"] else ("blocked" if outcome.get("operator_handoff") else "failed")
             update_agent_task(self.config, task_id, expected, {
                 "status": next_status,
                 "result": outcome.get("reply", ""),
                 "error": outcome.get("error", ""),
+                **({"operator_handoff": outcome["operator_handoff"]} if outcome.get("operator_handoff") else {}),
+                **({"operator_handoff": None} if outcome["ok"] else {}),
                 **(
                     {"completed_commit": outcome["completed_commit"]}
                     if outcome.get("completed_commit")
@@ -680,7 +689,7 @@ class GitWorktreeOrchestrator:
         deployment_settings = load_deployment_settings()
         deployment_retryable = False
 
-        def deploy() -> str:
+        def deploy() -> str | dict:
             nonlocal deployment_retryable
             if self._integration_cancelled(task):
                 return CANCELLED_BY_USER
@@ -710,9 +719,20 @@ class GitWorktreeOrchestrator:
                 self.config, repository, "error", "Supabase migration deployment blocked: " + details,
                 task_id=task_id, event_type="migration_deployment_blocked",
             )
+            if result.get("operator_handoff"):
+                return {"failure": details, "operator_handoff": result["operator_handoff"]}
             return details
 
-        failure = deploy()
+        deployment_result = deploy()
+        if isinstance(deployment_result, dict):
+            if deployment_result.get("operator_handoff"):
+                return self._integration_failure(
+                    task, deployment_result["failure"], attempts,
+                    operator_handoff=deployment_result["operator_handoff"],
+                )
+            failure = deployment_result["failure"]
+        else:
+            failure = deployment_result
         if failure and deployment_retryable:
             failure, attempts = self._run_resolver_loop(
                 task, settings, worktree_path, failure, attempts,
@@ -746,11 +766,13 @@ class GitWorktreeOrchestrator:
 
     def _integration_failure(
         self, task: dict, error: str, attempts: int, cancelled: bool = False,
+        operator_handoff: dict | None = None,
     ) -> dict:
         return {
             "ok": False, "error": error, "attempts": attempts,
             "cancelled": cancelled, "expected_status": task["status"],
             "worktree": str(task.get("worktree_path") or ""),
+            "operator_handoff": operator_handoff,
         }
 
     def _run_resolver_loop(
@@ -833,6 +855,7 @@ class GitWorktreeOrchestrator:
                 update_agent_task(self.config, task_id, expected, {
                     "status": "blocked", "resolver_attempts": outcome.get("attempts", 0),
                     "error": outcome["error"], "completed_at": utc_now(),
+                    **({"operator_handoff": outcome["operator_handoff"]} if outcome.get("operator_handoff") else {}),
                 })
                 record_daemon_event(
                     self.config, repository, "error",
@@ -841,7 +864,7 @@ class GitWorktreeOrchestrator:
                 continue
             update_agent_task(self.config, task_id, expected, {
                 "status": "completed", "resolver_attempts": outcome.get("attempts", 0),
-                "error": "", "completed_at": utc_now(),
+                "error": "", "operator_handoff": None, "completed_at": utc_now(),
             })
             record_daemon_event(
                 self.config, repository, "info",
@@ -1164,12 +1187,19 @@ def format_process_failure(arguments, stdout: str, stderr: str) -> str:
 def build_task_prompt(task: dict) -> str:
     paths = task.get("targeted_feature_paths") or []
     scope = f"\nTargeted feature files: {', '.join(paths)}" if paths else ""
+    handoff = task.get("operator_handoff")
+    resume_context = (
+        "\n\nThe operator reports completing this prior handoff. Revalidate its stated prerequisite before continuing:\n"
+        + json.dumps(handoff, indent=2)
+        if isinstance(handoff, dict) else ""
+    )
     return (
         f"TASK_MODE: coding\n\n"
-        f"{task['prompt']}{scope}\n\n"
+        f"{task['prompt']}{scope}{resume_context}\n\n"
         "Work only in this Git worktree. Commit every completed change to the current task branch; "
         "if your sandbox cannot access Git worktree metadata, leave the completed changes for Daedalus to commit. "
         "Do not switch branches, merge other branches, or push a remote."
+        + operator_handoff_prompt()
     )
 
 
@@ -1185,6 +1215,7 @@ def build_task_repair_prompt(
         f"Original task:\n{task['prompt']}\n\n"
         f"Repair attempt: {attempt}/{limit}\n\n"
         f"Verification failure:\n{failure}"
+        + operator_handoff_prompt()
     )
 
 
@@ -1197,6 +1228,7 @@ def build_resolver_prompt(task: dict, failure: str) -> str:
         "Do not switch branches or push. For Supabase deployment failures, modify only migrations confirmed unapplied "
         "or add a corrective migration; never edit an applied migration or invoke migration-history repair.\n\n"
         f"Task goal:\n{task['prompt']}\n\nFailure details:\n{failure}"
+        + operator_handoff_prompt()
     )
 
 
@@ -1213,6 +1245,7 @@ def build_migration_resolver_prompt(task: dict, failure: str) -> str:
         "an applied migration or invoke migration-history repair. Treat the latest diagnostics as authoritative "
         "for live data-dependent failures that the schema snapshot cannot represent.\n\n"
         f"Task goal:\n{task['prompt']}\n\nLatest deployment diagnostics:\n{failure}"
+        + operator_handoff_prompt()
     )
 
 

@@ -15,6 +15,7 @@ export type AgentTaskNotification = {
   prompt: string;
   repository: string;
   error?: string;
+  operatorHandoffTitle?: string;
   createdAt: number;
   read: boolean;
 };
@@ -181,6 +182,7 @@ export default function AgentTaskNotifications({
                       {item.error}
                     </p>
                   ) : null}
+                  {item.operatorHandoffTitle ? <p className="mt-1 text-xs font-medium text-amber-200">Action required: {item.operatorHandoffTitle}</p> : null}
                   </button>
                 </li>
               ))}

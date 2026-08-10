@@ -397,9 +397,9 @@ export default function AopSessionPanel({
             <span>
               <span className="font-medium text-slate-100">Pause after each task</span>
               <span className="mt-1 block text-xs leading-5 text-slate-500">
-                After a coding slice integrates, hold so you can run the app and inspect before
-                the next task is chosen. Resume continues. (Same idea as mid-loop Pause, but
-                automatic at every task boundary.)
+                Sticky debug flag: does not stop the current coding agent mid-write. After each
+                integrate (including the one already running if you toggle now), the loop holds
+                so you can run the app before the next task is chosen. Resume continues.
               </span>
             </span>
           </label>

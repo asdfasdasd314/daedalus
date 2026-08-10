@@ -1,7 +1,7 @@
 # Graph Report - daedalus  (2026-08-09)
 
 ## Corpus Check
-- 169 files · ~145,643 words
+- 170 files · ~146,425 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -148,8 +148,8 @@
 ## Communities (105 total, 18 thin omitted)
 
 ### Community 0 - "orchestrator.py"
-Cohesion: 0.18
-Nodes (4): get_agent_task_control(), GitWorktreeOrchestrator, CancelOrchestratorTests, PerTaskIntegrationTests
+Cohesion: 0.16
+Nodes (5): get_agent_task_control(), GitWorktreeOrchestrator, CancelOrchestratorTests, MigrationResolverLoopTests, PerTaskIntegrationTests
 
 ### Community 1 - "feature-files-dashboard.tsx"
 Cohesion: 0.04
@@ -192,8 +192,8 @@ Cohesion: 0.07
 Nodes (28): compilerOptions, allowJs, esModuleInterop, incremental, isolatedModules, jsx, lib, module (+20 more)
 
 ### Community 11 - "ensure_structured_cp_doc"
-Cohesion: 0.10
-Nodes (22): apply_parameter_file_update(), build_bridge_refinement_context(), build_cp_doc_skeleton(), commit_project_cp_doc(), cp_doc_has_all_sections(), ensure_structured_cp_doc(), extract_bridge_cp_doc(), extract_optional_cp_doc() (+14 more)
+Cohesion: 0.11
+Nodes (18): apply_entry_point_update(), commit_project_cp_doc(), extract_bridge_cp_doc(), extract_optional_cp_doc(), persist_bridge_cp_doc_from_reply(), persist_optional_cp_doc_from_reply(), Path, Write cp_doc.md at the project root. Agents must not write this themselves. (+10 more)
 
 ### Community 12 - "migration_deployment.py"
 Cohesion: 0.12
@@ -216,8 +216,8 @@ Cohesion: 0.17
 Nodes (20): ParameterVariableSelector(), ParameterVariableSelectorProps, ExecutionEntryPointMetadata, isDoubleQuotedString(), isSingleQuotedString(), isSupportedArrayLiteral(), isValidFloat(), normalizeFloatLiteral() (+12 more)
 
 ### Community 17 - "main.py"
-Cohesion: 0.16
-Nodes (18): snapshot_communication_messages(), apply_entry_point_update(), build_entry_point_update_state_message(), build_parameter_file_update_state_message(), build_skipped_push_step(), DirectPromptSupervisor, execute_git_sync_operation(), is_toml_float() (+10 more)
+Cohesion: 0.12
+Nodes (22): fetch_work_snapshot(), Fetch and normalize the single bounded recurrent response for a cycle., snapshot_communication_messages(), apply_parameter_file_update(), build_entry_point_update_state_message(), build_parameter_file_update_state_message(), build_skipped_push_step(), DirectPromptSupervisor (+14 more)
 
 ### Community 18 - "README.md"
 Cohesion: 0.21
@@ -225,7 +225,7 @@ Nodes (24): commit_paths(), commit_worktree_changes(), create_task_worktree(), d
 
 ### Community 19 - "summary"
 Cohesion: 0.28
-Nodes (5): split_toml_value_and_comment(), update_execution_entry_point_in_toml(), update_parameter_variable_in_toml(), EntryPointTomlUpdateTests, ParameterFileUpdateTests
+Nodes (7): build_bridge_refinement_context(), build_cp_doc_skeleton(), cp_doc_has_all_sections(), ensure_structured_cp_doc(), True when content already contains all five fixed ## section headings., Return a five-section cp_doc template; summary seeds Project Summary only., Return content unchanged if already structured; else wrap into the skeleton.
 
 ### Community 20 - "load_daemon_config"
 Cohesion: 0.10
@@ -236,8 +236,8 @@ Cohesion: 0.17
 Nodes (9): is_cursor_plan_mode_unsupported(), parse_cursor_plan_stream(), parse_cursor_result(), Popen, register_agent_process(), run_cursor_exec(), run_tracked_agent_command(), unregister_agent_process() (+1 more)
 
 ### Community 22 - "run_cursor_exec"
-Cohesion: 0.17
-Nodes (13): additionalProperties, properties, type, array_field_definition, primitive_field_definition, additionalProperties, properties, type (+5 more)
+Cohesion: 0.13
+Nodes (16): boolean, integer, null, number, string, properties, primitive_field_definition, additionalProperties (+8 more)
 
 ### Community 23 - "primitive_field_definition"
 Cohesion: 0.11
@@ -261,7 +261,7 @@ Nodes (15): AgentPromptMode, AgentSessionPanel(), AgentSessionPanelProps, getCom
 
 ### Community 28 - "__init__.py"
 Cohesion: 0.12
-Nodes (16): additionalProperties, type, $defs, channel_definition, field_definition, identifier, non_empty_string, system_definition (+8 more)
+Nodes (16): additionalProperties, type, additionalProperties, type, $defs, array_field_definition, channel_definition, field_definition (+8 more)
 
 ### Community 29 - "update_execution_entry_point_in_toml"
 Cohesion: 0.12
@@ -280,8 +280,8 @@ Cohesion: 0.18
 Nodes (10): channels, schema_version, systems, additionalProperties, description, $id, required, $schema (+2 more)
 
 ### Community 33 - "validate_execution_request"
-Cohesion: 0.33
-Nodes (6): boolean, integer, null, number, string, enum
+Cohesion: 0.29
+Nodes (7): object_field_definition, items, type, additionalProperties, properties, type, fields
 
 ### Community 34 - "FeatureExecutionSupervisor"
 Cohesion: 0.05
@@ -304,8 +304,8 @@ Cohesion: 0.33
 Nodes (5): DaemonManagerPanel(), DaemonManagerRequest, DaemonManagerStatus, formatTime(), Props
 
 ### Community 40 - "Agent Task Notifications"
-Cohesion: 0.10
-Nodes (20): fetch_communication_rows(), fetch_current_message(), fetch_current_messages(), fetch_work_snapshot(), get_supabase_headers(), open_supabase_request(), post_feature_files(), post_git_sync_result() (+12 more)
+Cohesion: 0.11
+Nodes (18): fetch_communication_rows(), fetch_current_message(), fetch_current_messages(), get_supabase_headers(), open_supabase_request(), post_feature_files(), post_git_sync_result(), post_parameter_files() (+10 more)
 
 ### Community 41 - "Auth-Scoped Supabase Access"
 Cohesion: 0.22
@@ -408,8 +408,8 @@ Cohesion: 0.29
 Nodes (6): Dev Mode, Key Points, Relevant Files, State Log, Summary, Ventures
 
 ### Community 82 - "page.tsx"
-Cohesion: 0.14
-Nodes (7): build_migration_resolver_prompt(), build_resolver_prompt(), build_task_prompt(), build_task_repair_prompt(), reply_indicates_cancel(), MigrationResolverLoopTests, PromptTests
+Cohesion: 0.17
+Nodes (6): build_migration_resolver_prompt(), build_resolver_prompt(), build_task_prompt(), build_task_repair_prompt(), reply_indicates_cancel(), PromptTests
 
 ### Community 83 - "Daedalus Project Instructions"
 Cohesion: 0.29
@@ -476,8 +476,8 @@ Cohesion: 0.29
 Nodes (6): EntryPointPicker(), Props, getRelevantFileEntryPointSuggestions(), normalizeEntryPointPath(), ParameterFileProjects, ParameterFileRecord
 
 ### Community 111 - "system_definition"
-Cohesion: 0.13
-Nodes (19): properties, object_field_definition, items, type, $ref, $ref, additionalProperties, properties (+11 more)
+Cohesion: 0.15
+Nodes (15): properties, system_definition, $ref, $ref, id, name, source_system_id, summary (+7 more)
 
 ### Community 112 - "agent-models.ts"
 Cohesion: 0.33

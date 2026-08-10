@@ -397,6 +397,8 @@ class PromptTests(unittest.TestCase):
         self.assertTrue(prompt.startswith("TASK_MODE: coding"))
         self.assertIn("feature_files/example.md", prompt)
         self.assertIn("Commit every completed change", prompt)
+        self.assertIn("<operator_handoff>", prompt)
+        self.assertIn("ordinary technical work", prompt)
 
     def test_task_repair_prompt_contains_original_task_and_failure(self):
         prompt = build_task_repair_prompt(
@@ -407,6 +409,7 @@ class PromptTests(unittest.TestCase):
         self.assertIn("Build it", prompt)
         self.assertIn("COMMAND: pytest", prompt)
         self.assertIn("2/3", prompt)
+        self.assertIn("Operator-required boundaries", prompt)
 
     def test_resolver_prompt_contains_task_goal_and_failure(self):
         prompt = build_resolver_prompt(
@@ -416,6 +419,7 @@ class PromptTests(unittest.TestCase):
         self.assertTrue(prompt.startswith("TASK_MODE: integrating"))
         self.assertIn("First goal", prompt)
         self.assertIn("merge conflict", prompt)
+        self.assertIn("Operator-required boundaries", prompt)
 
     def test_migration_resolver_prompt_requires_schema_review_and_forward_only_repair(self):
         prompt = build_migration_resolver_prompt(

@@ -1677,6 +1677,16 @@ returns jsonb language sql stable security definer set search_path=public as $$
   );
 $$;
 
+-- Migration 049: structured operator-required handoffs are persisted with agent tasks.
+alter table agent_tasks add column if not exists operator_handoff jsonb;
+alter table agent_tasks add constraint agent_tasks_operator_handoff_object check (operator_handoff is null or jsonb_typeof(operator_handoff) = 'object');
+create or replace function request_agent_task_retry(p_task_id uuid,p_expected_updated_at timestamptz)
+returns boolean language plpgsql security definer set search_path=public as $$
+begin
+ update agent_tasks set status=case status when'failed'then'queued'when'blocked'then case when operator_handoff is null then'ready'else'queued'end end,message='daemon_review',cancel_requested=false,completed_at=null,retry_generation=retry_generation+1,resolver_attempts=case when status='blocked'then 0 else resolver_attempts end,updated_at=now()
+ where id=p_task_id and user_id=auth.uid()and updated_at=p_expected_updated_at and status in('failed','blocked')and worktree_path is not null and branch_name is not null;return found;
+end; $$;
+
 revoke all on function daemon_manager_acquire_lease(uuid,uuid,integer,text) from public;
 revoke all on function daemon_manager_publish_heartbeat(uuid,uuid,integer,timestamptz,text,text) from public;
 revoke all on function daemon_manager_tick(uuid,uuid,integer,timestamptz,text,text) from public;

@@ -2,7 +2,7 @@ import Fuse from "fuse.js";
 import type { FeatureFileProjects } from "./feature-file-cache";
 
 export const AGENT_OUTPUT_PAGE_SIZE = 30;
-const AGENT_OUTPUT_SUMMARY_COLUMNS = "id,prompt_id,task_id,conversation_id,repository,prompt,provider,model,reasoning,mode,source,targeted_feature_paths,status,status_detail,created_at,started_at,completed_at,updated_at";
+const AGENT_OUTPUT_SUMMARY_COLUMNS = "id,prompt_id,task_id,conversation_id,repository,prompt,provider,model,reasoning,mode,source,targeted_feature_paths,status,status_detail,operator_handoff,created_at,started_at,completed_at,updated_at";
 const AGENT_OUTPUT_DETAIL_COLUMNS = `${AGENT_OUTPUT_SUMMARY_COLUMNS},output,error`;
 
 export type AgentOutputStatus =
@@ -10,6 +10,10 @@ export type AgentOutputStatus =
   | "resolving" | "completed" | "failed" | "blocked" | "cancelled";
 export type AgentOutputMode = "standard" | "planning" | "ask" | "bridge" | "impl_prep";
 export type AgentOutputSource = "durable_task" | "direct_prompt";
+export type OperatorHandoff = {
+  category: string; title: string; reason: string; service: string;
+  completed_work: string; steps: string[]; recheck: string; diagnostics?: string;
+};
 
 export type AgentOutputHistoryRow = {
   id: string;
@@ -29,6 +33,7 @@ export type AgentOutputHistoryRow = {
   targeted_feature_paths: unknown;
   status: AgentOutputStatus;
   status_detail: string | null;
+  operator_handoff?: OperatorHandoff | null;
   created_at: string;
   started_at: string | null;
   completed_at: string | null;
@@ -52,6 +57,7 @@ export type AgentOutputExchange = {
   targetedFeaturePaths: string[];
   status: AgentOutputStatus;
   statusDetail: string;
+  operatorHandoff?: OperatorHandoff | null;
   createdAt: string;
   startedAt: string | null;
   completedAt: string | null;
@@ -110,6 +116,7 @@ export function normalizeAgentOutputRow(row: AgentOutputHistoryRow): AgentOutput
       : [],
     status: row.status,
     statusDetail: row.status_detail ?? "",
+    operatorHandoff: row.operator_handoff ?? null,
     createdAt: row.created_at,
     startedAt: row.started_at,
     completedAt: row.completed_at,

@@ -4,6 +4,8 @@ import subprocess
 import threading
 import tomllib
 
+from .operator_handoff import supabase_mapping_handoff
+
 
 DAEDALUS_ROOT = Path(__file__).resolve().parents[3]
 DEPLOYMENT_PARAMETER_FILE = DAEDALUS_ROOT / "parameter_files" / "supabase-migration-deployment.toml"
@@ -125,7 +127,7 @@ def deploy_pending_migrations(
         return blocked("Automatic deployment is disabled pending Supabase history/schema baseline review.")
     project_ref, mapping_error = project_ref_for_repository(repository, settings["allowedMappings"])
     if mapping_error:
-        return blocked(mapping_error)
+        return blocked(mapping_error, operator_handoff=supabase_mapping_handoff(str(Path(repository).resolve()), mapping_error))
     diagnostics = []
     with project_lock(project_ref):
         preflight_commands = [
@@ -184,5 +186,5 @@ def reports_pending_migrations(diagnostic: dict) -> bool:
     return bool(re.search(r"(?im)(would apply|would push|applying migration|pending migration)", output))
 
 
-def blocked(message: str, diagnostics: list[dict] | None = None, retryable: bool = False) -> dict:
-    return {"ok": False, "state": "blocked", "error": message, "diagnostics": diagnostics or [], "retryable": retryable}
+def blocked(message: str, diagnostics: list[dict] | None = None, retryable: bool = False, operator_handoff: dict | None = None) -> dict:
+    return {"ok": False, "state": "blocked", "error": message, "diagnostics": diagnostics or [], "retryable": retryable, "operator_handoff": operator_handoff}

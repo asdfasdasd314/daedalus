@@ -179,6 +179,7 @@ def upsert_agent_task_turn(
     conversation_id: str | None = None,
     status: str = "running",
     status_detail: str | None = None,
+    operator_handoff: dict | None = None,
 ) -> None:
     call_daemon_rpc(config, "daemon_upsert_agent_task_turn", {
         "p_user_id": config["daemonUserId"],
@@ -195,6 +196,7 @@ def upsert_agent_task_turn(
         "p_targeted_feature_paths": targeted_feature_paths or [],
         "p_status": status,
         "p_status_detail": status_detail,
+        "p_operator_handoff": operator_handoff,
     })
 
 

@@ -45,3 +45,4 @@ HACKING
 - 2026-08-09: Coding history is agent_tasks-derived (visible in AOP Beta); tasking injects full slice ledger + feature digests; integrated_commits written on success.
 - 2026-08-09: Auto-start coding after prep readiness; soft re-drive on hydrate so nav does not require Start build loop; Retry choose task only when stuck/failed.
 - 2026-08-09: Pause/Resume (soft mid-coding hold) + durable Pause after each task for step-through debugging; Cancel loop remains terminal.
+- 2026-08-09: Pause-after-task checkbox is optimistic + honored from live loop ref at integrate; surfaces migration 048 errors if columns missing.

@@ -459,6 +459,7 @@ if __package__ in {None, ""}:
     from daedalus_daemon.execution import FeatureExecutionSupervisor
     from daedalus_daemon.architecture import ArchitectureViewSupervisor
     from daedalus_daemon.project_initializer import initialize_project
+    from daedalus_daemon.operator_handoff import operator_handoff_prompt, parse_operator_handoff
 else:
     from .communications import (
         AGENT_PROMPT_PURPOSE,
@@ -488,6 +489,7 @@ else:
     from .execution import FeatureExecutionSupervisor
     from .architecture import ArchitectureViewSupervisor
     from .project_initializer import initialize_project
+    from .operator_handoff import operator_handoff_prompt, parse_operator_handoff
 
 
 ACTIVE_AGENT_PROCESSES: dict[str, subprocess.Popen] = {}
@@ -863,6 +865,20 @@ def run_agent_prompt_cycle(
                 config, AGENT_PROMPT_PURPOSE, CLIENT_REVIEW,
                 build_agent_prompt_state_message(prompt_id, DAEMON_SENT_RESPONSE),
             )
+        else:
+            write_message(config, AGENT_PROMPT_PURPOSE, DAEMON_COMPLETE)
+        return
+
+    handoff, reply = parse_operator_handoff(reply)
+    if handoff:
+        history_publisher(
+            config, prompt_id, directory, prompt, reply, handoff["reason"], provider,
+            model, reasoning, mode, targeted_feature_paths, conversation_id, status="blocked",
+            status_detail=handoff["recheck"], operator_handoff=handoff,
+        )
+        if deliver_chat is None:
+            write_message(config, AGENT_PROMPT_PURPOSE, CLIENT_REVIEW,
+                          build_agent_prompt_state_message(prompt_id, DAEMON_SENT_RESPONSE))
         else:
             write_message(config, AGENT_PROMPT_PURPOSE, DAEMON_COMPLETE)
         return
@@ -1721,7 +1737,7 @@ def build_codex_prompt(
         )
 
     prompt_prefix = "\n\n".join(prompt_sections)
-    return f"{prompt_prefix}\n\n{prompt}"
+    return f"{prompt_prefix}\n\n{prompt}" + operator_handoff_prompt()
 
 
 def build_cursor_prompt(
@@ -1783,7 +1799,7 @@ def build_cursor_prompt(
         )
 
     prompt_prefix = "\n\n".join(prompt_sections)
-    return f"{prompt_prefix}\n\n{prompt}"
+    return f"{prompt_prefix}\n\n{prompt}" + operator_handoff_prompt()
 
 
 def build_planning_refinement_context(
