@@ -227,7 +227,23 @@ def update_agent_task(
         "p_expected_status": expected_status,
         "p_updates": updates,
     })
-    return bool(result)
+    if result or updates.get("status") not in {"completed", "failed", "blocked", "cancelled"}:
+        return bool(result)
+
+    # A task can advance after the daemon's last poll but before a terminal
+    # update. Re-read its state and retry only while it remains non-terminal,
+    # rather than leaving a completed execution stranded indefinitely.
+    control = get_agent_task_control(config, task_id)
+    current_status = str(control.get("status") or "") if control else ""
+    if current_status not in {"queued", "running", "verifying", "ready", "integrating", "resolving"}:
+        return False
+    retry = call_daemon_rpc(config, "daemon_update_agent_task", {
+        "p_user_id": config["daemonUserId"],
+        "p_task_id": task_id,
+        "p_expected_status": current_status,
+        "p_updates": updates,
+    })
+    return bool(retry)
 
 
 def claim_architecture_view(config: dict, view: dict) -> dict | None:

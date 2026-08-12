@@ -1,7 +1,8 @@
 # Keep disabled until the documented history-and-schema baseline is accepted.
 enabled = true
 allowed_repository_project_mappings = [
-  "/Users/jameshollingsworth/Projects/daedalus::zshitprzimishoyotokv"
+  "/Users/jameshollingsworth/Projects/daedalus::zshitprzimishoyotokv",
+  "/Users/jameshollingsworth/Projects/flockdock::tfzkxyymilrmszoemsgb"
 ]
 resolver_attempt_limit = 3
 command_timeout_seconds = 120

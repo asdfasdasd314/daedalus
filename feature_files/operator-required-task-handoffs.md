@@ -18,3 +18,4 @@ TESTING
 
 ## State Log
 - 2026-08-10: Added validated, redacted operator-required handoffs across agent execution and Supabase deployment blocks.
+- 2026-08-12: Repaired terminal-update races and reattached an operator-resumed AOP task to its original loop and retained worktree.

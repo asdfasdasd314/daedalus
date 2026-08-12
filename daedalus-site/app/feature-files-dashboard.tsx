@@ -4878,6 +4878,14 @@ export default function FeatureFilesDashboard({
           );
           if (!accepted) throw new Error("Task changed before retry could be requested.");
           await rehydrateDurableAgentTasks();
+          const resumedLoop = await fetchActiveAopLoop(
+            supabaseUrl, supabasePublishableKey, accessToken, currentUserId,
+            selectedProjectDirectory,
+          );
+          if (resumedLoop) {
+            aopLoopRef.current = resumedLoop;
+            setAopLoop(resumedLoop);
+          }
           setPromptStatus("Task recovery requested.");
         }}
         onSelectedPromptIdChange={selectHistoryPrompt}

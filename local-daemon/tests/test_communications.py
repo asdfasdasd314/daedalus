@@ -32,6 +32,7 @@ from daedalus_daemon.communications import (
     record_daemon_event,
     SupabaseUnavailableError,
     open_supabase_request,
+    update_agent_task,
     update_current_message,
 )
 
@@ -62,6 +63,28 @@ class FakeResponse:
 
 
 class UpdateCurrentMessageTests(unittest.TestCase):
+    def test_retries_terminal_update_after_status_race(self):
+        config = {"daemonUserId": "user-1"}
+        with patch(
+            "daedalus_daemon.communications.call_daemon_rpc",
+            side_effect=[False, {"status": "integrating"}, True],
+        ) as rpc:
+            updated = update_agent_task(
+                config, "task-1", "ready", {"status": "blocked", "error": "mapping required"},
+            )
+        self.assertTrue(updated)
+        self.assertEqual(rpc.call_count, 3)
+        self.assertEqual(rpc.call_args_list[2].args[1], "daemon_update_agent_task")
+        self.assertEqual(rpc.call_args_list[2].args[2]["p_expected_status"], "integrating")
+
+    def test_does_not_retry_non_terminal_update(self):
+        with patch("daedalus_daemon.communications.call_daemon_rpc", return_value=False) as rpc:
+            updated = update_agent_task(
+                {"daemonUserId": "user-1"}, "task-1", "ready", {"status": "integrating"},
+            )
+        self.assertFalse(updated)
+        rpc.assert_called_once()
+
     def test_does_not_retry_a_non_retryable_supabase_conflict(self):
         conflict = HTTPError(
             "https://example.supabase.co/rest/v1/rpc/example", 409, "Conflict", {},
@@ -378,6 +401,7 @@ class UpdateCurrentMessageTests(unittest.TestCase):
                 "p_targeted_feature_paths": [],
                 "p_status": "completed",
                 "p_status_detail": None,
+                "p_operator_handoff": None,
             }],
         )
 
@@ -427,6 +451,7 @@ class UpdateCurrentMessageTests(unittest.TestCase):
                 ],
                 "p_status": "completed",
                 "p_status_detail": None,
+                "p_operator_handoff": None,
             }],
         )
 

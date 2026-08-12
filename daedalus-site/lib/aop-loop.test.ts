@@ -88,6 +88,19 @@ test("loop advances only on completed durable coding tasks", () => {
   assert.match(failed?.updates.status_detail ?? "", /Primary worktree/);
   assert.equal(failed?.updates.current_agent_task_id, null);
 
+  const blocked = loopPatchAfterCodingTaskTerminal({
+    tasksCompletedTotal: 0,
+    tasksSinceVerification: 0,
+    maxTasksBeforeVerification: 3,
+    recentTaskTitles: [],
+    currentTaskTitle: "Landing page",
+    taskStatus: "blocked",
+    taskError: "Supabase project mapping required",
+  });
+  assert.equal(blocked?.shouldQueueBridge, false);
+  assert.equal(blocked?.updates.status, "awaiting_start");
+  assert.match(blocked?.updates.status_detail ?? "", /Supabase project mapping required/);
+
   const cancelled = loopPatchAfterCodingTaskTerminal({
     tasksCompletedTotal: 1,
     tasksSinceVerification: 1,
