@@ -2,7 +2,7 @@
 
 import type { TargetedFeature } from "@/lib/agent-chat-cache";
 import type { AgentModelsConfig } from "@/lib/agent-models";
-import type { AopExecutionLoop, AopLoopCodingSlice } from "@/lib/aop-loop";
+import type { AopAskQuery, AopExecutionLoop, AopLoopCodingSlice } from "@/lib/aop-loop";
 import { needsBridgeTaskingRetry, needsManualCodingRetry } from "@/lib/aop-loop";
 import type { BridgeSession, BridgeTask } from "@/lib/bridge-session";
 import { isCpDocCodingReady } from "@/lib/bridge-session";
@@ -15,12 +15,16 @@ type AopSessionPanelProps = {
   availableProjectDirectories: string[];
   aopLoop: AopExecutionLoop | null;
   aopLoopCodingHistory: AopLoopCodingSlice[];
+  aopAskQueries: AopAskQuery[];
+  aopAskQuestion: string;
   bridgeSession: BridgeSession | null;
   defaultProjectDirectory: string;
   directionText: string;
   onClearSession: () => void;
   onDirectionTextChange: (text: string) => void;
   onAnswerQuestion: (answer: string) => void;
+  onAopAskQuestionChange: (question: string) => void;
+  onSendAopAsk: () => void;
   onOpenFeatureTagSearch: () => void;
   onProviderChange: (provider: string) => void;
   onRemoveTargetedFeature: (filePath: string) => void;
@@ -53,12 +57,16 @@ export default function AopSessionPanel({
   availableProjectDirectories,
   aopLoop,
   aopLoopCodingHistory,
+  aopAskQueries,
+  aopAskQuestion,
   bridgeSession,
   defaultProjectDirectory,
   directionText,
   onClearSession,
   onDirectionTextChange,
   onAnswerQuestion,
+  onAopAskQuestionChange,
+  onSendAopAsk,
   onOpenFeatureTagSearch,
   onProviderChange,
   onRemoveTargetedFeature,
@@ -137,6 +145,47 @@ export default function AopSessionPanel({
           explicit Start task → worktree execution → optional every-N verification).
         </p>
       </header>
+
+      <section className="grid gap-3 rounded-[1.5rem] border border-cyan-300/20 bg-cyan-300/[0.04] p-4 sm:p-5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.28em] text-cyan-100/80">Ask AOP</p>
+            <p className="mt-1 text-sm text-slate-300">Read-only project questions that do not change the build loop.</p>
+          </div>
+          <span className="rounded-full border border-cyan-300/20 px-3 py-1 text-xs text-cyan-100">Immutable</span>
+        </div>
+        <label htmlFor="aop-ask" className="text-[11px] uppercase tracking-[0.28em] text-slate-400">Question</label>
+        <textarea
+          id="aop-ask"
+          value={aopAskQuestion}
+          onChange={(event) => onAopAskQuestionChange(event.target.value)}
+          placeholder="What changed here? What is working right now, and what needs debugging?"
+          className="agent-chat-scrollbar min-h-24 min-w-0 rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-500"
+        />
+        <button
+          type="button"
+          onClick={onSendAopAsk}
+          disabled={!acceptsWork || !aopAskQuestion.trim()}
+          className="w-fit rounded-full bg-cyan-300 px-5 py-3 text-sm font-semibold text-slate-950 hover:bg-cyan-200 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
+        >
+          Ask AOP
+        </button>
+        {aopAskQueries.length ? (
+          <ol className="grid gap-2 border-t border-white/10 pt-3">
+            {aopAskQueries.map((query) => (
+              <li key={query.id} className="grid gap-2 rounded-[1.25rem] border border-white/10 bg-black/20 px-4 py-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
+                  <span className="rounded-full border border-white/10 px-2 py-1 text-slate-200">{query.status}</span>
+                  <time dateTime={query.createdAt}>{new Date(query.createdAt).toLocaleString()}</time>
+                </div>
+                <p className="whitespace-pre-wrap text-sm font-medium text-slate-100">{query.question}</p>
+                {query.answer ? <p className="whitespace-pre-wrap text-sm leading-6 text-slate-300">{query.answer}</p> : null}
+                {query.error ? <p className="whitespace-pre-wrap text-sm leading-6 text-rose-200">{query.error}</p> : null}
+              </li>
+            ))}
+          </ol>
+        ) : <p className="text-sm text-slate-500">Ask about the current build at any time. Answers remain in this project’s query ledger.</p>}
+      </section>
 
       <section className="grid min-w-0 gap-3 rounded-[1.5rem] border border-white/10 bg-black/25 p-4 sm:p-5">
         <label htmlFor="aop-project" className="text-[11px] uppercase tracking-[0.28em] text-slate-400">

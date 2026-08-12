@@ -37,6 +37,7 @@ export const AOP_TERMINAL_STATUSES: AopLoopStatus[] = [
 ];
 
 export const DEFAULT_MAX_TASKS_BEFORE_VERIFICATION = 3;
+export const AOP_ASK_PROMPT_MARKER = "AOP IMMUTABLE ASK";
 
 export type AopLoopQuestion = {
   question: string;
@@ -369,6 +370,17 @@ export type AopLoopCodingSlice = {
   completedAt: string;
 };
 
+export type AopAskQuery = {
+  id: string;
+  promptId: string;
+  question: string;
+  answer: string;
+  error: string;
+  status: string;
+  createdAt: string;
+  completedAt: string | null;
+};
+
 const MAX_RECENT_TASK_TITLES = 12;
 const MAX_INTEGRATED_COMMITS = 50;
 const FEATURE_DIGEST_SECTION_BULLETS = 12;
@@ -429,6 +441,50 @@ export function summarizeLoopCodingHistory(slices: AopLoopCodingSlice[]): string
       return `${index + 1}. [${slice.status}] ${slice.title}${commit}${err}`;
     })
     .join("\n");
+}
+
+/** Build the persisted, read-only context for one independent AOP question. */
+export function buildAopAskPrompt(input: {
+  question: string;
+  loop?: AopExecutionLoop | null;
+  codingHistory?: AopLoopCodingSlice[];
+  cpDoc?: string;
+}): string {
+  const loop = input.loop;
+  const history = summarizeLoopCodingHistory(input.codingHistory ?? []);
+  const cpDoc = input.cpDoc?.trim() || "(Read cp_doc.md from the project root.)";
+  return [
+    AOP_ASK_PROMPT_MARKER,
+    "",
+    "Operator question:",
+    input.question.trim(),
+    "",
+    "AOP transcript snapshot:",
+    `Loop: ${loop ? `${loop.status} — ${loop.statusDetail || "(no status detail)"}` : "No durable build loop is active."}`,
+    `Current task: ${loop?.currentTaskTitle || "(none)"}`,
+    `Current task prompt: ${loop?.currentTaskPrompt || "(none)"}`,
+    `Completed coding slices: ${loop?.tasksCompletedTotal ?? 0}`,
+    "",
+    "Coding history:",
+    history,
+    "",
+    "Current cp_doc:",
+    cpDoc,
+    "",
+    "Answer the operator directly. Work only in read-only inspection mode from the project root.",
+    "Inspect cp_doc.md, feature files and State Logs, git state, and relevant source as needed.",
+    "Do not edit files, run modifying commands, create tasks or worktrees, or change build-loop state.",
+  ].join("\n");
+}
+
+/** Return the user-visible question from a persisted AOP Ask prompt. */
+export function extractAopAskQuestion(prompt: string): string {
+  const text = (prompt ?? "").replace(/\r\n/g, "\n");
+  if (!text.startsWith(AOP_ASK_PROMPT_MARKER)) {
+    return "";
+  }
+  const match = text.match(/\nOperator question:\n([\s\S]*?)\n\nAOP transcript snapshot:/);
+  return match?.[1]?.trim() ?? "";
 }
 
 /**

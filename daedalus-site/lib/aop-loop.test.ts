@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildBridgeTaskingPrompt,
+  buildAopAskPrompt,
   buildDurableImplementationPrompt,
   buildFeatureFileDigest,
   canStartAopBuildLoop,
   extractAopTaskTitleFromPrompt,
+  extractAopAskQuestion,
   isAopCodingTaskInFlight,
   isBridgeTaskingReply,
   loopCountersFromCompletedSlices,
@@ -25,6 +27,31 @@ test("nextStatusAfterTaskComplete hits verification at N", () => {
   assert.equal(nextStatusAfterTaskComplete(2, 3), "awaiting_verification");
   assert.equal(nextStatusAfterTaskComplete(1, 3), "bridging_task");
   assert.equal(nextStatusAfterTaskComplete(0, 1), "awaiting_verification");
+});
+
+test("AOP Ask prompt captures an immutable loop snapshot", () => {
+  const prompt = buildAopAskPrompt({
+    question: "What is working right now?",
+    loop: {
+      id: "loop-1", userId: "user-1", repository: "/repo", status: "executing",
+      pausedFrom: "", directionPrompt: "Build the product", conversationId: "conversation-1",
+      provider: "codex", model: "gpt-5", reasoning: "high", targetedFeaturePaths: [],
+      currentTaskTitle: "Add Ask mode", currentTaskPrompt: "Build the panel", prepNotes: "",
+      pendingQuestions: [], prepAnswers: [], currentAgentTaskId: "task-1", activePromptId: "task-1",
+      tasksCompletedTotal: 2, tasksSinceVerification: 2, maxTasksBeforeVerification: 3,
+      loopBaseCommit: "base", integratedCommits: [], recentTaskTitles: [], statusDetail: "Running tests",
+      cancelRequested: false, pauseAfterTask: false, pauseRequested: false, createdAt: "", updatedAt: "",
+    },
+    codingHistory: [{ id: "task-1", title: "Add Ask mode", status: "executing", error: "", completedCommit: "", branchName: "", createdAt: "", completedAt: "" }],
+    cpDoc: "## Project Summary\nAOP",
+  });
+  assert.match(prompt, /^AOP IMMUTABLE ASK/);
+  assert.match(prompt, /What is working right now\?/);
+  assert.match(prompt, /Running tests/);
+  assert.match(prompt, /## Project Summary/);
+  assert.match(prompt, /Do not edit files/);
+  assert.equal(extractAopAskQuestion(prompt), "What is working right now?");
+  assert.equal(extractAopAskQuestion("plain ask"), "");
 });
 
 test("loop advances only on completed durable coding tasks", () => {

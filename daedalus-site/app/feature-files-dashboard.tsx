@@ -52,11 +52,14 @@ import {
 import {
   type AopExecutionLoop,
   type AopExecutionLoopRow,
+  type AopAskQuery,
   type AopLoopCodingSlice,
+  buildAopAskPrompt,
   buildBridgeTaskingPrompt,
   buildDurableImplementationPrompt,
   buildImplPrepUserPrompt,
   buildTargetedFeatureDigests,
+  extractAopAskQuestion,
   DEFAULT_MAX_TASKS_BEFORE_VERIFICATION,
   isAopCodingTaskInFlight,
   isAopCodingTaskTerminal,
@@ -375,6 +378,8 @@ export default function FeatureFilesDashboard({
   const [aopLoopCodingHistory, setAopLoopCodingHistory] = useState<
     AopLoopCodingSlice[]
   >([]);
+  const [aopAskQuestion, setAopAskQuestion] = useState("");
+  const [aopAskQueries, setAopAskQueries] = useState<AopAskQuery[]>([]);
   const [aopDirectionText, setAopDirectionText] = useState("");
   const [bridgeOtherAnswer, setBridgeOtherAnswer] = useState("");
   const [agentPromptQueue, setAgentPromptQueue] = useState<
@@ -693,6 +698,16 @@ export default function FeatureFilesDashboard({
     supabasePublishableKey,
     supabaseUrl,
   ]);
+
+  useEffect(() => {
+    if (!accessToken || !currentUser || !selectedProjectDirectory) {
+      setAopAskQueries([]);
+      return;
+    }
+    void refreshAopAskQueries();
+    // Refreshes the project-scoped, immutable Ask ledger after navigation/reload.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accessToken, currentUser, currentUserId, selectedProjectDirectory, supabasePublishableKey, supabaseUrl]);
 
   useEffect(() => {
     latestChatRef.current = latestChat;
@@ -1819,6 +1834,72 @@ export default function FeatureFilesDashboard({
       setPromptStatus("Unable to queue the agent task right now.");
       setPromptSubmissionError(submissionError instanceof Error ? submissionError.message : "Unable to queue the prompt in the browser. Please try again.");
     }
+  }
+
+  async function refreshAopAskQueries() {
+    if (!currentUser || !accessToken || !selectedProjectDirectory) {
+      return;
+    }
+    try {
+      const queries = await fetchAopAskQueries(
+        supabaseUrl,
+        supabasePublishableKey,
+        accessToken,
+        currentUserId,
+        selectedProjectDirectory,
+      );
+      setAopAskQueries(queries);
+    } catch {
+      // A query-list read failure should not prevent AOP work or Ask submission.
+    }
+  }
+
+  function sendAopAsk() {
+    if (!aopAskQuestion.trim() || !currentUser || !accessToken) {
+      return;
+    }
+    if (!daemonAcceptsWork) {
+      setPromptSubmissionError(DAEMON_ADMISSION_MESSAGE);
+      return;
+    }
+    const promptId = createPromptId();
+    const question = aopAskQuestion.trim();
+    const loop = aopLoopRef.current;
+    const prompt = buildAopAskPrompt({
+      question,
+      loop,
+      codingHistory: aopLoopCodingHistory,
+      cpDoc: bridgeSessionRef.current?.cpDoc,
+    });
+    const queueEntry: AgentPromptQueueEntry = {
+      promptId,
+      conversationId: promptId,
+      directory: selectedProjectDirectory,
+      prompt,
+      provider: selectedProvider,
+      model: selectedModelId,
+      reasoning: selectedReasoning,
+      planningMode: false,
+      askMode: true,
+      bridgeMode: false,
+      targetedFeaturePaths: loop?.targetedFeaturePaths ?? targetedFeatures.map((feature) => feature.filePath),
+      status: "queued",
+      enqueuedAt: Date.now(),
+    };
+    setPromptSubmissionError("");
+    setAopAskQuestion("");
+    setAopAskQueries((current) => [{
+      id: promptId,
+      promptId,
+      question,
+      answer: "",
+      error: "",
+      status: "queued",
+      createdAt: new Date().toISOString(),
+      completedAt: null,
+    }, ...current.filter((query) => query.promptId !== promptId)]);
+    setAgentPromptQueue((current) => [...current, queueEntry]);
+    setPromptStatus("AOP Ask queued. It will run read-only from the project root.");
   }
 
   async function sendBridgeDirection() {
@@ -3461,11 +3542,19 @@ export default function FeatureFilesDashboard({
       }
 
       activePromptId.current = nextPromptId;
+      const startedAopAsk = agentPromptQueueRef.current.find(
+        (item) => item.promptId === nextPromptId && item.askMode && Boolean(extractAopAskQuestion(item.prompt)),
+      );
       setAgentPromptQueue((currentQueue) =>
         currentQueue.map((item) =>
           item.promptId === nextPromptId ? { ...item, status: "running" } : item,
         ),
       );
+      if (startedAopAsk) {
+        setAopAskQueries((current) => current.map((query) =>
+          query.promptId === nextPromptId ? { ...query, status: "running" } : query,
+        ));
+      }
       setPromptStatus("Daemon received prompt.");
       return;
     }
@@ -3610,6 +3699,9 @@ export default function FeatureFilesDashboard({
       return;
     }
 
+    const finishedAopAsk = agentPromptQueueRef.current.find(
+      (item) => item.promptId === promptId && item.askMode && Boolean(extractAopAskQuestion(item.prompt)),
+    );
     activePromptId.current = "";
     setAgentPromptQueue((currentQueue) =>
       currentQueue.filter((item) => item.promptId !== promptId),
@@ -3620,6 +3712,9 @@ export default function FeatureFilesDashboard({
     }
 
     setPromptStatus("Reply received.");
+    if (finishedAopAsk) {
+      void refreshAopAskQueries();
+    }
   }
 
   function retryQueuedAgentPrompt(promptId: string) {
@@ -4781,12 +4876,16 @@ export default function FeatureFilesDashboard({
                 availableProjectDirectories={availableProjectDirectories}
                 aopLoop={aopLoop}
                 aopLoopCodingHistory={aopLoopCodingHistory}
+                aopAskQueries={aopAskQueries}
+                aopAskQuestion={aopAskQuestion}
                 bridgeSession={bridgeSession}
                 defaultProjectDirectory={DEFAULT_PROJECT_DIRECTORY}
                 directionText={aopDirectionText}
                 onClearSession={() => setBridgeSession(null)}
                 onDirectionTextChange={setAopDirectionText}
                 onAnswerQuestion={answerBridgeQuestion}
+                onAopAskQuestionChange={setAopAskQuestion}
+                onSendAopAsk={sendAopAsk}
                 onOpenFeatureTagSearch={openFeatureTagSearch}
                 onProviderChange={selectProvider}
                 onRemoveTargetedFeature={removeTargetedFeature}
@@ -6650,6 +6749,52 @@ async function insertAgentTask(
     const detail = await response.text();
     throw submissionRequestError(response, detail, "agent task insert failed");
   }
+}
+
+type AopAskTaskRow = {
+  id: string;
+  prompt_id: string;
+  prompt: string;
+  result: string | null;
+  error: string | null;
+  status: string;
+  created_at: string;
+  completed_at: string | null;
+};
+
+async function fetchAopAskQueries(
+  supabaseUrl: string,
+  supabasePublishableKey: string,
+  accessToken: string,
+  userId: string,
+  repository: string,
+): Promise<AopAskQuery[]> {
+  const url = new URL("/rest/v1/agent_tasks", supabaseUrl);
+  url.searchParams.set("select", "id,prompt_id,prompt,result,error,status,created_at,completed_at");
+  url.searchParams.set("user_id", `eq.${userId}`);
+  url.searchParams.set("repository", `eq.${repository}`);
+  url.searchParams.set("task_type", "eq.ask");
+  url.searchParams.set("source", "eq.direct_prompt");
+  url.searchParams.set("prompt", "like.AOP IMMUTABLE ASK%");
+  url.searchParams.set("order", "created_at.desc");
+  url.searchParams.set("limit", "50");
+  const response = await fetch(url, {
+    headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(`AOP Ask query failed (${response.status}).`);
+  }
+  return ((await response.json()) as AopAskTaskRow[]).map((row) => ({
+    id: row.id,
+    promptId: row.prompt_id,
+    question: extractAopAskQuestion(row.prompt) || "(question unavailable)",
+    answer: row.result ?? "",
+    error: row.error ?? "",
+    status: row.status,
+    createdAt: row.created_at,
+    completedAt: row.completed_at,
+  }));
 }
 
 async function fetchActiveAopLoop(
