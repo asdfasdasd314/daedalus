@@ -38,6 +38,8 @@ export const AOP_TERMINAL_STATUSES: AopLoopStatus[] = [
 
 export const DEFAULT_MAX_TASKS_BEFORE_VERIFICATION = 3;
 export const AOP_ASK_PROMPT_MARKER = "AOP IMMUTABLE ASK";
+export const AOP_ASK_CONTEXT_WARNING_TOKENS = 150_000;
+export const AOP_ASK_CONTEXT_LIMIT_TOKENS = 200_000;
 
 export type AopLoopQuestion = {
   question: string;
@@ -370,15 +372,33 @@ export type AopLoopCodingSlice = {
   completedAt: string;
 };
 
-export type AopAskQuery = {
+export type AopAskOperatorHandoff = {
+  title: string;
+  reason: string;
+  completedWork: string;
+  steps: string[];
+  recheck: string;
+};
+
+/** One durable, normalized AOP Ask turn. Never retain the generated prompt as chat context. */
+export type AopAskTurn = {
   id: string;
   promptId: string;
+  conversationId: string;
   question: string;
   answer: string;
   error: string;
   status: string;
   createdAt: string;
   completedAt: string | null;
+  operatorHandoff: AopAskOperatorHandoff | null;
+};
+
+export type AopAskConversation = {
+  conversationId: string;
+  title: string;
+  turns: AopAskTurn[];
+  latestActivity: string;
 };
 
 const MAX_RECENT_TASK_TITLES = 12;
@@ -443,21 +463,27 @@ export function summarizeLoopCodingHistory(slices: AopLoopCodingSlice[]): string
     .join("\n");
 }
 
-/** Build the persisted, read-only context for one independent AOP question. */
+/**
+ * Build the persisted, read-only context for one AOP Ask turn. Previous turns
+ * are normalized question/outcome pairs, so we never recursively include older
+ * generated prompts and context grows linearly with the conversation.
+ */
 export function buildAopAskPrompt(input: {
   question: string;
   loop?: AopExecutionLoop | null;
   codingHistory?: AopLoopCodingSlice[];
   cpDoc?: string;
+  transcript?: AopAskTurn[];
 }): string {
   const loop = input.loop;
   const history = summarizeLoopCodingHistory(input.codingHistory ?? []);
   const cpDoc = input.cpDoc?.trim() || "(Read cp_doc.md from the project root.)";
+  const transcript = formatAopAskTranscript(input.transcript ?? []);
   return [
     AOP_ASK_PROMPT_MARKER,
     "",
-    "Operator question:",
-    input.question.trim(),
+    "AOP Ask conversation transcript:",
+    transcript,
     "",
     "AOP transcript snapshot:",
     `Loop: ${loop ? `${loop.status} — ${loop.statusDetail || "(no status detail)"}` : "No durable build loop is active."}`,
@@ -471,6 +497,9 @@ export function buildAopAskPrompt(input: {
     "Current cp_doc:",
     cpDoc,
     "",
+    "New operator question:",
+    input.question.trim(),
+    "",
     "Answer the operator directly. Work only in read-only inspection mode from the project root.",
     "Inspect cp_doc.md, feature files and State Logs, git state, and relevant source as needed.",
     "Do not edit files, run modifying commands, create tasks or worktrees, or change build-loop state.",
@@ -483,8 +512,55 @@ export function extractAopAskQuestion(prompt: string): string {
   if (!text.startsWith(AOP_ASK_PROMPT_MARKER)) {
     return "";
   }
-  const match = text.match(/\nOperator question:\n([\s\S]*?)\n\nAOP transcript snapshot:/);
-  return match?.[1]?.trim() ?? "";
+  const followUp = text.match(/\nNew operator question:\n([\s\S]*?)\n\nAnswer the operator directly\./);
+  if (followUp?.[1]) return followUp[1].trim();
+  const legacy = text.match(/\nOperator question:\n([\s\S]*?)\n\nAOP transcript snapshot:/);
+  return legacy?.[1]?.trim() ?? "";
+}
+
+/** Approximate the next-request context; this is not provider-reported usage or billing. */
+export function estimateAopAskContextTokens(prompt: string): number {
+  return Math.ceil((prompt ?? "").length / 4);
+}
+
+/** Approximate stored transcript size for thread-list comparison, excluding live AOP snapshot context. */
+export function estimateAopAskTranscriptTokens(turns: AopAskTurn[]): number {
+  return estimateAopAskContextTokens(formatAopAskTranscript(turns));
+}
+
+export function groupAopAskConversations(turns: AopAskTurn[]): AopAskConversation[] {
+  const grouped = new Map<string, AopAskTurn[]>();
+  for (const turn of turns) {
+    if (!turn.conversationId) continue;
+    grouped.set(turn.conversationId, [...(grouped.get(turn.conversationId) ?? []), turn]);
+  }
+  return [...grouped.entries()].map(([conversationId, conversationTurns]) => {
+    const orderedTurns = [...conversationTurns].sort((left, right) =>
+      left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id),
+    );
+    const latest = orderedTurns.at(-1);
+    return {
+      conversationId,
+      title: orderedTurns[0]?.question || "Untitled AOP Ask",
+      turns: orderedTurns,
+      latestActivity: latest?.completedAt || latest?.createdAt || "",
+    };
+  }).sort((left, right) => right.latestActivity.localeCompare(left.latestActivity));
+}
+
+function formatAopAskTranscript(turns: AopAskTurn[]): string {
+  if (!turns.length) return "(This is the first turn in this conversation.)";
+  return turns.map((turn, index) => {
+    const outcome = turn.answer.trim()
+      ? `AOP response:\n${turn.answer.trim()}`
+      : turn.error.trim()
+        ? `AOP error or blocked outcome:\n${turn.error.trim()}`
+        : `AOP outcome: ${turn.status}`;
+    const handoff = turn.operatorHandoff
+      ? `\nOperator handoff:\n${turn.operatorHandoff.title}\n${turn.operatorHandoff.reason}\nSteps: ${turn.operatorHandoff.steps.join(" | ")}\nRecheck: ${turn.operatorHandoff.recheck}`
+      : "";
+    return `Turn ${index + 1}\nOperator question:\n${turn.question.trim()}\n\n${outcome}${handoff}`;
+  }).join("\n\n---\n\n");
 }
 
 /**

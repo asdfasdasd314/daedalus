@@ -2,8 +2,14 @@
 
 import type { TargetedFeature } from "@/lib/agent-chat-cache";
 import type { AgentModelsConfig } from "@/lib/agent-models";
-import type { AopAskQuery, AopExecutionLoop, AopLoopCodingSlice } from "@/lib/aop-loop";
-import { needsBridgeTaskingRetry, needsManualCodingRetry } from "@/lib/aop-loop";
+import type { AopAskConversation, AopExecutionLoop, AopLoopCodingSlice } from "@/lib/aop-loop";
+import {
+  AOP_ASK_CONTEXT_LIMIT_TOKENS,
+  AOP_ASK_CONTEXT_WARNING_TOKENS,
+  estimateAopAskTranscriptTokens,
+  needsBridgeTaskingRetry,
+  needsManualCodingRetry,
+} from "@/lib/aop-loop";
 import type { BridgeSession, BridgeTask } from "@/lib/bridge-session";
 import { isCpDocCodingReady } from "@/lib/bridge-session";
 import type { PlanningQuestion } from "@/lib/planning-questionnaire";
@@ -15,8 +21,10 @@ type AopSessionPanelProps = {
   availableProjectDirectories: string[];
   aopLoop: AopExecutionLoop | null;
   aopLoopCodingHistory: AopLoopCodingSlice[];
-  aopAskQueries: AopAskQuery[];
+  aopAskConversations: AopAskConversation[];
+  aopAskEstimatedContextTokens: number;
   aopAskQuestion: string;
+  selectedAopAskConversationId: string;
   bridgeSession: BridgeSession | null;
   defaultProjectDirectory: string;
   directionText: string;
@@ -24,7 +32,9 @@ type AopSessionPanelProps = {
   onDirectionTextChange: (text: string) => void;
   onAnswerQuestion: (answer: string) => void;
   onAopAskQuestionChange: (question: string) => void;
+  onNewAopAskConversation: () => void;
   onSendAopAsk: () => void;
+  onSelectAopAskConversation: (conversationId: string) => void;
   onOpenFeatureTagSearch: () => void;
   onProviderChange: (provider: string) => void;
   onRemoveTargetedFeature: (filePath: string) => void;
@@ -57,8 +67,10 @@ export default function AopSessionPanel({
   availableProjectDirectories,
   aopLoop,
   aopLoopCodingHistory,
-  aopAskQueries,
+  aopAskConversations,
+  aopAskEstimatedContextTokens,
   aopAskQuestion,
+  selectedAopAskConversationId,
   bridgeSession,
   defaultProjectDirectory,
   directionText,
@@ -66,7 +78,9 @@ export default function AopSessionPanel({
   onDirectionTextChange,
   onAnswerQuestion,
   onAopAskQuestionChange,
+  onNewAopAskConversation,
   onSendAopAsk,
+  onSelectAopAskConversation,
   onOpenFeatureTagSearch,
   onProviderChange,
   onRemoveTargetedFeature,
@@ -124,6 +138,11 @@ export default function AopSessionPanel({
   const loopActive = Boolean(
     aopLoop && !["completed", "cancelled", "failed"].includes(aopLoop.status),
   );
+  const activeAopAskConversation = aopAskConversations.find((conversation) =>
+    conversation.conversationId === selectedAopAskConversationId,
+  ) ?? null;
+  const aopAskNearLimit = aopAskEstimatedContextTokens >= AOP_ASK_CONTEXT_WARNING_TOKENS;
+  const aopAskAtLimit = aopAskEstimatedContextTokens >= AOP_ASK_CONTEXT_LIMIT_TOKENS;
 
   return (
     <div className="grid min-w-0 gap-5 overflow-x-hidden">
@@ -146,45 +165,50 @@ export default function AopSessionPanel({
         </p>
       </header>
 
-      <section className="grid gap-3 rounded-[1.5rem] border border-cyan-300/20 bg-cyan-300/[0.04] p-4 sm:p-5">
+      <section className="grid gap-4 rounded-[1.5rem] border border-cyan-300/20 bg-cyan-300/[0.04] p-4 sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <p className="text-[11px] uppercase tracking-[0.28em] text-cyan-100/80">Ask AOP</p>
-            <p className="mt-1 text-sm text-slate-300">Read-only project questions that do not change the build loop.</p>
+            <p className="mt-1 text-sm text-slate-300">Project-scoped, read-only conversations that do not change the build loop.</p>
           </div>
-          <span className="rounded-full border border-cyan-300/20 px-3 py-1 text-xs text-cyan-100">Immutable</span>
+          <div className="flex items-center gap-2">
+            <span className="rounded-full border border-cyan-300/20 px-3 py-1 text-xs text-cyan-100">Immutable</span>
+            <button type="button" onClick={onNewAopAskConversation} className="rounded-full border border-cyan-300/30 px-3 py-1 text-xs font-semibold text-cyan-100 hover:bg-cyan-300/10">New conversation</button>
+          </div>
         </div>
-        <label htmlFor="aop-ask" className="text-[11px] uppercase tracking-[0.28em] text-slate-400">Question</label>
-        <textarea
-          id="aop-ask"
-          value={aopAskQuestion}
-          onChange={(event) => onAopAskQuestionChange(event.target.value)}
-          placeholder="What changed here? What is working right now, and what needs debugging?"
-          className="agent-chat-scrollbar min-h-24 min-w-0 rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-500"
-        />
-        <button
-          type="button"
-          onClick={onSendAopAsk}
-          disabled={!acceptsWork || !aopAskQuestion.trim()}
-          className="w-fit rounded-full bg-cyan-300 px-5 py-3 text-sm font-semibold text-slate-950 hover:bg-cyan-200 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
-        >
-          Ask AOP
-        </button>
-        {aopAskQueries.length ? (
-          <ol className="grid gap-2 border-t border-white/10 pt-3">
-            {aopAskQueries.map((query) => (
-              <li key={query.id} className="grid gap-2 rounded-[1.25rem] border border-white/10 bg-black/20 px-4 py-3">
-                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
-                  <span className="rounded-full border border-white/10 px-2 py-1 text-slate-200">{query.status}</span>
-                  <time dateTime={query.createdAt}>{new Date(query.createdAt).toLocaleString()}</time>
-                </div>
-                <p className="whitespace-pre-wrap text-sm font-medium text-slate-100">{query.question}</p>
-                {query.answer ? <p className="whitespace-pre-wrap text-sm leading-6 text-slate-300">{query.answer}</p> : null}
-                {query.error ? <p className="whitespace-pre-wrap text-sm leading-6 text-rose-200">{query.error}</p> : null}
-              </li>
-            ))}
-          </ol>
-        ) : <p className="text-sm text-slate-500">Ask about the current build at any time. Answers remain in this project’s query ledger.</p>}
+        <div className="grid gap-4 lg:grid-cols-[15rem_minmax(0,1fr)]">
+          <aside className="agent-chat-scrollbar max-h-[30rem] overflow-y-auto rounded-[1.25rem] border border-white/10 bg-black/20 p-2">
+            {aopAskConversations.length ? <ol className="grid gap-1">
+              {aopAskConversations.map((conversation) => (
+                <li key={conversation.conversationId}>
+                  <button type="button" onClick={() => onSelectAopAskConversation(conversation.conversationId)} className={`grid w-full gap-1 rounded-xl px-3 py-2 text-left text-sm ${conversation.conversationId === selectedAopAskConversationId ? "bg-cyan-300/15 text-cyan-50" : "text-slate-300 hover:bg-white/5"}`}>
+                    <span className="line-clamp-2 font-medium">{conversation.title}</span>
+                    <span className="text-xs text-slate-500">{conversation.turns.length} turn{conversation.turns.length === 1 ? "" : "s"} · ~{estimateAopAskTranscriptTokens(conversation.turns).toLocaleString()} transcript tokens</span>
+                  </button>
+                </li>
+              ))}
+            </ol> : <p className="p-2 text-sm text-slate-500">Start a conversation for this project.</p>}
+          </aside>
+          <div className="grid min-w-0 gap-3">
+            <div className="agent-chat-scrollbar max-h-[30rem] min-h-36 overflow-y-auto rounded-[1.25rem] border border-white/10 bg-slate-950/60 p-3">
+              {activeAopAskConversation?.turns.length ? <ol className="grid gap-3">
+                {activeAopAskConversation.turns.map((turn) => (
+                  <li key={turn.id} className="grid gap-2">
+                    <div className="ml-auto max-w-[90%] rounded-2xl bg-cyan-300/15 px-3 py-2 text-sm text-cyan-50"><p className="mb-1 text-[10px] uppercase tracking-[0.2em] text-cyan-200/70">You</p><p className="whitespace-pre-wrap">{turn.question}</p></div>
+                    <div className="max-w-[90%] rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-200"><p className="mb-1 text-[10px] uppercase tracking-[0.2em] text-slate-400">AOP · {turn.status}</p>{turn.answer ? <p className="whitespace-pre-wrap leading-6">{turn.answer}</p> : null}{turn.error ? <p className="whitespace-pre-wrap leading-6 text-rose-200">{turn.error}</p> : null}{turn.operatorHandoff ? <div className="mt-2 grid gap-1 rounded-xl border border-amber-300/20 bg-amber-300/10 p-2 text-amber-100"><strong>{turn.operatorHandoff.title}</strong><p>{turn.operatorHandoff.reason}</p>{turn.operatorHandoff.steps.length ? <ol className="list-decimal space-y-1 pl-5">{turn.operatorHandoff.steps.map((step, index) => <li key={`${index}-${step}`}>{step}</li>)}</ol> : null}</div> : null}{!turn.answer && !turn.error && !turn.operatorHandoff ? <p className="text-slate-500">Waiting for the daemon.</p> : null}</div>
+                  </li>
+                ))}
+              </ol> : <p className="text-sm text-slate-500">{selectedAopAskConversationId ? "This is a new conversation. Ask the first project question below." : "Select a conversation or start a new one."}</p>}
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+              <span className={aopAskAtLimit ? "text-rose-200" : aopAskNearLimit ? "text-amber-200" : "text-slate-400"}>Estimated context tokens: {aopAskEstimatedContextTokens.toLocaleString()} <span className="text-slate-500">(local estimate, not billed usage)</span></span>
+              {aopAskAtLimit ? <span className="text-rose-200">This thread has reached 200k. Start a new conversation to continue.</span> : aopAskNearLimit ? <span className="text-amber-200">Approaching the 200k conversation limit.</span> : null}
+            </div>
+            <label htmlFor="aop-ask" className="text-[11px] uppercase tracking-[0.28em] text-slate-400">Question</label>
+            <textarea id="aop-ask" value={aopAskQuestion} onChange={(event) => onAopAskQuestionChange(event.target.value)} disabled={!selectedAopAskConversationId || aopAskAtLimit} placeholder="What changed here? What is working right now, and what needs debugging?" className="agent-chat-scrollbar min-h-24 min-w-0 rounded-[1.25rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-500 disabled:cursor-not-allowed disabled:opacity-50" />
+            <button type="button" onClick={onSendAopAsk} disabled={!acceptsWork || !selectedAopAskConversationId || !aopAskQuestion.trim() || aopAskAtLimit} className="w-fit rounded-full bg-cyan-300 px-5 py-3 text-sm font-semibold text-slate-950 hover:bg-cyan-200 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400">Ask AOP</button>
+          </div>
+        </div>
       </section>
 
       <section className="grid min-w-0 gap-3 rounded-[1.5rem] border border-white/10 bg-black/25 p-4 sm:p-5">

@@ -8,6 +8,9 @@ import {
   canStartAopBuildLoop,
   extractAopTaskTitleFromPrompt,
   extractAopAskQuestion,
+  estimateAopAskContextTokens,
+  estimateAopAskTranscriptTokens,
+  groupAopAskConversations,
   isAopCodingTaskInFlight,
   isBridgeTaskingReply,
   loopCountersFromCompletedSlices,
@@ -52,6 +55,47 @@ test("AOP Ask prompt captures an immutable loop snapshot", () => {
   assert.match(prompt, /Do not edit files/);
   assert.equal(extractAopAskQuestion(prompt), "What is working right now?");
   assert.equal(extractAopAskQuestion("plain ask"), "");
+});
+
+test("AOP Ask follow-ups use a literal normalized transcript without nested prompts", () => {
+  const prompt = buildAopAskPrompt({
+    question: "What should I check next?",
+    transcript: [
+      {
+        id: "turn-1", promptId: "prompt-1", conversationId: "conversation-1",
+        question: "What changed here?", answer: "The AOP panel now supports Ask.",
+        error: "", status: "completed", createdAt: "2026-08-12T00:00:00Z",
+        completedAt: "2026-08-12T00:01:00Z", operatorHandoff: null,
+      },
+      {
+        id: "turn-2", promptId: "prompt-2", conversationId: "conversation-1",
+        question: "Why did the service fail?", answer: "", error: "Missing service configuration.",
+        status: "blocked", createdAt: "2026-08-12T00:02:00Z",
+        completedAt: "2026-08-12T00:03:00Z",
+        operatorHandoff: { title: "Configure service", reason: "Authentication is required.", completedWork: "Inspected configuration.", steps: ["Sign in."], recheck: "Verify access." },
+      },
+    ],
+  });
+  assert.match(prompt, /Turn 1/);
+  assert.match(prompt, /What changed here\?/);
+  assert.match(prompt, /Missing service configuration/);
+  assert.match(prompt, /New operator question:\nWhat should I check next\?/);
+  assert.equal((prompt.match(/AOP IMMUTABLE ASK/g) ?? []).length, 1);
+  assert.equal(extractAopAskQuestion(prompt), "What should I check next?");
+  assert.equal(estimateAopAskContextTokens("12345"), 2);
+  assert.ok(estimateAopAskTranscriptTokens([]) > 0);
+});
+
+test("AOP Ask conversations group and sort project turns by latest activity", () => {
+  const conversations = groupAopAskConversations([
+    { id: "first", promptId: "p1", conversationId: "a", question: "First", answer: "", error: "", status: "completed", createdAt: "2026-08-12T00:00:00Z", completedAt: "2026-08-12T00:01:00Z", operatorHandoff: null },
+    { id: "second", promptId: "p2", conversationId: "a", question: "Follow-up", answer: "", error: "", status: "failed", createdAt: "2026-08-12T00:02:00Z", completedAt: "2026-08-12T00:03:00Z", operatorHandoff: null },
+    { id: "third", promptId: "p3", conversationId: "b", question: "Newest thread", answer: "", error: "", status: "completed", createdAt: "2026-08-12T00:04:00Z", completedAt: "2026-08-12T00:05:00Z", operatorHandoff: null },
+  ]);
+  assert.equal(conversations.length, 2);
+  assert.equal(conversations[0]?.conversationId, "b");
+  assert.equal(conversations[1]?.title, "First");
+  assert.equal(conversations[1]?.turns.length, 2);
 });
 
 test("loop advances only on completed durable coding tasks", () => {

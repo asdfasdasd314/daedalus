@@ -52,14 +52,18 @@ import {
 import {
   type AopExecutionLoop,
   type AopExecutionLoopRow,
-  type AopAskQuery,
+  type AopAskConversation,
+  type AopAskTurn,
   type AopLoopCodingSlice,
   buildAopAskPrompt,
   buildBridgeTaskingPrompt,
   buildDurableImplementationPrompt,
   buildImplPrepUserPrompt,
   buildTargetedFeatureDigests,
+  estimateAopAskContextTokens,
   extractAopAskQuestion,
+  groupAopAskConversations,
+  AOP_ASK_CONTEXT_LIMIT_TOKENS,
   DEFAULT_MAX_TASKS_BEFORE_VERIFICATION,
   isAopCodingTaskInFlight,
   isAopCodingTaskTerminal,
@@ -379,7 +383,8 @@ export default function FeatureFilesDashboard({
     AopLoopCodingSlice[]
   >([]);
   const [aopAskQuestion, setAopAskQuestion] = useState("");
-  const [aopAskQueries, setAopAskQueries] = useState<AopAskQuery[]>([]);
+  const [aopAskTurns, setAopAskTurns] = useState<AopAskTurn[]>([]);
+  const [selectedAopAskConversationId, setSelectedAopAskConversationId] = useState("");
   const [aopDirectionText, setAopDirectionText] = useState("");
   const [bridgeOtherAnswer, setBridgeOtherAnswer] = useState("");
   const [agentPromptQueue, setAgentPromptQueue] = useState<
@@ -387,6 +392,7 @@ export default function FeatureFilesDashboard({
   >([]);
   const bridgeSessionRef = useRef<BridgeSession | null>(null);
   const aopLoopRef = useRef<AopExecutionLoop | null>(null);
+  const selectedAopAskConversationIdRef = useRef("");
   const aopLoopFetchGenerationRef = useRef(0);
   /** Prevents double auto-start for the same awaiting_start slice. */
   const aopAutoStartKeyRef = useRef("");
@@ -620,6 +626,37 @@ export default function FeatureFilesDashboard({
   }, [aopLoop]);
 
   useEffect(() => {
+    selectedAopAskConversationIdRef.current = selectedAopAskConversationId;
+  }, [selectedAopAskConversationId]);
+
+  const aopAskConversations = useMemo(
+    () => groupAopAskConversations(aopAskTurns),
+    [aopAskTurns],
+  );
+  const activeAopAskConversation = useMemo(
+    () => aopAskConversations.find((conversation) =>
+      conversation.conversationId === selectedAopAskConversationId,
+    ) ?? null,
+    [aopAskConversations, selectedAopAskConversationId],
+  );
+  const aopAskDraftPrompt = useMemo(() => selectedAopAskConversationId
+    ? buildAopAskPrompt({
+      question: aopAskQuestion,
+      loop: aopLoop,
+      codingHistory: aopLoopCodingHistory,
+      cpDoc: bridgeSession?.cpDoc,
+      transcript: activeAopAskConversation?.turns,
+    })
+    : "", [
+      activeAopAskConversation,
+      aopAskQuestion,
+      aopLoop,
+      aopLoopCodingHistory,
+      bridgeSession?.cpDoc,
+    ]);
+  const aopAskEstimatedContextTokens = estimateAopAskContextTokens(aopAskDraftPrompt);
+
+  useEffect(() => {
     projectsRef.current = projects;
   }, [projects]);
 
@@ -701,11 +738,12 @@ export default function FeatureFilesDashboard({
 
   useEffect(() => {
     if (!accessToken || !currentUser || !selectedProjectDirectory) {
-      setAopAskQueries([]);
+      setAopAskTurns([]);
+      setSelectedAopAskConversationId("");
       return;
     }
-    void refreshAopAskQueries();
-    // Refreshes the project-scoped, immutable Ask ledger after navigation/reload.
+    void refreshAopAskConversations();
+    // Refreshes project-scoped AOP Ask threads after navigation/reload.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accessToken, currentUser, currentUserId, selectedProjectDirectory, supabasePublishableKey, supabaseUrl]);
 
@@ -1836,44 +1874,65 @@ export default function FeatureFilesDashboard({
     }
   }
 
-  async function refreshAopAskQueries() {
+  async function refreshAopAskConversations() {
     if (!currentUser || !accessToken || !selectedProjectDirectory) {
       return;
     }
     try {
-      const queries = await fetchAopAskQueries(
+      const turns = await fetchAopAskTurns(
         supabaseUrl,
         supabasePublishableKey,
         accessToken,
         currentUserId,
         selectedProjectDirectory,
       );
-      setAopAskQueries(queries);
+      setAopAskTurns(turns);
+      const conversations = groupAopAskConversations(turns);
+      const currentConversationId = selectedAopAskConversationIdRef.current;
+      if (!currentConversationId || !conversations.some((conversation) =>
+        conversation.conversationId === currentConversationId,
+      )) {
+        setSelectedAopAskConversationId(conversations[0]?.conversationId ?? "");
+      }
     } catch {
       // A query-list read failure should not prevent AOP work or Ask submission.
     }
   }
 
+  function startAopAskConversation() {
+    setSelectedAopAskConversationId(createPromptId());
+    setAopAskQuestion("");
+    setPromptSubmissionError("");
+  }
+
+  function selectAopAskProject(projectDirectory: string) {
+    setSelectedAopAskConversationId("");
+    setSelectedProjectDirectory(projectDirectory);
+  }
+
   function sendAopAsk() {
-    if (!aopAskQuestion.trim() || !currentUser || !accessToken) {
+    if (!aopAskQuestion.trim() || !currentUser || !accessToken || !selectedAopAskConversationId) {
       return;
     }
     if (!daemonAcceptsWork) {
       setPromptSubmissionError(DAEMON_ADMISSION_MESSAGE);
       return;
     }
-    const promptId = createPromptId();
     const question = aopAskQuestion.trim();
     const loop = aopLoopRef.current;
-    const prompt = buildAopAskPrompt({
-      question,
-      loop,
-      codingHistory: aopLoopCodingHistory,
-      cpDoc: bridgeSessionRef.current?.cpDoc,
+    const prompt = aopAskDraftPrompt || buildAopAskPrompt({
+      question, loop, codingHistory: aopLoopCodingHistory,
+      cpDoc: bridgeSessionRef.current?.cpDoc, transcript: activeAopAskConversation?.turns,
     });
+    const estimatedTokens = estimateAopAskContextTokens(prompt);
+    if (estimatedTokens >= AOP_ASK_CONTEXT_LIMIT_TOKENS) {
+      setPromptSubmissionError("This conversation has reached the 200k estimated context-token limit. Start a new conversation to continue.");
+      return;
+    }
+    const promptId = createPromptId();
     const queueEntry: AgentPromptQueueEntry = {
       promptId,
-      conversationId: promptId,
+      conversationId: selectedAopAskConversationId,
       directory: selectedProjectDirectory,
       prompt,
       provider: selectedProvider,
@@ -1888,16 +1947,18 @@ export default function FeatureFilesDashboard({
     };
     setPromptSubmissionError("");
     setAopAskQuestion("");
-    setAopAskQueries((current) => [{
+    setAopAskTurns((current) => [...current, {
       id: promptId,
       promptId,
+      conversationId: selectedAopAskConversationId,
       question,
       answer: "",
       error: "",
       status: "queued",
       createdAt: new Date().toISOString(),
       completedAt: null,
-    }, ...current.filter((query) => query.promptId !== promptId)]);
+      operatorHandoff: null,
+    }]);
     setAgentPromptQueue((current) => [...current, queueEntry]);
     setPromptStatus("AOP Ask queued. It will run read-only from the project root.");
   }
@@ -3551,8 +3612,8 @@ export default function FeatureFilesDashboard({
         ),
       );
       if (startedAopAsk) {
-        setAopAskQueries((current) => current.map((query) =>
-          query.promptId === nextPromptId ? { ...query, status: "running" } : query,
+        setAopAskTurns((current) => current.map((turn) =>
+          turn.promptId === nextPromptId ? { ...turn, status: "running" } : turn,
         ));
       }
       setPromptStatus("Daemon received prompt.");
@@ -3685,9 +3746,16 @@ export default function FeatureFilesDashboard({
                 status: detail === DAEMON_ADMISSION_MESSAGE ? "queued" : "failed",
                 error: detail === DAEMON_ADMISSION_MESSAGE ? undefined : detail,
               }
-            : item,
+          : item,
         ),
       );
+      if (queueEntry.askMode && extractAopAskQuestion(queueEntry.prompt)) {
+        setAopAskTurns((current) => current.map((turn) =>
+          turn.promptId === queueEntry.promptId
+            ? { ...turn, status: "failed", error: detail, completedAt: new Date().toISOString() }
+            : turn,
+        ));
+      }
     }
   }
 
@@ -3713,7 +3781,7 @@ export default function FeatureFilesDashboard({
 
     setPromptStatus("Reply received.");
     if (finishedAopAsk) {
-      void refreshAopAskQueries();
+      void refreshAopAskConversations();
     }
   }
 
@@ -4876,7 +4944,8 @@ export default function FeatureFilesDashboard({
                 availableProjectDirectories={availableProjectDirectories}
                 aopLoop={aopLoop}
                 aopLoopCodingHistory={aopLoopCodingHistory}
-                aopAskQueries={aopAskQueries}
+                aopAskConversations={aopAskConversations}
+                aopAskEstimatedContextTokens={aopAskEstimatedContextTokens}
                 aopAskQuestion={aopAskQuestion}
                 bridgeSession={bridgeSession}
                 defaultProjectDirectory={DEFAULT_PROJECT_DIRECTORY}
@@ -4885,11 +4954,13 @@ export default function FeatureFilesDashboard({
                 onDirectionTextChange={setAopDirectionText}
                 onAnswerQuestion={answerBridgeQuestion}
                 onAopAskQuestionChange={setAopAskQuestion}
+                onNewAopAskConversation={startAopAskConversation}
                 onSendAopAsk={sendAopAsk}
+                onSelectAopAskConversation={setSelectedAopAskConversationId}
                 onOpenFeatureTagSearch={openFeatureTagSearch}
                 onProviderChange={selectProvider}
                 onRemoveTargetedFeature={removeTargetedFeature}
-                onSelectedProjectDirectoryChange={setSelectedProjectDirectory}
+                onSelectedProjectDirectoryChange={selectAopAskProject}
                 onSelectedReasoningChange={setSelectedReasoning}
                 onSelectModel={selectModel}
                 onSubmitDirection={() => void sendBridgeDirection()}
@@ -4908,6 +4979,7 @@ export default function FeatureFilesDashboard({
                 selectedProvider={selectedProvider}
                 selectedProjectDirectory={selectedProjectDirectory}
                 selectedReasoning={selectedReasoning}
+                selectedAopAskConversationId={selectedAopAskConversationId}
                 submissionError={promptSubmissionError}
                 targetedFeatures={targetedFeatures}
               />
@@ -6754,30 +6826,38 @@ async function insertAgentTask(
 type AopAskTaskRow = {
   id: string;
   prompt_id: string;
+  conversation_id: string | null;
   prompt: string;
   result: string | null;
   error: string | null;
   status: string;
   created_at: string;
   completed_at: string | null;
+  operator_handoff: {
+    title?: string;
+    reason?: string;
+    completed_work?: string;
+    steps?: string[];
+    recheck?: string;
+  } | null;
 };
 
-async function fetchAopAskQueries(
+async function fetchAopAskTurns(
   supabaseUrl: string,
   supabasePublishableKey: string,
   accessToken: string,
   userId: string,
   repository: string,
-): Promise<AopAskQuery[]> {
+): Promise<AopAskTurn[]> {
   const url = new URL("/rest/v1/agent_tasks", supabaseUrl);
-  url.searchParams.set("select", "id,prompt_id,prompt,result,error,status,created_at,completed_at");
+  url.searchParams.set("select", "id,prompt_id,conversation_id,prompt,result,error,status,created_at,completed_at,operator_handoff");
   url.searchParams.set("user_id", `eq.${userId}`);
   url.searchParams.set("repository", `eq.${repository}`);
   url.searchParams.set("task_type", "eq.ask");
   url.searchParams.set("source", "eq.direct_prompt");
   url.searchParams.set("prompt", "like.AOP IMMUTABLE ASK%");
   url.searchParams.set("order", "created_at.desc");
-  url.searchParams.set("limit", "50");
+  url.searchParams.set("limit", "200");
   const response = await fetch(url, {
     headers: getAuthenticatedSupabaseHeaders(supabasePublishableKey, accessToken),
     cache: "no-store",
@@ -6788,12 +6868,22 @@ async function fetchAopAskQueries(
   return ((await response.json()) as AopAskTaskRow[]).map((row) => ({
     id: row.id,
     promptId: row.prompt_id,
+    conversationId: row.conversation_id ?? "",
     question: extractAopAskQuestion(row.prompt) || "(question unavailable)",
     answer: row.result ?? "",
     error: row.error ?? "",
     status: row.status,
     createdAt: row.created_at,
     completedAt: row.completed_at,
+    operatorHandoff: row.operator_handoff?.title && row.operator_handoff.reason
+      ? {
+        title: row.operator_handoff.title,
+        reason: row.operator_handoff.reason,
+        completedWork: row.operator_handoff.completed_work ?? "",
+        steps: Array.isArray(row.operator_handoff.steps) ? row.operator_handoff.steps : [],
+        recheck: row.operator_handoff.recheck ?? "",
+      }
+      : null,
   }));
 }
 
